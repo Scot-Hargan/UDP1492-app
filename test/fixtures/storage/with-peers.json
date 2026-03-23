@@ -1,0 +1,37 @@
+{
+  "udp1492_selected_codec": "opus",
+  "udp1492_theme": "light",
+  "udp1492_settings_opus": {
+    "encrypt": true,
+    "frameMs": 20,
+    "sampleRate": 48000,
+    "localPort": 1492,
+    "deadTime": 15000,
+    "statsInterval": 1000,
+    "jitterSamples": 100,
+    "pingInterval": 5000,
+    "pingHistory": 60000,
+    "inputGain": 1.33,
+    "bitrateKbps": 32
+  },
+  "udp1492_input_gain_opus": 1.33,
+  "udp1492_peers": [
+    {
+      "name": "Alpha",
+      "ip": "203.0.113.10",
+      "port": 1492,
+      "sharedKey": "abc123",
+      "gain": 1.1
+    },
+    {
+      "name": "Bravo",
+      "ip": "203.0.113.11",
+      "port": 1492,
+      "sharedKey": "def456",
+      "gain": 0.9
+    }
+  ],
+  "udp1492_last_peers": [
+    "203.0.113.10:1492"
+  ]
+}

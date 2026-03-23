@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob: data:; connect-src 'self'; worker-src 'self' blob:;" />
+  <title>UDP 1492 Desktop</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="theme-dark">
+  <div class="app">
+    <header class="header">
+      <h1>UDP 1492 Desktop</h1>
+      <div class="buttons">
+        <button id="connectBtn" class="primary">Connect</button>
+        <button id="disconnectBtn">Disconnect</button>
+      </div>
+    </header>
+
+    <section class="status-dashboard">
+      <h2>System Status</h2>
+      <div class="status-grid">
+        <div class="status-indicator">
+          <span class="status-dot dot-gray" id="nativeHostDot"></span>
+          <div class="status-info">
+            <span class="status-label">Native Host</span>
+            <span class="status-text" id="nativeHostStatus">Disconnected</span>
+          </div>
+        </div>
+        <div class="status-indicator">
+          <span class="status-dot dot-gray" id="localEncryptionDot"></span>
+          <div class="status-info">
+            <span class="status-label">Local Encryption</span>
+            <span class="status-text" id="localEncryptionStatus">Disabled</span>
+          </div>
+        </div>
+        <div class="status-indicator">
+          <span class="status-dot dot-gray" id="peerDot"></span>
+          <div class="status-info">
+            <span class="status-label">Peers</span>
+            <span class="status-text" id="peerStatus">No Active Peers</span>
+          </div>
+        </div>
+        <div class="status-indicator">
+          <span class="status-dot dot-gray" id="audioRxDot"></span>
+          <div class="status-info">
+            <span class="status-label">Audio Receive</span>
+            <span class="status-text" id="audioRxStatus">Inactive</span>
+          </div>
+        </div>
+        <div class="status-indicator status-theme">
+          <div class="theme-toggle">
+            <label class="switch" title="Toggle dark mode">
+              <input type="checkbox" id="darkModeToggle" checked />
+              <span class="slider"></span>
+            </label>
+            <div class="status-info">
+              <span class="status-label">Theme</span>
+              <span class="status-text" id="themeStatus">Dark mode</span>
+            </div>
+          </div>
+          <button id="openSettingsBtn" class="icon-button" aria-label="Open settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M19.14 12.94a7.43 7.43 0 0 0 .05-.94 7.43 7.43 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.5 7.5 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.5 7.5 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.66 8.84a.5.5 0 0 0 .12.64l2.03 1.58a7.43 7.43 0 0 0-.05.94c0 .32.02.63.05.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.38 1.05.7 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.58-.24 1.13-.56 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="network-stats">
+      <div class="network-stats-header">
+        <h2>Active Peers</h2>
+        <div class="peer-controls">
+          <button id="openPeerModalBtn" class="primary">Edit Peers</button>
+          <label for="peerList">Select Peer</label>
+          <select id="peerList"></select>
+        </div>
+      </div>
+      <div class="stat-table-wrapper">
+        <table class="stat-table" id="networkTable">
+          <thead>
+            <tr>
+              <th>Peer Name</th>
+              <th>IP</th>
+              <th>Connected</th>
+              <th>Audio Level</th>
+              <th>RTT</th>
+              <th>Jitter</th>
+              <th>OoO</th>
+              <th>Dups</th>
+              <th>Loss</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr id="selfRow">
+              <td>Self</td>
+              <td>&mdash;</td>
+              <td>&mdash;</td>
+              <td>
+                <div class="meter">
+                  <progress id="micMeter" max="1" value="0"></progress>
+                </div>
+              </td>
+              <td id="selfRtt">&mdash;</td>
+              <td id="selfJitter">&mdash;</td>
+              <td id="selfOoo">&mdash;</td>
+              <td id="selfDups">&mdash;</td>
+              <td id="selfLoss">&mdash;</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <details class="debug" closed>
+      <summary>Debug</summary>
+      <div class="debug-header">
+        <div class="debug-actions">
+          <button id="toggleLogBtn" class="secondary">Start log</button>
+          <button id="clearLogBtn" class="secondary">Clear</button>
+        </div>
+      </div>
+      <div class="debug-log-wrapper">
+        <pre id="debugLog" class="debug-log" aria-live="off"></pre>
+      </div>
+    </details>
+
+    <div id="settingsModal" class="modal-overlay" hidden>
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Settings</h3>
+          <button id="settingsCloseBtn" class="icon-button" aria-label="Close settings">&times;</button>
+        </div>
+        <div class="settings-grid">
+          <div class="control">
+            <label>Encryption</label>
+            <button id="encryptToggle" class="toggle-button" type="button">Encryption: On</button>
+          </div>
+          <div class="control">
+            <label>Frame (ms)</label>
+            <input id="frameMs" type="number" min="5" step="1" value="20" />
+          </div>
+          <div class="control">
+            <label>Sample rate</label>
+            <select id="sampleRate">
+              <option value="48000" selected>48000</option>
+              <option value="32635">32635</option>
+              <option value="24000">24000</option>
+              <option value="16000">16000</option>
+              <option value="8000">8000</option>
+            </select>
+          </div>
+          <div class="control">
+            <label>CODEX</label>
+            <select id="codecSelect">
+              <option value="opus" selected>Opus</option>
+              <option value="aac">AAC</option>
+              <option value="flac">FLAC</option>
+              <option value="vorbis">Vorbis</option>
+              <option value="g711u">G.711 mu-law</option>
+              <option value="g711a">G.711 A-law</option>
+              <option value="pcm">PCM (Linear)</option>
+            </select>
+            <div id="codecSupportWarning" class="helper-text" hidden></div>
+          </div>
+          <div class="control" id="codecOptions" hidden>
+            <label>Codec options</label>
+            <div class="codec-field" id="codecBitrateRow">
+              <label for="codecBitrate">Bitrate (kbps)</label>
+              <input id="codecBitrate" type="number" min="6" max="512" step="1" />
+            </div>
+            <div class="codec-field" id="codecProfileRow">
+              <label for="codecProfile">Profile</label>
+              <select id="codecProfile">
+                <option value="aac-lc">AAC-LC</option>
+                <option value="heaac">HE-AAC</option>
+              </select>
+            </div>
+          </div>
+          <div class="control">
+            <label>Local Port</label>
+            <input id="localPort" type="number" min="1" max="65535" step="1" value="1492" />
+          </div>
+          <div class="control">
+            <label>Dead Time (ms)</label>
+            <input id="deadTime" type="number" min="10000" step="1000" value="15000" />
+          </div>
+          <div class="control">
+            <label>Stats Interval (ms)</label>
+            <input id="statsInterval" type="number" min="10" step="10" value="1000" />
+          </div>
+          <div class="control">
+            <label>Jitter Samples</label>
+            <input id="jitterSamples" type="number" min="10" step="10" value="100" />
+          </div>
+          <div class="control">
+            <label>Ping interval (ms)</label>
+            <input id="pingInterval" type="number" min="100" step="50" value="5000" />
+          </div>
+          <div class="control">
+            <label>Ping History (ms)</label>
+            <input id="pingHistory" type="number" min="10000" step="1000" value="60000" />
+          </div>
+          <div class="control">
+            <label for="inputGain">Input gain (mic)</label>
+            <div class="gain-row">
+              <input id="inputGain" type="range" min="0.5" max="2.0" step="0.01" value="1.15" />
+              <span id="gainValue">1.15x</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button id="settingsResetBtn" class="secondary">Reset to default</button>
+          <div class="modal-spacer"></div>
+          <button id="settingsCancelBtn" class="secondary">Cancel</button>
+          <button id="settingsSaveBtn" class="primary">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="peerModal" class="modal-overlay" hidden>
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="peerModalTitle">Edit Peers</h3>
+          <button id="peerModalClose" class="icon-button" aria-label="Close peer editor">&times;</button>
+        </div>
+        <div class="modal-field">
+          <label>Select Peer</label>
+          <select id="peerModalSelect"></select>
+        </div>
+        <div class="modal-field">
+          <label>Name</label>
+          <input type="text" id="peerModalName">
+        </div>
+        <div class="modal-field">
+          <label>IP Address</label>
+          <input type="text" id="peerModalIp" placeholder="192.0.2.10">
+        </div>
+        <div class="modal-field">
+          <label>Port</label>
+          <input type="number" id="peerModalPort" min="1" max="65535" value="1492">
+        </div>
+        <div class="modal-field">
+          <label>Shared Key</label>
+          <input type="text" id="peerModalKey">
+        </div>
+        <div class="modal-field">
+          <label for="peerModalGain">Peer Gain</label>
+          <div class="gain-row">
+            <input id="peerModalGain" type="range" min="0.5" max="2.0" step="0.01" value="1.15" />
+            <span id="peerModalGainValue">1.15x</span>
+          </div>
+        </div>
+        <div id="peerModalOtherFields" class="modal-other"></div>
+        <div class="modal-actions">
+          <button id="peerModalCancel" class="secondary">Cancel</button>
+          <button id="peerModalDelete" class="danger">Delete</button>
+          <button id="peerModalSave" class="primary">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="ui.js"></script>
+</body>
+</html>

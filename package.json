@@ -1,0 +1,78 @@
+{
+  "name": "udp-1492-app",
+  "version": "0.1.4",
+  "private": false,
+  "description": "Standalone Electron desktop app for UDP 1492 Audio Link.",
+  "main": "src/main/main.js",
+  "author": "Scot Hargan",
+  "license": "MIT",
+  "homepage": "https://github.com/Scot-Hargan/UDP1492-app",
+  "bugs": {
+    "url": "https://github.com/Scot-Hargan/UDP1492-app/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Scot-Hargan/UDP1492-app.git"
+  },
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist:win": "electron-builder --win portable nsis",
+    "dist:win:portable": "electron-builder --win portable",
+    "dist:win:nsis": "electron-builder --win nsis",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "electron": "^41.0.3",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.udp1492.desktop",
+    "productName": "UDP 1492 Desktop",
+    "asar": true,
+    "compression": "maximum",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "!test{,s}/**/*",
+      "!playwright.config.js",
+      "!playwright-report{,/**}",
+      "!test-results{,/**}"
+    ],
+    "extraMetadata": {
+      "main": "src/main/main.js"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    }
+  }
+}

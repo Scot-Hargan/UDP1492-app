@@ -1,0 +1,13 @@
+{
+  "udp1492_selected_codec": "opus",
+  "udp1492_theme": "dark",
+  "udp1492_peers": [
+    {
+      "name": "Saved Only",
+      "ip": "198.51.100.77",
+      "port": 1492,
+      "sharedKey": "",
+      "gain": 1.15
+    }
+  ]
+}
