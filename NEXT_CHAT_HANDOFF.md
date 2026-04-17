@@ -6,30 +6,34 @@ Use this file if work continues in a fresh chat.
 
 - Repo: `C:\NodeProjects\1492-app`
 - Branch: `main`
-- Package/app version: `0.1.18`
-- Renderer version marker in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js): `0.4.17`
+- Package/app version: `0.1.19`
+- Renderer version marker in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js): `0.4.18`
 - Phase 1 is closed
 - Phase 2 protected-channel client work is closed
 - Phase 3 Group B desktop-client work is closed
 - Phase 4 dual-ear routing desktop-client work is closed
+- Phase 5 Commander Mode desktop-client work is closed
+- Phase 6 admin-surface planning is now active
 
 ## Start Here
 
 Read these in order:
 
-1. [PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md)
+1. [PHASE6_ADMIN_SURFACE_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE6_ADMIN_SURFACE_CHECKLIST.md)
 2. [DEVELOPMENT_NOTES.md](C:/NodeProjects/1492-app/DEVELOPMENT_NOTES.md)
 3. [MANAGED_MODE_ADAPTATION_PLAN.md](C:/NodeProjects/1492-app/MANAGED_MODE_ADAPTATION_PLAN.md)
-4. [PHASE3_GROUPB_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE3_GROUPB_CHECKLIST.md)
-5. [PHASE2_CLIENT_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE2_CLIENT_CHECKLIST.md)
-6. [PHASE1_REVISED_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE1_REVISED_CHECKLIST.md)
-7. [src/renderer/managed-controller.js](C:/NodeProjects/1492-app/src/renderer/managed-controller.js)
-8. [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js)
-9. [src/renderer/index.html](C:/NodeProjects/1492-app/src/renderer/index.html)
-10. [src/renderer/style.css](C:/NodeProjects/1492-app/src/renderer/style.css)
-11. [src/main/preload.js](C:/NodeProjects/1492-app/src/main/preload.js)
-12. [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
-13. [test/e2e/fixtures.js](C:/NodeProjects/1492-app/test/e2e/fixtures.js)
+4. [PHASE5_COMMANDER_MODE_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE5_COMMANDER_MODE_CHECKLIST.md)
+5. [PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md)
+6. [PHASE3_GROUPB_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE3_GROUPB_CHECKLIST.md)
+7. [PHASE2_CLIENT_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE2_CLIENT_CHECKLIST.md)
+8. [PHASE1_REVISED_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE1_REVISED_CHECKLIST.md)
+9. [src/renderer/managed-controller.js](C:/NodeProjects/1492-app/src/renderer/managed-controller.js)
+10. [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js)
+11. [src/renderer/index.html](C:/NodeProjects/1492-app/src/renderer/index.html)
+12. [src/renderer/style.css](C:/NodeProjects/1492-app/src/renderer/style.css)
+13. [src/main/preload.js](C:/NodeProjects/1492-app/src/main/preload.js)
+14. [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
+15. [test/e2e/fixtures.js](C:/NodeProjects/1492-app/test/e2e/fixtures.js)
 
 ## What Is Already Complete
 
@@ -110,9 +114,27 @@ Closed items in this slice include:
   - overlapping shared peers
   - slot leave/failure route recomputation
 
+### Phase 5
+
+The Commander groundwork desktop-client checklist is complete and validated.
+
+Closed items in this slice include:
+
+- persisted Commander preference scaffolding for `micMode`, `muteState`, and placeholder `pttBindings`
+- renderer-owned transmit-target computation keyed by slot ownership and transport endpoint
+- managed-shell Commander controls for `single` vs `commander` mode and `All` / `Group A` / `Group B` mute/PTT actions
+- subset send behavior in Commander mode without a host-protocol redesign
+- a renderer test hook exposing Commander snapshots and synthetic send behavior for Playwright
+- Playwright Commander validation for:
+  - migrated/default preference persistence
+  - `single`-mode baseline targeting
+  - `Group A` Commander targeting
+  - `Group B` Commander targeting
+  - overlap dedupe for shared endpoints
+
 ## Active Planning Artifact
 
-[PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md) is now a closed decision record for the completed dual-ear routing slice.
+[PHASE6_ADMIN_SURFACE_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE6_ADMIN_SURFACE_CHECKLIST.md) is now the controlling checklist for the next implementation slice.
 
 It also contains:
 
@@ -120,20 +142,22 @@ It also contains:
 - locked decisions
 - immediate coding order
 - current codebase baseline
-- concrete file-level implementation notes for `ui.js`, shell updates, and Playwright expansion
+- concrete file-level implementation notes for Electron windowing, read-only admin views, and Playwright expansion
 
 ## Immediate Next Slice
 
 Do not reopen the Phase 3 Group B client checklist unless a regression appears.
 Do not reopen the Phase 4 dual-ear routing checklist unless a regression appears.
+Do not reopen the Phase 5 Commander checklist unless a regression appears.
 
-The next concrete target is planning the post-Phase-4 slice around Commander Mode groundwork.
+The next concrete target is implementing the Phase 6 admin-surface slice.
 
-The next planning targets should be:
+The first coding targets should be:
 
-1. Define the minimum Commander Mode milestone that fits after the now-closed dual-ear routing slice.
-2. Create the next active checklist before code changes begin.
-3. Keep `PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md` as a closed decision record rather than continuing to edit it for unrelated work.
+1. Define the Electron window lifecycle for a dedicated admin/operator surface.
+2. Add a minimal read-only admin shell for channels, presence, endpoint state, and limited stats.
+3. Keep admin refresh/error states explicit and non-destructive to the main control window.
+4. Add focused Playwright Electron coverage for the extra window and its read-only data views.
 
 ## Important Constraints
 
@@ -151,16 +175,23 @@ Last clean validation before this handoff:
 - `node --check src\\renderer\\ui.js`
 - `node --check src\\renderer\\managed-controller.js`
 - `npm run test:e2e`
-- result: `26/26` passing
+- result: `27/27` passing
 
 Validated implementation updates after that baseline:
 
-- dual-ear routing helpers and pan-aware playback added in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js)
-- managed routing cue added in [src/renderer/index.html](C:/NodeProjects/1492-app/src/renderer/index.html)
-- route-state assertions added in [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
-- package/app version bumped to `0.1.18`
-- renderer version bumped to `0.4.17`
-- `PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md`, `MANAGED_MODE_ADAPTATION_PLAN.md`, and `NEXT_CHAT_HANDOFF.md` updated to mark Phase 4 closed
+- Commander preference/state helpers and subset-send logic added in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js)
+- Commander controls added in [src/renderer/index.html](C:/NodeProjects/1492-app/src/renderer/index.html) and [src/renderer/style.css](C:/NodeProjects/1492-app/src/renderer/style.css)
+- Commander snapshot/send assertions added in [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
+- package/app version bumped to `0.1.19`
+- renderer version bumped to `0.4.18`
+- `PHASE5_COMMANDER_MODE_CHECKLIST.md`, `MANAGED_MODE_ADAPTATION_PLAN.md`, and `NEXT_CHAT_HANDOFF.md` updated to mark Phase 5 closed
+
+Planning-only updates after that validated slice:
+
+- `PHASE6_ADMIN_SURFACE_CHECKLIST.md` created
+- `MANAGED_MODE_ADAPTATION_PLAN.md` updated for the Phase 6 planning target
+- `DEVELOPMENT_NOTES.md` updated to include the new active planning artifact
+- `NEXT_CHAT_HANDOFF.md` updated to point the next chat at the Phase 6 admin-surface slice
 
 Safe validation commands for the next chat:
 
@@ -181,7 +212,7 @@ Safe validation commands for the next chat:
 - Workflow file: [.github/workflows/windows-release.yml](C:/NodeProjects/1492-app/.github/workflows/windows-release.yml)
 - Release publishing was fixed earlier by building with `--publish never` in the build step
 - Latest published release from the prior chat context was `v0.1.13`
-- Current code version is `0.1.18`
+- Current code version is `0.1.19`
 - After a complete validated slice, update the online GitHub repo before stopping
 
 ## If Continuing Immediately
@@ -191,4 +222,6 @@ Treat Phase 1 as closed.
 Treat Phase 2 as closed.
 Treat Phase 3 Group B desktop-client activation as closed.
 Treat Phase 4 dual-ear routing as closed.
-If work continues immediately, start by drafting the next active checklist for Commander Mode groundwork rather than modifying the closed Phase 4 slice.
+Treat Phase 5 Commander groundwork as closed.
+Treat Phase 6 admin surface as the active next slice.
+If work continues immediately, start from the Phase 6 checklist and implement the Electron admin window and read-only inspection views.

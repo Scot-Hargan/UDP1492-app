@@ -87,6 +87,41 @@
           <p id="managedIntentStatus" class="managed-intent-status" hidden></p>
           <p id="managedPeerSyncMeta" class="managed-card-foot">No managed peer sync yet</p>
           <p id="managedRoutingStatus" class="managed-slot-copy">Managed routing: Group A left | Group B right | shared peers centered.</p>
+          <section class="managed-commander-panel" aria-label="Commander controls">
+            <div class="managed-commander-row">
+              <div>
+                <p class="managed-card-label">Mic Mode</p>
+                <p id="managedCommanderStatus" class="managed-slot-copy">Single mode sends to all active managed peers.</p>
+              </div>
+              <div class="managed-slot-target-buttons">
+                <button id="managedMicModeSingle" class="secondary is-active" type="button" aria-pressed="true">Single</button>
+                <button id="managedMicModeCommander" class="secondary" type="button" aria-pressed="false">Commander</button>
+              </div>
+            </div>
+            <div class="managed-commander-grid">
+              <section class="managed-commander-scope">
+                <p class="managed-card-label">All</p>
+                <div class="managed-commander-actions">
+                  <button id="managedMuteAllBtn" class="secondary" type="button" aria-pressed="false">Mute</button>
+                  <button id="managedPttAllBtn" class="secondary" type="button" aria-pressed="false">Hold To Talk</button>
+                </div>
+              </section>
+              <section class="managed-commander-scope">
+                <p class="managed-card-label">Group A</p>
+                <div class="managed-commander-actions">
+                  <button id="managedMuteGroupABtn" class="secondary" type="button" aria-pressed="false">Mute</button>
+                  <button id="managedPttGroupABtn" class="secondary" type="button" aria-pressed="false">Hold To Talk</button>
+                </div>
+              </section>
+              <section class="managed-commander-scope">
+                <p class="managed-card-label">Group B</p>
+                <div class="managed-commander-actions">
+                  <button id="managedMuteGroupBBtn" class="secondary" type="button" aria-pressed="false">Mute</button>
+                  <button id="managedPttGroupBBtn" class="secondary" type="button" aria-pressed="false">Hold To Talk</button>
+                </div>
+              </section>
+            </div>
+          </section>
           <div class="managed-slot-grid">
             <section class="managed-slot-summary">
               <p class="managed-card-label">Group A</p>

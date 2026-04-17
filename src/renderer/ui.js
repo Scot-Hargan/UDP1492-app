@@ -42,10 +42,10 @@ import { createStatusDashboard } from './status-dashboard.js';
 import { sanitizeManagedBaseUrl } from './managed-api.js';
 import { createManagedController } from './managed-controller.js';
 
-// ui.js v0.4.17
+// ui.js v0.4.18
 (() => {
   'use strict';
-  const VERSION = '0.4.17';
+  const VERSION = '0.4.18';
   const platform = window.udp1492;
   const testPlatform = window.udp1492Test || null;
 
@@ -78,6 +78,15 @@ import { createManagedController } from './managed-controller.js';
     LEFT: 'left',
     RIGHT: 'right',
     CENTER: 'center'
+  });
+  const MIC_MODE_IDS = Object.freeze({
+    SINGLE: 'single',
+    COMMANDER: 'commander'
+  });
+  const COMMANDER_SCOPE_IDS = Object.freeze({
+    ALL: 'all',
+    A: GROUP_SLOT_IDS.A,
+    B: GROUP_SLOT_IDS.B
   });
 
   const connectBtn = $('#connectBtn');
@@ -115,6 +124,15 @@ import { createManagedController } from './managed-controller.js';
   const managedLeaveChannelBtn = $('#managedLeaveChannelBtn');
   const managedPeerSyncMetaEl = $('#managedPeerSyncMeta');
   const managedRoutingStatusEl = $('#managedRoutingStatus');
+  const managedCommanderStatusEl = $('#managedCommanderStatus');
+  const managedMicModeSingleBtn = $('#managedMicModeSingle');
+  const managedMicModeCommanderBtn = $('#managedMicModeCommander');
+  const managedMuteAllBtn = $('#managedMuteAllBtn');
+  const managedMuteGroupABtn = $('#managedMuteGroupABtn');
+  const managedMuteGroupBBtn = $('#managedMuteGroupBBtn');
+  const managedPttAllBtn = $('#managedPttAllBtn');
+  const managedPttGroupABtn = $('#managedPttGroupABtn');
+  const managedPttGroupBBtn = $('#managedPttGroupBBtn');
   const managedErrorTextEl = $('#managedErrorText');
   const managedPasscodeLabelEl = $('#managedPasscodeLabel');
   const managedJoinPasscodeInputEl = $('#managedJoinPasscodeInput');
@@ -194,6 +212,14 @@ import { createManagedController } from './managed-controller.js';
   managedJoinPasscodeInputEl?.addEventListener('input', () => {
     setManagedJoinPasscode(getActiveManagedSlotId(), managedJoinPasscodeInputEl.value || '');
   });
+  managedMicModeSingleBtn?.addEventListener('click', () => setCommanderMicMode(MIC_MODE_IDS.SINGLE).catch(err => console.error('commander single mode error', err)));
+  managedMicModeCommanderBtn?.addEventListener('click', () => setCommanderMicMode(MIC_MODE_IDS.COMMANDER).catch(err => console.error('commander mode error', err)));
+  managedMuteAllBtn?.addEventListener('click', () => toggleCommanderMute(COMMANDER_SCOPE_IDS.ALL).catch(err => console.error('commander mute all error', err)));
+  managedMuteGroupABtn?.addEventListener('click', () => toggleCommanderMute(COMMANDER_SCOPE_IDS.A).catch(err => console.error('commander mute A error', err)));
+  managedMuteGroupBBtn?.addEventListener('click', () => toggleCommanderMute(COMMANDER_SCOPE_IDS.B).catch(err => console.error('commander mute B error', err)));
+  bindMomentaryPttButton(managedPttAllBtn, COMMANDER_SCOPE_IDS.ALL);
+  bindMomentaryPttButton(managedPttGroupABtn, COMMANDER_SCOPE_IDS.A);
+  bindMomentaryPttButton(managedPttGroupBBtn, COMMANDER_SCOPE_IDS.B);
 
   peerListEl?.addEventListener('change', () => handlePeerSelection(peerListEl.value));
   openPeerModalBtn?.addEventListener('click', () => openPeerModal(peerListEl?.value || NEW_PEER_VALUE));
@@ -267,6 +293,7 @@ import { createManagedController } from './managed-controller.js';
   let peerRoutingNodes = new Map(); // peerKey -> StereoPannerNode
   let peerMeters = new Map();     // peerKey -> <progress> element
   let peerMuteStates = new Map(); // peerKey -> boolean muted
+  let commanderHoldState = createDefaultCommanderHoldState();
   let masterGain = null;
   let ac, micStream , micSource, workletNode;
   let samplesPerFrame = 960;
@@ -282,6 +309,30 @@ import { createManagedController } from './managed-controller.js';
 
   function sanitizeOperatingMode(mode) {
     return mode === OPERATING_MODES.MANAGED ? OPERATING_MODES.MANAGED : OPERATING_MODES.DIRECT;
+  }
+  function bindMomentaryPttButton(button, scopeId) {
+    if (!button) return;
+    const setActive = (active) => {
+      setCommanderHoldScope(scopeId, active);
+      renderManagedShell();
+    };
+    button.addEventListener('pointerdown', () => setActive(true));
+    button.addEventListener('pointerup', () => setActive(false));
+    button.addEventListener('pointerleave', () => setActive(false));
+    button.addEventListener('pointercancel', () => setActive(false));
+    button.addEventListener('blur', () => setActive(false));
+    button.addEventListener('keydown', (event) => {
+      if (event.key === ' ' || event.key === 'Enter') {
+        event.preventDefault();
+        setActive(true);
+      }
+    });
+    button.addEventListener('keyup', (event) => {
+      if (event.key === ' ' || event.key === 'Enter') {
+        event.preventDefault();
+        setActive(false);
+      }
+    });
   }
   function sanitizeManagedSlotId(slotId) {
     if (slotId === GROUP_SLOT_IDS.B || slotId === 'group-b') return GROUP_SLOT_IDS.B;
@@ -361,6 +412,37 @@ import { createManagedController } from './managed-controller.js';
       errorMessage: typeof seed.errorMessage === 'string' ? seed.errorMessage : ''
     };
   }
+  function sanitizeMicMode(value) {
+    return value === MIC_MODE_IDS.COMMANDER ? MIC_MODE_IDS.COMMANDER : MIC_MODE_IDS.SINGLE;
+  }
+  function createDefaultCommanderMuteState(seed = {}) {
+    return {
+      allMuted: !!seed?.allMuted,
+      slotA: !!seed?.slotA,
+      slotB: !!seed?.slotB
+    };
+  }
+  function createDefaultCommanderPttBindings(seed = {}) {
+    return {
+      all: typeof seed?.all === 'string' ? seed.all : null,
+      slotA: typeof seed?.slotA === 'string' ? seed.slotA : null,
+      slotB: typeof seed?.slotB === 'string' ? seed.slotB : null
+    };
+  }
+  function createDefaultCommanderPreferences(seed = {}) {
+    return {
+      micMode: sanitizeMicMode(seed?.micMode),
+      muteState: createDefaultCommanderMuteState(seed?.muteState),
+      pttBindings: createDefaultCommanderPttBindings(seed?.pttBindings)
+    };
+  }
+  function createDefaultCommanderHoldState(seed = {}) {
+    return {
+      all: !!seed?.all,
+      A: !!seed?.A,
+      B: !!seed?.B
+    };
+  }
   function createDefaultAppStateV2(seed = {}) {
     const direct = seed.direct && typeof seed.direct === 'object' ? seed.direct : {};
     const managed = seed.managed && typeof seed.managed === 'object' ? seed.managed : {};
@@ -374,6 +456,7 @@ import { createManagedController } from './managed-controller.js';
     return {
       version: 2,
       operatingMode: sanitizeOperatingMode(seed.operatingMode),
+      preferences: createDefaultCommanderPreferences(seed.preferences),
       direct: {
         activePeerKeys: dedupePeerKeys(direct.activePeerKeys)
       },
@@ -408,6 +491,7 @@ import { createManagedController } from './managed-controller.js';
     return {
       version: 2,
       operatingMode: sanitizeOperatingMode(source?.operatingMode),
+      preferences: createDefaultCommanderPreferences(source?.preferences),
       direct: {
         activePeerKeys: dedupePeerKeys(source?.direct?.activePeerKeys)
       },
@@ -441,6 +525,39 @@ import { createManagedController } from './managed-controller.js';
   }
   function getManagedSession() {
     return appState?.managed?.session || createDefaultAppStateV2().managed.session;
+  }
+  function getCommanderPreferences() {
+    if (!appState?.preferences || typeof appState.preferences !== 'object') {
+      appState.preferences = createDefaultCommanderPreferences();
+    }
+    return appState.preferences;
+  }
+  function getCommanderMicMode() {
+    return sanitizeMicMode(getCommanderPreferences().micMode);
+  }
+  function getCommanderMuteState() {
+    return createDefaultCommanderMuteState(getCommanderPreferences().muteState);
+  }
+  function setCommanderMuteState(nextState = {}) {
+    getCommanderPreferences().muteState = createDefaultCommanderMuteState(nextState);
+    return getCommanderPreferences().muteState;
+  }
+  function isCommanderScopeMuted(scopeId) {
+    const muteState = getCommanderMuteState();
+    if (scopeId === COMMANDER_SCOPE_IDS.ALL) return muteState.allMuted;
+    if (scopeId === COMMANDER_SCOPE_IDS.A) return muteState.slotA;
+    if (scopeId === COMMANDER_SCOPE_IDS.B) return muteState.slotB;
+    return false;
+  }
+  function setCommanderHoldScope(scopeId, active) {
+    if (scopeId === COMMANDER_SCOPE_IDS.ALL) commanderHoldState.all = !!active;
+    if (scopeId === COMMANDER_SCOPE_IDS.A) commanderHoldState.A = !!active;
+    if (scopeId === COMMANDER_SCOPE_IDS.B) commanderHoldState.B = !!active;
+    return commanderHoldState;
+  }
+  function clearCommanderHoldState() {
+    commanderHoldState = createDefaultCommanderHoldState();
+    return commanderHoldState;
   }
   function getManagedSlotIds() {
     return [...MANAGED_SLOT_ORDER];
@@ -641,6 +758,58 @@ import { createManagedController } from './managed-controller.js';
       })
       .sort((left, right) => left.peerKey.localeCompare(right.peerKey));
   }
+  function getCommanderScopeLabel(scopeId) {
+    if (scopeId === COMMANDER_SCOPE_IDS.ALL) return 'All';
+    if (scopeId === COMMANDER_SCOPE_IDS.A) return 'Group A';
+    if (scopeId === COMMANDER_SCOPE_IDS.B) return 'Group B';
+    return 'Unknown';
+  }
+  function getCommanderScopeTargetKeys(scopeId, mode = getOperatingMode()) {
+    const targetMode = sanitizeOperatingMode(mode);
+    if (scopeId === COMMANDER_SCOPE_IDS.ALL) {
+      return dedupePeerKeys(getTransportPeersForMode(targetMode).map((peer) => getPeerKey(peer)).filter(Boolean));
+    }
+    if (targetMode !== OPERATING_MODES.MANAGED) return [];
+    const slotId = sanitizeManagedSlotId(scopeId);
+    return dedupePeerKeys(getManagedSlotTransportPeers(slotId).map((peer) => getPeerKey(peer)).filter(Boolean));
+  }
+  function getCommanderActiveTargetKeys(mode = getOperatingMode()) {
+    const targetMode = sanitizeOperatingMode(mode);
+    if (targetMode !== OPERATING_MODES.MANAGED) return [];
+    if (isCommanderScopeMuted(COMMANDER_SCOPE_IDS.ALL)) return [];
+    if (getCommanderMicMode() === MIC_MODE_IDS.SINGLE) {
+      return getCommanderScopeTargetKeys(COMMANDER_SCOPE_IDS.ALL, targetMode);
+    }
+    const keys = [];
+    if (commanderHoldState.all) keys.push(...getCommanderScopeTargetKeys(COMMANDER_SCOPE_IDS.ALL, targetMode));
+    if (commanderHoldState.A && !isCommanderScopeMuted(COMMANDER_SCOPE_IDS.A)) keys.push(...getCommanderScopeTargetKeys(COMMANDER_SCOPE_IDS.A, targetMode));
+    if (commanderHoldState.B && !isCommanderScopeMuted(COMMANDER_SCOPE_IDS.B)) keys.push(...getCommanderScopeTargetKeys(COMMANDER_SCOPE_IDS.B, targetMode));
+    return dedupePeerKeys(keys);
+  }
+  function getCommanderSnapshot(mode = getOperatingMode()) {
+    const targetMode = sanitizeOperatingMode(mode);
+    const muteState = getCommanderMuteState();
+    return {
+      mode: targetMode,
+      micMode: getCommanderMicMode(),
+      muteState: {
+        allMuted: !!muteState.allMuted,
+        slotA: !!muteState.slotA,
+        slotB: !!muteState.slotB
+      },
+      holdState: {
+        all: !!commanderHoldState.all,
+        slotA: !!commanderHoldState.A,
+        slotB: !!commanderHoldState.B
+      },
+      targets: {
+        all: getCommanderScopeTargetKeys(COMMANDER_SCOPE_IDS.ALL, targetMode),
+        slotA: getCommanderScopeTargetKeys(COMMANDER_SCOPE_IDS.A, targetMode),
+        slotB: getCommanderScopeTargetKeys(COMMANDER_SCOPE_IDS.B, targetMode),
+        active: getCommanderActiveTargetKeys(targetMode)
+      }
+    };
+  }
   function pickManagedEndpoint(peer) {
     const endpoints = Array.isArray(peer?.endpoints) ? peer.endpoints : [];
     const readyEndpoints = endpoints.filter((endpoint) => endpoint?.ip && Number.isFinite(Number(endpoint?.port)) && endpoint.registrationState !== 'invalid');
@@ -703,6 +872,29 @@ import { createManagedController } from './managed-controller.js';
       payload[MANAGED_CACHE_STORAGE_KEY] = managedCache;
     }
     await storage.set(payload);
+  }
+  async function setCommanderMicMode(nextMode, options = {}) {
+    getCommanderPreferences().micMode = sanitizeMicMode(nextMode);
+    clearCommanderHoldState();
+    renderManagedShell();
+    if (options.persist !== false) {
+      await persistAppState({ includeLegacyLastPeers: true });
+    }
+  }
+  async function toggleCommanderMute(scopeId, options = {}) {
+    const muteState = getCommanderMuteState();
+    if (scopeId === COMMANDER_SCOPE_IDS.ALL) {
+      muteState.allMuted = !muteState.allMuted;
+    } else if (scopeId === COMMANDER_SCOPE_IDS.A) {
+      muteState.slotA = !muteState.slotA;
+    } else if (scopeId === COMMANDER_SCOPE_IDS.B) {
+      muteState.slotB = !muteState.slotB;
+    }
+    setCommanderMuteState(muteState);
+    renderManagedShell();
+    if (options.persist !== false) {
+      await persistAppState({ includeLegacyLastPeers: true });
+    }
   }
   const managedController = createManagedController({
     platform,
@@ -868,6 +1060,36 @@ import { createManagedController } from './managed-controller.js';
       passcodeRequired: channelRequiresPasscode(selectedChannel) || channelRequiresPasscode(joinedChannel)
     };
   }
+  function getCommanderStatusText() {
+    if (getOperatingMode() !== OPERATING_MODES.MANAGED) {
+      return 'Commander controls are idle while direct mode is active.';
+    }
+    const activeTargetKeys = getCommanderActiveTargetKeys();
+    if (getCommanderMicMode() === MIC_MODE_IDS.SINGLE) {
+      if (isCommanderScopeMuted(COMMANDER_SCOPE_IDS.ALL)) {
+        return 'Single mode is muted for all managed peers.';
+      }
+      return activeTargetKeys.length
+        ? `Single mode sends to ${activeTargetKeys.length} active managed peer(s).`
+        : 'Single mode is ready, but no managed peers are active yet.';
+    }
+    const heldScopes = [
+      commanderHoldState.all ? getCommanderScopeLabel(COMMANDER_SCOPE_IDS.ALL) : '',
+      commanderHoldState.A ? getCommanderScopeLabel(COMMANDER_SCOPE_IDS.A) : '',
+      commanderHoldState.B ? getCommanderScopeLabel(COMMANDER_SCOPE_IDS.B) : ''
+    ].filter(Boolean);
+    if (!heldScopes.length) {
+      return 'Commander mode is armed. Hold All, Group A, or Group B to transmit.';
+    }
+    return `${heldScopes.join(' + ')} active | ${activeTargetKeys.length} deduped peer target(s).`;
+  }
+  function renderCommanderButtonState(button, { pressed = false, held = false, text = '' } = {}) {
+    if (!button) return;
+    if (text) button.textContent = text;
+    button.classList.toggle('is-active', !!pressed);
+    button.classList.toggle('is-held', !!held);
+    button.setAttribute('aria-pressed', String(!!pressed));
+  }
   function renderManagedSlotSummary(elements, viewModel, isActiveSlot) {
     if (elements.title) elements.title.textContent = viewModel.title;
     if (elements.status) elements.status.textContent = `${viewModel.statusText}${isActiveSlot ? ' | active slot' : ''}`;
@@ -965,6 +1187,50 @@ import { createManagedController } from './managed-controller.js';
       managedRoutingStatusEl.hidden = operatingMode !== OPERATING_MODES.MANAGED;
       managedRoutingStatusEl.textContent = getManagedRoutingSummary();
     }
+    if (managedCommanderStatusEl) {
+      managedCommanderStatusEl.textContent = getCommanderStatusText();
+    }
+    renderCommanderButtonState(managedMicModeSingleBtn, {
+      pressed: getCommanderMicMode() === MIC_MODE_IDS.SINGLE,
+      text: 'Single'
+    });
+    renderCommanderButtonState(managedMicModeCommanderBtn, {
+      pressed: getCommanderMicMode() === MIC_MODE_IDS.COMMANDER,
+      text: 'Commander'
+    });
+    renderCommanderButtonState(managedMuteAllBtn, {
+      pressed: isCommanderScopeMuted(COMMANDER_SCOPE_IDS.ALL),
+      text: isCommanderScopeMuted(COMMANDER_SCOPE_IDS.ALL) ? 'Muted' : 'Mute'
+    });
+    renderCommanderButtonState(managedMuteGroupABtn, {
+      pressed: isCommanderScopeMuted(COMMANDER_SCOPE_IDS.A),
+      text: isCommanderScopeMuted(COMMANDER_SCOPE_IDS.A) ? 'Muted' : 'Mute'
+    });
+    renderCommanderButtonState(managedMuteGroupBBtn, {
+      pressed: isCommanderScopeMuted(COMMANDER_SCOPE_IDS.B),
+      text: isCommanderScopeMuted(COMMANDER_SCOPE_IDS.B) ? 'Muted' : 'Mute'
+    });
+    renderCommanderButtonState(managedPttAllBtn, {
+      pressed: !!commanderHoldState.all,
+      held: !!commanderHoldState.all,
+      text: commanderHoldState.all ? 'Talking' : 'Hold To Talk'
+    });
+    renderCommanderButtonState(managedPttGroupABtn, {
+      pressed: !!commanderHoldState.A,
+      held: !!commanderHoldState.A,
+      text: commanderHoldState.A ? 'Talking' : 'Hold To Talk'
+    });
+    renderCommanderButtonState(managedPttGroupBBtn, {
+      pressed: !!commanderHoldState.B,
+      held: !!commanderHoldState.B,
+      text: commanderHoldState.B ? 'Talking' : 'Hold To Talk'
+    });
+    const commanderModeEnabled = getCommanderMicMode() === MIC_MODE_IDS.COMMANDER;
+    if (managedMuteGroupABtn) managedMuteGroupABtn.disabled = !commanderModeEnabled;
+    if (managedMuteGroupBBtn) managedMuteGroupBBtn.disabled = !commanderModeEnabled;
+    if (managedPttAllBtn) managedPttAllBtn.disabled = !commanderModeEnabled;
+    if (managedPttGroupABtn) managedPttGroupABtn.disabled = !commanderModeEnabled;
+    if (managedPttGroupBBtn) managedPttGroupBBtn.disabled = !commanderModeEnabled;
     renderManagedSlotSummary({
       title: managedGroupATitleEl,
       status: managedGroupAStatusEl,
@@ -1137,6 +1403,7 @@ import { createManagedController } from './managed-controller.js';
     refreshPeerSelects(peerListEl?.value || NEW_PEER_VALUE, peerModalSelectEl?.value || NEW_PEER_VALUE);
     refreshPeerConnectionState();
     updateStatusDashboard();
+    renderManagedShell();
     if (options.sendHostUpdate && nativeHost) {
       await hostSend(buildHostConfigurePayload(mode));
     }
@@ -1145,6 +1412,7 @@ import { createManagedController } from './managed-controller.js';
     const previousMode = getOperatingMode();
     const mode = sanitizeOperatingMode(nextMode);
     const changed = mode !== previousMode;
+    if (changed) clearCommanderHoldState();
     if (changed && previousMode === OPERATING_MODES.MANAGED) {
       await leaveManagedChannel({ preserveSession: true });
     }
@@ -1530,6 +1798,24 @@ import { createManagedController } from './managed-controller.js';
       return false;
     }
   }
+  async function dispatchOutgoingAudio(config) {
+    if (!config || config.type !== 'sendData') return false;
+    const operatingMode = getOperatingMode();
+    if (operatingMode !== OPERATING_MODES.MANAGED) {
+      return hostSend(config);
+    }
+    if (getCommanderMicMode() === MIC_MODE_IDS.SINGLE) {
+      if (isCommanderScopeMuted(COMMANDER_SCOPE_IDS.ALL)) return false;
+      return hostSend(config);
+    }
+    const targetKeys = getCommanderActiveTargetKeys(operatingMode);
+    if (!targetKeys.length) return false;
+    let sentAny = false;
+    for (const peerKey of targetKeys) {
+      sentAny = (await hostSend({ ...config, destination: peerKey })) || sentAny;
+    }
+    return sentAny;
+  }
 
   async function startAudioCapture() {
     if (testPlatform?.flags?.skipAudioCapture) {
@@ -1574,7 +1860,7 @@ import { createManagedController } from './managed-controller.js';
               timestamp: Math.trunc(chunk.timestamp ?? performance.now() * 1000) // microseconds
             }
             if (dataType == TYPE_AUDIO_PCM) config.doGzip = true;
-            hostSend(config);
+            dispatchOutgoingAudio(config);
           },
           error: (e) => console.error('Encoder error:', e)
         });
@@ -1624,7 +1910,7 @@ import { createManagedController } from './managed-controller.js';
               encoded = new Uint8Array(i16.buffer.slice(i16.byteOffset, i16.byteOffset + i16.byteLength));
             }
             const payload = useHeader ? packPayloadWithHeader(encoded, timestampUs, durationUs) : encoded;
-            hostSend({
+            dispatchOutgoingAudio({
               type: 'sendData',
               dataType,
               data: base64FromUint8(payload),
@@ -1696,6 +1982,7 @@ import { createManagedController } from './managed-controller.js';
     try { ac?.close(); } catch {}
     micStream?.getTracks()?.forEach(t => t.stop());
     workletNode = micSource = micStream = ac = null;
+    clearCommanderHoldState();
     peerPlaybackTimes.clear();
     decoders.forEach(d => { try { d.close(); } catch {} });
     decoders.clear();
@@ -2057,7 +2344,11 @@ import { createManagedController } from './managed-controller.js';
       || !!storedAppState?.managed?.session
       || Array.isArray(storedAppState?.managed?.transportPeers)
       || typeof storedAppState?.managed?.shell?.selectedChannelId === 'string'
-      || !storedAppState?.managed?.slots;
+      || !storedAppState?.managed?.slots
+      || !storedAppState?.preferences
+      || typeof storedAppState?.preferences !== 'object'
+      || !storedAppState?.preferences?.muteState
+      || !storedAppState?.preferences?.pttBindings;
     appState = hasStoredAppState
       ? createDefaultAppStateV2(storedAppState)
       : synthesizeAppStateV2({
@@ -2430,6 +2721,17 @@ import { createManagedController } from './managed-controller.js';
     if (!testPlatform || typeof window === 'undefined') return;
     window.udp1492RouteDebug = {
       getSnapshot: () => structuredClone(getAudioRoutingSnapshot())
+    };
+    window.udp1492CommanderDebug = {
+      getSnapshot: () => structuredClone(getCommanderSnapshot()),
+      sendTestFrame: () => dispatchOutgoingAudio({
+        type: 'sendData',
+        dataType: TYPE_AUDIO_PCM,
+        data: base64FromUint8(new Uint8Array([1, 2, 3, 4])),
+        isBase64: true,
+        doStats: false,
+        timestamp: Math.trunc(performance.now() * 1000)
+      })
     };
   }
 

@@ -48,6 +48,14 @@ async function getAudioRoutingSnapshot(page) {
   return page.evaluate(() => window.udp1492RouteDebug?.getSnapshot?.() || []);
 }
 
+async function getCommanderSnapshot(page) {
+  return page.evaluate(() => window.udp1492CommanderDebug?.getSnapshot?.() || null);
+}
+
+async function sendCommanderTestFrame(page) {
+  return page.evaluate(() => window.udp1492CommanderDebug?.sendTestFrame?.());
+}
+
 async function installManagedApiRoutes(page, options = {}) {
   const baseUrl = options.baseUrl || 'https://managed.example.test';
   const apiBaseUrl = buildManagedApiUrl(baseUrl, '/api');
@@ -249,6 +257,19 @@ test('launches with default persisted settings', async ({ appHarness }) => {
   expect(storage.udp1492_app_state_v2).toMatchObject({
     version: 2,
     operatingMode: 'direct',
+    preferences: {
+      micMode: 'single',
+      muteState: {
+        allMuted: false,
+        slotA: false,
+        slotB: false
+      },
+      pttBindings: {
+        all: null,
+        slotA: null,
+        slotB: null
+      }
+    },
     direct: { activePeerKeys: [] }
   });
   expect(storage.udp1492_managed_profile).toMatchObject({ version: 1 });
@@ -357,6 +378,9 @@ test.describe('peer fixture', () => {
     expect(migratedStorage.udp1492_app_state_v2).toMatchObject({
       version: 2,
       operatingMode: 'direct',
+      preferences: {
+        micMode: 'single'
+      },
       direct: { activePeerKeys: ['203.0.113.10:1492'] }
     });
 
@@ -369,6 +393,9 @@ test.describe('peer fixture', () => {
     expect(updatedStorage.udp1492_app_state_v2).toMatchObject({
       version: 2,
       operatingMode: 'managed',
+      preferences: {
+        micMode: 'single'
+      },
       direct: { activePeerKeys: ['203.0.113.10:1492'] }
     });
   });
@@ -891,6 +918,254 @@ test.describe('peer fixture', () => {
           && message.peers.some((peer) => peer.name === 'Peer One')
           && message.peers.some((peer) => peer.name === 'Peer Two'));
     }).toBe(true);
+  });
+
+  test('computes Commander targets for single mode, Group A, Group B, and shared overlap without duplicate sends', async ({ appHarness }) => {
+    const { page, getSentHostMessages, readStorage } = appHarness;
+    const { baseUrl } = await installManagedApiRoutes(page, {
+      channelsResponse: {
+        channels: [
+          {
+            channelId: 'chn_alpha',
+            name: 'Alpha',
+            description: 'Primary coordination channel',
+            securityMode: 'open',
+            requiresPasscode: false,
+            concurrentAccessAllowed: true,
+            memberCount: 4
+          },
+          {
+            channelId: 'chn_bravo',
+            name: 'Bravo',
+            description: 'Secondary coordination channel',
+            securityMode: 'open',
+            requiresPasscode: false,
+            concurrentAccessAllowed: true,
+            memberCount: 2
+          }
+        ],
+        syncedAt: '2026-04-16T19:21:00Z'
+      },
+      joinResponses: {
+        chn_alpha: {
+          membership: {
+            channelId: 'chn_alpha',
+            slotId: 'A',
+            membershipState: 'joined',
+            joinedAt: '2026-04-16T19:22:00Z'
+          },
+          channel: {
+            channelId: 'chn_alpha',
+            name: 'Alpha',
+            description: 'Primary coordination channel',
+            securityMode: 'open',
+            requiresPasscode: false,
+            concurrentAccessAllowed: true,
+            memberCount: 4
+          }
+        },
+        chn_bravo: {
+          membership: {
+            channelId: 'chn_bravo',
+            slotId: 'B',
+            membershipState: 'joined',
+            joinedAt: '2026-04-16T19:23:00Z'
+          },
+          channel: {
+            channelId: 'chn_bravo',
+            name: 'Bravo',
+            description: 'Secondary coordination channel',
+            securityMode: 'open',
+            requiresPasscode: false,
+            concurrentAccessAllowed: true,
+            memberCount: 2
+          }
+        }
+      },
+      peersResponses: {
+        chn_alpha: {
+          channelId: 'chn_alpha',
+          peers: [
+            {
+              userId: 'usr_peer_01',
+              sessionId: 'ses_peer_01',
+              channelId: 'chn_alpha',
+              displayName: 'Peer Alpha',
+              connectionState: 'idle',
+              endpoints: [
+                {
+                  endpointId: 'end_01',
+                  kind: 'public',
+                  ip: '198.51.100.10',
+                  port: 1492,
+                  registrationState: 'ready',
+                  lastValidatedAt: '2026-04-16T19:25:00Z'
+                }
+              ]
+            },
+            {
+              userId: 'usr_peer_shared',
+              sessionId: 'ses_peer_shared',
+              channelId: 'chn_alpha',
+              displayName: 'Peer Shared',
+              connectionState: 'idle',
+              endpoints: [
+                {
+                  endpointId: 'end_shared_01',
+                  kind: 'public',
+                  ip: '198.51.100.12',
+                  port: 1492,
+                  registrationState: 'ready',
+                  lastValidatedAt: '2026-04-16T19:25:30Z'
+                }
+              ]
+            }
+          ],
+          resolvedAt: '2026-04-16T19:25:05Z'
+        },
+        chn_bravo: {
+          channelId: 'chn_bravo',
+          peers: [
+            {
+              userId: 'usr_peer_02',
+              sessionId: 'ses_peer_02',
+              channelId: 'chn_bravo',
+              displayName: 'Peer Bravo',
+              connectionState: 'idle',
+              endpoints: [
+                {
+                  endpointId: 'end_02',
+                  kind: 'public',
+                  ip: '198.51.100.11',
+                  port: 1492,
+                  registrationState: 'ready',
+                  lastValidatedAt: '2026-04-16T19:26:00Z'
+                }
+              ]
+            },
+            {
+              userId: 'usr_peer_shared',
+              sessionId: 'ses_peer_shared_b',
+              channelId: 'chn_bravo',
+              displayName: 'Peer Shared Bravo',
+              connectionState: 'idle',
+              endpoints: [
+                {
+                  endpointId: 'end_shared_02',
+                  kind: 'public',
+                  ip: '198.51.100.12',
+                  port: 1492,
+                  registrationState: 'ready',
+                  lastValidatedAt: '2026-04-16T19:26:30Z'
+                }
+              ]
+            }
+          ],
+          resolvedAt: '2026-04-16T19:26:05Z'
+        }
+      }
+    });
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+    await page.locator('#managedChannelList li').filter({ hasText: 'Alpha' }).getByRole('button', { name: 'Join Selected' }).click();
+    await page.locator('#managedSelectGroupB').click();
+    await page.locator('#managedChannelList li').filter({ hasText: 'Bravo' }).getByRole('button', { name: 'Join' }).click();
+
+    await expect.poll(async () => getCommanderSnapshot(page)).toMatchObject({
+      mode: 'managed',
+      micMode: 'single',
+      muteState: {
+        allMuted: false,
+        slotA: false,
+        slotB: false
+      },
+      targets: {
+        all: ['198.51.100.10:1492', '198.51.100.12:1492', '198.51.100.11:1492'],
+        slotA: ['198.51.100.10:1492', '198.51.100.12:1492'],
+        slotB: ['198.51.100.11:1492', '198.51.100.12:1492'],
+        active: ['198.51.100.10:1492', '198.51.100.12:1492', '198.51.100.11:1492']
+      }
+    });
+
+    await page.locator('#managedMuteAllBtn').click();
+    await expect.poll(async () => getCommanderSnapshot(page)).toMatchObject({
+      micMode: 'single',
+      muteState: {
+        allMuted: true
+      },
+      targets: {
+        active: []
+      }
+    });
+
+    await expect.poll(async () => {
+      const storage = await readStorage();
+      return storage.udp1492_app_state_v2.preferences;
+    }).toMatchObject({
+      micMode: 'single',
+      muteState: {
+        allMuted: true,
+        slotA: false,
+        slotB: false
+      }
+    });
+
+    await page.locator('#managedMuteAllBtn').click();
+    await sendCommanderTestFrame(page);
+    await expect.poll(async () => {
+      const sendMessages = (await getSentHostMessages()).filter((message) => message.type === 'sendData');
+      return sendMessages.at(-1)?.destination ?? 'all';
+    }).toBe('all');
+
+    await page.locator('#managedMicModeCommander').click();
+    await expect.poll(async () => getCommanderSnapshot(page)).toMatchObject({
+      micMode: 'commander',
+      targets: {
+        active: []
+      }
+    });
+
+    await page.locator('#managedPttGroupABtn').dispatchEvent('pointerdown');
+    await expect.poll(async () => getCommanderSnapshot(page)).toMatchObject({
+      micMode: 'commander',
+      holdState: {
+        slotA: true,
+        slotB: false,
+        all: false
+      },
+      targets: {
+        active: ['198.51.100.10:1492', '198.51.100.12:1492']
+      }
+    });
+    await sendCommanderTestFrame(page);
+    await expect.poll(async () => {
+      const sendMessages = (await getSentHostMessages()).filter((message) => message.type === 'sendData');
+      return sendMessages.slice(-2).map((message) => message.destination).sort();
+    }).toEqual(['198.51.100.10:1492', '198.51.100.12:1492']);
+    await page.locator('#managedPttGroupABtn').dispatchEvent('pointerup');
+
+    await page.locator('#managedPttGroupABtn').dispatchEvent('pointerdown');
+    await page.locator('#managedPttGroupBBtn').dispatchEvent('pointerdown');
+    await expect.poll(async () => getCommanderSnapshot(page)).toMatchObject({
+      micMode: 'commander',
+      holdState: {
+        slotA: true,
+        slotB: true
+      },
+      targets: {
+        active: ['198.51.100.10:1492', '198.51.100.12:1492', '198.51.100.11:1492']
+      }
+    });
+    await sendCommanderTestFrame(page);
+    await expect.poll(async () => {
+      const sendMessages = (await getSentHostMessages()).filter((message) => message.type === 'sendData');
+      return sendMessages.slice(-3).map((message) => message.destination).sort();
+    }).toEqual(['198.51.100.10:1492', '198.51.100.11:1492', '198.51.100.12:1492']);
+    await page.locator('#managedPttGroupABtn').dispatchEvent('pointerup');
+    await page.locator('#managedPttGroupBBtn').dispatchEvent('pointerup');
   });
 
   test('leaving Group B preserves an active Group A membership and its peers', async ({ appHarness }) => {
@@ -1839,6 +2114,14 @@ test.describe('managed legacy state migration', () => {
     }).toMatchObject({
       version: 2,
       operatingMode: 'managed',
+      preferences: {
+        micMode: 'single',
+        muteState: {
+          allMuted: false,
+          slotA: false,
+          slotB: false
+        }
+      },
       direct: {
         activePeerKeys: []
       },

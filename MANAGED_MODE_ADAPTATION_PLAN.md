@@ -300,6 +300,33 @@ That work is captured in `PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md` and now includes
 
 The next product phase should therefore move to Commander Mode groundwork. Admin surface and NAT work should remain follow-on phases after that.
 
+### Current Phase 5 client status
+
+The Commander groundwork milestone is now complete on the desktop side.
+
+That work is captured in `PHASE5_COMMANDER_MODE_CHECKLIST.md` and now includes:
+
+- persisted Commander preference scaffolding for `micMode`, `muteState`, and placeholder `pttBindings`
+- renderer-owned transmit-target computation keyed by slot ownership and transport endpoint
+- managed-shell Commander controls for `single` vs `commander` transmit behavior
+- subset send behavior in Commander mode without a host-protocol redesign
+- Playwright validation built around Commander-state snapshots and synthetic send hooks instead of live microphone capture
+
+The next product phase should therefore move to the admin surface milestone. NAT work should remain a follow-on phase after that.
+
+### Current Phase 6 planning target
+
+The next active desktop-client planning target is the admin surface milestone.
+
+That work is now captured in `PHASE6_ADMIN_SURFACE_CHECKLIST.md` with:
+
+- finish-line criteria
+- locked decisions
+- Electron window/shell assumptions for a separate admin surface
+- a validation strategy centered on read-only windowed inspection rather than mutation workflows
+
+NAT work should remain out of scope until the first admin/observability milestone is closed.
+
 ## Renderer State Model Adaptation
 
 The same `AppStateV2` model should be used in the Electron renderer, with one project-specific note:
