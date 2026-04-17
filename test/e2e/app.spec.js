@@ -44,6 +44,10 @@ function buildManagedApiUrl(baseUrl, pathname = '') {
   return url.toString().replace(/\/+$/, '');
 }
 
+async function getAudioRoutingSnapshot(page) {
+  return page.evaluate(() => window.udp1492RouteDebug?.getSnapshot?.() || []);
+}
+
 async function installManagedApiRoutes(page, options = {}) {
   const baseUrl = options.baseUrl || 'https://managed.example.test';
   const apiBaseUrl = buildManagedApiUrl(baseUrl, '/api');
@@ -422,6 +426,14 @@ test.describe('peer fixture', () => {
     await expect(page.locator('#managedGroupAStatus')).toContainText('joined');
     await expect(page.locator('#managedPeerSyncMeta')).toContainText('1 transport peer');
     await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+    await expect.poll(async () => getAudioRoutingSnapshot(page)).toEqual([
+      expect.objectContaining({
+        peerKey: '198.51.100.10:1492',
+        owningSlots: ['A'],
+        route: 'left',
+        routeLabel: 'Left ear'
+      })
+    ]);
 
     await expect.poll(async () => {
       const messages = await getSentHostMessages();
@@ -589,6 +601,14 @@ test.describe('peer fixture', () => {
     await expect(page.locator('#managedGroupAStatus')).toContainText('No active managed membership');
     await expect(page.locator('#managedGroupBTitle')).toHaveText('Alpha');
     await expect(page.locator('#managedGroupBStatus')).toContainText('joined');
+    await expect.poll(async () => getAudioRoutingSnapshot(page)).toEqual([
+      expect.objectContaining({
+        peerKey: '198.51.100.10:1492',
+        owningSlots: ['B'],
+        route: 'right',
+        routeLabel: 'Right ear'
+      })
+    ]);
     expect(joinRequests).toHaveLength(1);
     expect(joinRequests[0]).toMatchObject({
       channelId: 'chn_alpha',
@@ -848,6 +868,20 @@ test.describe('peer fixture', () => {
     await expect(page.locator('#managedGroupBStatus')).toContainText('joined');
     await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
     await expect(page.locator('#networkTable tbody')).toContainText('Peer Two');
+    await expect.poll(async () => getAudioRoutingSnapshot(page)).toEqual([
+      expect.objectContaining({
+        peerKey: '198.51.100.10:1492',
+        owningSlots: ['A'],
+        route: 'left',
+        routeLabel: 'Left ear'
+      }),
+      expect.objectContaining({
+        peerKey: '198.51.100.11:1492',
+        owningSlots: ['B'],
+        route: 'right',
+        routeLabel: 'Right ear'
+      })
+    ]);
 
     await expect.poll(async () => {
       const messages = await getSentHostMessages();
@@ -1149,6 +1183,20 @@ test.describe('peer fixture', () => {
     await expect(page.locator('#managedGroupBStatus')).toContainText('joined');
     await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
     await expect(page.locator('#networkTable tbody')).toContainText('Peer Two');
+    await expect.poll(async () => getAudioRoutingSnapshot(page)).toEqual([
+      expect.objectContaining({
+        peerKey: '198.51.100.10:1492',
+        owningSlots: ['A'],
+        route: 'left',
+        routeLabel: 'Left ear'
+      }),
+      expect.objectContaining({
+        peerKey: '198.51.100.11:1492',
+        owningSlots: ['B'],
+        route: 'right',
+        routeLabel: 'Right ear'
+      })
+    ]);
   });
 
   test('dedupes overlapping endpoints across Group A and Group B and keeps the shared peer until both slots release it', async ({ appHarness }) => {
@@ -1273,6 +1321,14 @@ test.describe('peer fixture', () => {
 
     await expect(page.locator('#networkTable tbody')).toContainText('Peer Shared Alpha');
     await expect(page.locator('#networkTable tbody')).not.toContainText('Peer Shared Bravo');
+    await expect.poll(async () => getAudioRoutingSnapshot(page)).toEqual([
+      expect.objectContaining({
+        peerKey: '198.51.100.10:1492',
+        owningSlots: ['A', 'B'],
+        route: 'center',
+        routeLabel: 'Both ears'
+      })
+    ]);
 
     await expect.poll(async () => {
       const messages = await getSentHostMessages();
@@ -1283,6 +1339,14 @@ test.describe('peer fixture', () => {
 
     await page.locator('#managedLeaveChannelBtn').click();
     await expect(page.locator('#networkTable tbody')).toContainText('Peer Shared Alpha');
+    await expect.poll(async () => getAudioRoutingSnapshot(page)).toEqual([
+      expect.objectContaining({
+        peerKey: '198.51.100.10:1492',
+        owningSlots: ['A'],
+        route: 'left',
+        routeLabel: 'Left ear'
+      })
+    ]);
 
     await expect.poll(async () => {
       const messages = await getSentHostMessages();
@@ -1294,6 +1358,7 @@ test.describe('peer fixture', () => {
     await page.locator('#managedSelectGroupA').click();
     await page.locator('#managedLeaveChannelBtn').click();
     await expect(page.locator('#networkTable tbody')).not.toContainText('Peer Shared Alpha');
+    await expect.poll(async () => getAudioRoutingSnapshot(page)).toEqual([]);
 
     await expect.poll(async () => {
       const messages = await getSentHostMessages();

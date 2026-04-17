@@ -42,10 +42,10 @@ import { createStatusDashboard } from './status-dashboard.js';
 import { sanitizeManagedBaseUrl } from './managed-api.js';
 import { createManagedController } from './managed-controller.js';
 
-// ui.js v0.4.16
+// ui.js v0.4.17
 (() => {
   'use strict';
-  const VERSION = '0.4.16';
+  const VERSION = '0.4.17';
   const platform = window.udp1492;
   const testPlatform = window.udp1492Test || null;
 
@@ -74,6 +74,11 @@ import { createManagedController } from './managed-controller.js';
   });
   const MANAGED_SLOT_ORDER = Object.freeze([GROUP_SLOT_IDS.A, GROUP_SLOT_IDS.B]);
   const DEFAULT_MANAGED_SLOT_ID = GROUP_SLOT_IDS.A;
+  const AUDIO_ROUTE_IDS = Object.freeze({
+    LEFT: 'left',
+    RIGHT: 'right',
+    CENTER: 'center'
+  });
 
   const connectBtn = $('#connectBtn');
   const disconnectBtn = $('#disconnectBtn');
@@ -109,6 +114,7 @@ import { createManagedController } from './managed-controller.js';
   const managedRefreshPeersBtn = $('#managedRefreshPeersBtn');
   const managedLeaveChannelBtn = $('#managedLeaveChannelBtn');
   const managedPeerSyncMetaEl = $('#managedPeerSyncMeta');
+  const managedRoutingStatusEl = $('#managedRoutingStatus');
   const managedErrorTextEl = $('#managedErrorText');
   const managedPasscodeLabelEl = $('#managedPasscodeLabel');
   const managedJoinPasscodeInputEl = $('#managedJoinPasscodeInput');
@@ -258,6 +264,7 @@ import { createManagedController } from './managed-controller.js';
   let decoders = new Map();       // `${codecId}::${peerKey}` -> AudioDecoder
   let peerPlaybackTimes = new Map(); // peerKey -> scheduled playback head
   let peerGains = new Map();      // peerKey -> GainNode
+  let peerRoutingNodes = new Map(); // peerKey -> StereoPannerNode
   let peerMeters = new Map();     // peerKey -> <progress> element
   let peerMuteStates = new Map(); // peerKey -> boolean muted
   let masterGain = null;
@@ -586,6 +593,54 @@ import { createManagedController } from './managed-controller.js';
     }
     return null;
   }
+  function getManagedPeerOwningSlots(key) {
+    if (!key) return [];
+    return getManagedSlotIds().filter((slotId) => getManagedSlotTransportPeers(slotId).some((peer) => getPeerKey(peer) === key));
+  }
+  function getManagedPeerAudioRoute(key) {
+    const owningSlots = getManagedPeerOwningSlots(key);
+    if (owningSlots.includes(GROUP_SLOT_IDS.A) && owningSlots.includes(GROUP_SLOT_IDS.B)) return AUDIO_ROUTE_IDS.CENTER;
+    if (owningSlots.includes(GROUP_SLOT_IDS.A)) return AUDIO_ROUTE_IDS.LEFT;
+    if (owningSlots.includes(GROUP_SLOT_IDS.B)) return AUDIO_ROUTE_IDS.RIGHT;
+    return AUDIO_ROUTE_IDS.CENTER;
+  }
+  function getPeerAudioRoute(key, mode = getOperatingMode()) {
+    return sanitizeOperatingMode(mode) === OPERATING_MODES.MANAGED ? getManagedPeerAudioRoute(key) : AUDIO_ROUTE_IDS.CENTER;
+  }
+  function getAudioRoutePanValue(route) {
+    if (route === AUDIO_ROUTE_IDS.LEFT) return -1;
+    if (route === AUDIO_ROUTE_IDS.RIGHT) return 1;
+    return 0;
+  }
+  function getAudioRouteLabel(route) {
+    if (route === AUDIO_ROUTE_IDS.LEFT) return 'Left ear';
+    if (route === AUDIO_ROUTE_IDS.RIGHT) return 'Right ear';
+    return 'Both ears';
+  }
+  function getManagedSlotRoutingLabel(slotId) {
+    return sanitizeManagedSlotId(slotId) === GROUP_SLOT_IDS.B ? 'Right ear when active' : 'Left ear when active';
+  }
+  function getManagedRoutingSummary() {
+    return 'Managed routing: Group A left | Group B right | shared peers centered.';
+  }
+  function getAudioRoutingSnapshot(mode = getOperatingMode()) {
+    const targetMode = sanitizeOperatingMode(mode);
+    return Array.from(activePeers.entries())
+      .map(([peerKey, peer]) => {
+        const owningSlots = targetMode === OPERATING_MODES.MANAGED ? getManagedPeerOwningSlots(peerKey) : [];
+        const route = getPeerAudioRoute(peerKey, targetMode);
+        return {
+          peerKey,
+          name: peer?.name || peerKey,
+          mode: targetMode,
+          owningSlots,
+          route,
+          routeLabel: getAudioRouteLabel(route),
+          pan: getAudioRoutePanValue(route)
+        };
+      })
+      .sort((left, right) => left.peerKey.localeCompare(right.peerKey));
+  }
   function pickManagedEndpoint(peer) {
     const endpoints = Array.isArray(peer?.endpoints) ? peer.endpoints : [];
     const readyEndpoints = endpoints.filter((endpoint) => endpoint?.ip && Number.isFinite(Number(endpoint?.port)) && endpoint.registrationState !== 'invalid');
@@ -790,9 +845,9 @@ import { createManagedController } from './managed-controller.js';
     } else {
       intentText = `No intended channel selected for ${getManagedSlotLabel(managedSlotId)}.`;
     }
-    const peerSyncText = slot.lastPeerSyncAt
-      ? `${resolvedCount} transport peer(s) resolved | ${formatManagedTimestamp(slot.lastPeerSyncAt)}`
-      : `${resolvedCount} transport peer(s) resolved`;
+    const peerSyncParts = [`${resolvedCount} transport peer(s) resolved`, getManagedSlotRoutingLabel(managedSlotId)];
+    if (slot.lastPeerSyncAt) peerSyncParts.push(formatManagedTimestamp(slot.lastPeerSyncAt));
+    const peerSyncText = peerSyncParts.join(' | ');
     return {
       slot: managedSlotId,
       slotState: slot,
@@ -905,6 +960,10 @@ import { createManagedController } from './managed-controller.js';
     }
     if (managedPeerSyncMetaEl) {
       managedPeerSyncMetaEl.textContent = activeSlotView.peerSyncText;
+    }
+    if (managedRoutingStatusEl) {
+      managedRoutingStatusEl.hidden = operatingMode !== OPERATING_MODES.MANAGED;
+      managedRoutingStatusEl.textContent = getManagedRoutingSummary();
     }
     renderManagedSlotSummary({
       title: managedGroupATitleEl,
@@ -1051,7 +1110,8 @@ import { createManagedController } from './managed-controller.js';
     updateUIbuttons(true);
   }
   async function syncTransportPeerRows(options = {}) {
-    const desiredPeers = getTransportPeersForMode(options.mode);
+    const mode = sanitizeOperatingMode(options.mode || getOperatingMode());
+    const desiredPeers = getTransportPeersForMode(mode);
     const desiredKeys = new Set(desiredPeers.map((peer) => getPeerKey(peer)).filter(Boolean));
     for (const key of Array.from(activePeers.keys())) {
       if (!desiredKeys.has(key)) {
@@ -1073,11 +1133,12 @@ import { createManagedController } from './managed-controller.js';
         });
       }
     }
+    applyActivePeerAudioRouting(mode);
     refreshPeerSelects(peerListEl?.value || NEW_PEER_VALUE, peerModalSelectEl?.value || NEW_PEER_VALUE);
     refreshPeerConnectionState();
     updateStatusDashboard();
     if (options.sendHostUpdate && nativeHost) {
-      await hostSend(buildHostConfigurePayload(options.mode));
+      await hostSend(buildHostConfigurePayload(mode));
     }
   }
   async function setOperatingMode(nextMode, options = {}) {
@@ -1640,6 +1701,8 @@ import { createManagedController } from './managed-controller.js';
     decoders.clear();
     peerGains.forEach(g => { try { g.disconnect(); } catch {} });
     peerGains.clear();
+    peerRoutingNodes.forEach(node => { try { node.disconnect(); } catch {} });
+    peerRoutingNodes.clear();
     peerMeters.clear();
     peerMuteStates.clear();
     statusDashboard.clearAudioReceiveActivity();
@@ -1744,12 +1807,47 @@ import { createManagedController } from './managed-controller.js';
     const val = Number(p?.gain);
     return Number.isFinite(val) && val > 0 ? val : 1;
   }
+  function getOrCreatePeerRoutingNode(peerKey) {
+    if (!ac) return null;
+    if (peerRoutingNodes.has(peerKey)) return peerRoutingNodes.get(peerKey);
+    const routingNode = typeof ac.createStereoPanner === 'function'
+      ? ac.createStereoPanner()
+      : (typeof StereoPannerNode === 'function' ? new StereoPannerNode(ac) : null);
+    if (!routingNode) return null;
+    if (masterGain) {
+      routingNode.connect(masterGain);
+    } else {
+      routingNode.connect(ac.destination);
+    }
+    peerRoutingNodes.set(peerKey, routingNode);
+    return routingNode;
+  }
+  function applyPeerAudioRouting(peerKey, mode = getOperatingMode()) {
+    const route = getPeerAudioRoute(peerKey, mode);
+    const routingNode = peerRoutingNodes.get(peerKey);
+    if (routingNode?.pan) {
+      routingNode.pan.value = getAudioRoutePanValue(route);
+    }
+    const row = document.getElementById(getPeerRowId(peerKey));
+    if (row) {
+      row.dataset.audioRoute = route;
+      row.title = `Audio route: ${getAudioRouteLabel(route)}`;
+    }
+    return route;
+  }
+  function applyActivePeerAudioRouting(mode = getOperatingMode()) {
+    for (const peerKey of activePeers.keys()) applyPeerAudioRouting(peerKey, mode);
+  }
   function getPeerGain(peerKey) {
     if (peerGains.has(peerKey)) return peerGains.get(peerKey);
     const baseGain = getPeerBaseGain(peerKey);
     const muted = !!peerMuteStates.get(peerKey);
     const g = new GainNode(ac, { gain: muted ? 0 : baseGain });
-    if (masterGain) {
+    const routingNode = getOrCreatePeerRoutingNode(peerKey);
+    if (routingNode) {
+      g.connect(routingNode);
+      applyPeerAudioRouting(peerKey);
+    } else if (masterGain) {
       g.connect(masterGain);
     } else {
       g.connect(ac.destination);
@@ -2160,6 +2258,7 @@ import { createManagedController } from './managed-controller.js';
     table.appendChild(row);
     if (meterEl) peerMeters.set(peerKey, meterEl);
     activePeers.set(peerKey, peer);
+    applyPeerAudioRouting(peerKey);
     if (trackDirectState) {
       rememberDirectPeerSelection();
     }
@@ -2193,6 +2292,9 @@ import { createManagedController } from './managed-controller.js';
     const gainNode = peerGains.get(key);
     if (gainNode) { try { gainNode.disconnect(); } catch {} }
     peerGains.delete(key);
+    const routingNode = peerRoutingNodes.get(key);
+    if (routingNode) { try { routingNode.disconnect(); } catch {} }
+    peerRoutingNodes.delete(key);
     for (const [decKey, decoder] of decoders.entries()) {
       if (decKey.endsWith(`::${key}`)) {
         try { decoder.close(); } catch {}
@@ -2324,9 +2426,16 @@ import { createManagedController } from './managed-controller.js';
     o.start();
     o.stop(ctx.currentTime + 0.3);
   }
+  function installTestHooks() {
+    if (!testPlatform || typeof window === 'undefined') return;
+    window.udp1492RouteDebug = {
+      getSnapshot: () => structuredClone(getAudioRoutingSnapshot())
+    };
+  }
 
   (async function init() {
     try {
+      installTestHooks();
       await loadRuntimeConfig();
       await loadSaved();
       updateUIbuttons(false);

@@ -46,55 +46,61 @@ Phase 4 dual-ear routing work is complete when all of the following are true:
 
 ## Current Phase 4 Status
 
-Phase 4 has not started yet.
+Phase 4 dual-ear routing work is now complete by this checklist.
 
-The relevant baseline inherited from Phase 3 is:
+The completed work in this slice includes:
 
-- managed transport peers are already tracked per slot and aggregated by `ip:port`
-- overlapping managed peers are already deduped conservatively for host transport updates
-- the renderer audio graph currently plays every peer through the same mono/centered path
-- there is no current operator-facing ear-routing cue
-- there is no current test hook for asserting playback routing state from Playwright
+- renderer-owned route computation keyed by managed slot ownership and transport endpoint
+- left/right/center routing semantics for `Group A`, `Group B`, and shared peers
+- pan-aware playback wiring in the renderer audio path without changing the host contract
+- managed-shell routing cues for the fixed Phase 4 semantics
+- a test-only routing snapshot exposed for Playwright validation
+- Playwright coverage proving:
+  - `Group A`-only peers compute to the left ear
+  - `Group B`-only peers compute to the right ear
+  - distinct dual-slot peers compute to opposite ears
+  - overlapping peers compute to centered / both-ear playback
+  - slot leave/failure transitions preserve or recompute routing deterministically
 
-That means the next work is primarily a renderer playback and validation slice, not a managed-session architecture rewrite.
+With those changes validated, the Phase 4 dual-ear playback milestone is closed for the desktop client.
 
 ## Checklist
 
 ### A. Routing model and state ownership
 
-- [ ] Add a renderer-owned routing helper that computes each managed transport peer's playback route from slot ownership.
-- [ ] Define deterministic routing outcomes for `A`-only, `B`-only, and shared `A+B` membership.
-- [ ] Keep routing derivation keyed by transport endpoint so overlap/dedupe behavior stays aligned with Phase 3 peer aggregation.
-- [ ] Ensure slot-local leave/failure transitions recompute routing without clearing unrelated active peers.
+- [x] Add a renderer-owned routing helper that computes each managed transport peer's playback route from slot ownership.
+- [x] Define deterministic routing outcomes for `A`-only, `B`-only, and shared `A+B` membership.
+- [x] Keep routing derivation keyed by transport endpoint so overlap/dedupe behavior stays aligned with Phase 3 peer aggregation.
+- [x] Ensure slot-local leave/failure transitions recompute routing without clearing unrelated active peers.
 
 ### B. Audio graph adaptation
 
-- [ ] Replace the current single-path peer playback connection with a routing-aware graph that can send peers left, right, or center/both.
-- [ ] Keep the routing change in the renderer playback layer after decode and before final output.
-- [ ] Update routing in place when slot ownership changes, without requiring a full app reconnect.
-- [ ] Preserve existing peer gain and mute behavior while adding left/right routing.
+- [x] Replace the current single-path peer playback connection with a routing-aware graph that can send peers left, right, or center/both.
+- [x] Keep the routing change in the renderer playback layer after decode and before final output.
+- [x] Update routing in place when slot ownership changes, without requiring a full app reconnect.
+- [x] Preserve existing peer gain and mute behavior while adding left/right routing.
 
 ### C. Operator visibility
 
-- [ ] Add a concise managed-mode cue that explains the fixed Phase 4 routing semantics.
-- [ ] Surface enough peer- or slot-level routing status that the operator can tell why a managed peer is heard in the left ear, right ear, or both.
-- [ ] Keep the UI refinement small and consistent with the existing shell rather than introducing a large mixer surface.
+- [x] Add a concise managed-mode cue that explains the fixed Phase 4 routing semantics.
+- [x] Surface enough peer- or slot-level routing status that the operator can tell why a managed peer is heard in the left ear, right ear, or both.
+- [x] Keep the UI refinement small and consistent with the existing shell rather than introducing a large mixer surface.
 
 ### D. Validation
 
-- [ ] Add a testable routing snapshot or equivalent test-only hook so Playwright can verify computed ear assignments without relying on speaker output.
-- [ ] Add Playwright coverage for `Group A`-only routing.
-- [ ] Add Playwright coverage for `Group B`-only routing.
-- [ ] Add Playwright coverage for dual-slot routing with distinct peers.
-- [ ] Add Playwright coverage for overlapping peer endpoints resolving to both ears / centered playback.
-- [ ] Add Playwright coverage proving slot leave/failure transitions update routing without disturbing the other slot.
+- [x] Add a testable routing snapshot or equivalent test-only hook so Playwright can verify computed ear assignments without relying on speaker output.
+- [x] Add Playwright coverage for `Group A`-only routing.
+- [x] Add Playwright coverage for `Group B`-only routing.
+- [x] Add Playwright coverage for dual-slot routing with distinct peers.
+- [x] Add Playwright coverage for overlapping peer endpoints resolving to both ears / centered playback.
+- [x] Add Playwright coverage proving slot leave/failure transitions update routing without disturbing the other slot.
 
 ## Immediate Coding Order
 
 1. Extend `src/renderer/ui.js` with deterministic routing helpers derived from managed slot peer ownership keyed by transport endpoint.
 2. Refactor the renderer playback graph in `src/renderer/ui.js` so peer playback can target left, right, or both ears while preserving gain/mute behavior.
 3. Add the minimal managed-shell / peer-list routing cues in `src/renderer/index.html`, `src/renderer/style.css`, and `src/renderer/ui.js`.
-4. Add a test-only routing snapshot surface through `src/main/preload.js` and any needed renderer hook so Playwright can assert routing state directly.
+4. Add a test-only routing snapshot surface in the renderer so Playwright can assert routing state directly.
 5. Add focused Playwright Electron coverage in `test/e2e/app.spec.js`.
 6. Run `npm run test:e2e`.
 
@@ -104,8 +110,10 @@ That means the next work is primarily a renderer playback and validation slice, 
 
 - managed transport peers are already aggregated across slots through `getManagedTransportPeers()`
 - overlap handling is already deduped by `ip:port`
-- decoded playback currently routes each peer gain node into one shared output path
-- current peer playback logic has no concept of left/right ear assignment
+- renderer helpers now derive per-peer routing from slot ownership
+- decoded playback now routes peers through a pan-aware output path with left/right/center semantics
+- managed-shell routing cues are now rendered for the fixed Phase 4 mapping
+- a test-only routing snapshot is now exposed from the renderer for Playwright assertions
 
 ### `src/renderer/managed-controller.js`
 
@@ -119,11 +127,11 @@ That means the next work is primarily a renderer playback and validation slice, 
 - nothing in the current host contract needs ear metadata for Phase 4
 - avoid touching the host unless the renderer playback approach proves insufficient
 
-### `test/e2e/app.spec.js` and `src/main/preload.js`
+### `test/e2e/app.spec.js`
 
 - Playwright can already inspect UI state and sent host messages
-- there is no current test hook for playback routing state
-- the cleanest Phase 4 validation path is likely a small test-only routing snapshot rather than fragile audio-output assertions
+- route-state assertions now run against a renderer-owned routing snapshot
+- the validation path avoids fragile speaker-output assertions while still proving deterministic route computation
 
 ## Concrete Implementation Plan
 

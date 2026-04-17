@@ -6,12 +6,12 @@ Use this file if work continues in a fresh chat.
 
 - Repo: `C:\NodeProjects\1492-app`
 - Branch: `main`
-- Package/app version: `0.1.17`
-- Renderer version marker in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js): `0.4.16`
+- Package/app version: `0.1.18`
+- Renderer version marker in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js): `0.4.17`
 - Phase 1 is closed
 - Phase 2 protected-channel client work is closed
 - Phase 3 Group B desktop-client work is closed
-- Phase 4 dual-ear routing planning is now active
+- Phase 4 dual-ear routing desktop-client work is closed
 
 ## Start Here
 
@@ -93,9 +93,26 @@ Closed items in this slice include:
   - overlapping endpoint dedupe with conservative peer removal
   - protected `Group B` resume
 
+### Phase 4
+
+The dual-ear routing desktop-client checklist is complete and validated.
+
+Closed items in this slice include:
+
+- renderer-owned route computation keyed by managed slot ownership and transport endpoint
+- pan-aware playback routing for `Group A`, `Group B`, and shared peers
+- managed-shell routing cues for the fixed left/right mapping
+- a renderer test hook exposing routing snapshots for Playwright
+- Playwright route validation for:
+  - `Group A`-only peers
+  - `Group B`-only peers
+  - distinct dual-slot peers
+  - overlapping shared peers
+  - slot leave/failure route recomputation
+
 ## Active Planning Artifact
 
-[PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md) is now the controlling checklist for the next implementation slice.
+[PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md) is now a closed decision record for the completed dual-ear routing slice.
 
 It also contains:
 
@@ -103,20 +120,20 @@ It also contains:
 - locked decisions
 - immediate coding order
 - current codebase baseline
-- concrete file-level implementation notes for `ui.js`, `preload.js`, shell updates, and Playwright expansion
+- concrete file-level implementation notes for `ui.js`, shell updates, and Playwright expansion
 
 ## Immediate Next Slice
 
 Do not reopen the Phase 3 Group B client checklist unless a regression appears.
+Do not reopen the Phase 4 dual-ear routing checklist unless a regression appears.
 
-The next concrete target is implementing Phase 4 dual-ear routing from the new checklist.
+The next concrete target is planning the post-Phase-4 slice around Commander Mode groundwork.
 
-The first coding targets should be:
+The next planning targets should be:
 
-1. Add deterministic renderer-side routing helpers derived from slot ownership by `ip:port`.
-2. Refactor playback so managed peers can route left, right, or center/both without changing the host contract.
-3. Add a minimal test-only routing snapshot so Playwright can validate route computation directly.
-4. Add focused e2e coverage for `A`-only, `B`-only, dual-slot, overlap, and slot-isolation route updates.
+1. Define the minimum Commander Mode milestone that fits after the now-closed dual-ear routing slice.
+2. Create the next active checklist before code changes begin.
+3. Keep `PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md` as a closed decision record rather than continuing to edit it for unrelated work.
 
 ## Important Constraints
 
@@ -136,12 +153,14 @@ Last clean validation before this handoff:
 - `npm run test:e2e`
 - result: `26/26` passing
 
-Planning-only updates after that validation:
+Validated implementation updates after that baseline:
 
-- `PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md` created
-- `MANAGED_MODE_ADAPTATION_PLAN.md` updated for the Phase 4 planning target
-- `DEVELOPMENT_NOTES.md` updated to include the new active planning artifact
-- `NEXT_CHAT_HANDOFF.md` updated to point the next chat at Phase 4 instead of Phase 3 closeout
+- dual-ear routing helpers and pan-aware playback added in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js)
+- managed routing cue added in [src/renderer/index.html](C:/NodeProjects/1492-app/src/renderer/index.html)
+- route-state assertions added in [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
+- package/app version bumped to `0.1.18`
+- renderer version bumped to `0.4.17`
+- `PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md`, `MANAGED_MODE_ADAPTATION_PLAN.md`, and `NEXT_CHAT_HANDOFF.md` updated to mark Phase 4 closed
 
 Safe validation commands for the next chat:
 
@@ -162,7 +181,7 @@ Safe validation commands for the next chat:
 - Workflow file: [.github/workflows/windows-release.yml](C:/NodeProjects/1492-app/.github/workflows/windows-release.yml)
 - Release publishing was fixed earlier by building with `--publish never` in the build step
 - Latest published release from the prior chat context was `v0.1.13`
-- Current code version is `0.1.17`
+- Current code version is `0.1.18`
 - After a complete validated slice, update the online GitHub repo before stopping
 
 ## If Continuing Immediately
@@ -171,5 +190,5 @@ Do not re-open the Phase 1 question.
 Treat Phase 1 as closed.
 Treat Phase 2 as closed.
 Treat Phase 3 Group B desktop-client activation as closed.
-Treat Phase 4 dual-ear routing as the active next slice.
-If work continues immediately, start from the Phase 4 checklist and implement renderer-side routing plus testable route-state validation.
+Treat Phase 4 dual-ear routing as closed.
+If work continues immediately, start by drafting the next active checklist for Commander Mode groundwork rather than modifying the closed Phase 4 slice.

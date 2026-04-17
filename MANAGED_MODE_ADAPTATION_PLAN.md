@@ -22,7 +22,7 @@ The desktop app has the same core voice/runtime model as the extension version, 
 - Channel-centered product model
 - Direct mode plus managed mode
 - Two-group roadmap with Group A and Group B
-- Commander Mode first
+- Commander Mode as a follow-on milestone after dual-ear routing
 - Per-channel security mode
 - Admin dashboard requirement
 - Channel-scoped peer endpoint visibility
@@ -287,18 +287,18 @@ The Group B client slice is now complete on the desktop side and includes:
 
 The Phase 3 desktop-client milestone is therefore closed. Follow-on work should move to the next product phase rather than reopening Group B slot activation unless a regression appears.
 
-### Current Phase 4 planning target
+### Current Phase 4 client status
 
-The next active desktop-client planning target is dual-ear routing.
+The dual-ear routing milestone is now complete on the desktop side.
 
-That work is now captured in `PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md` with:
+That work is captured in `PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md` and now includes:
 
-- finish-line criteria
-- locked decisions
-- renderer/host boundary assumptions
-- validation strategy built around a testable routing snapshot rather than speaker-output assertions
+- route computation derived from slot ownership by `ip:port`
+- pan-aware playback routing for `Group A`, `Group B`, and shared peers
+- managed-shell routing cues for the fixed left/right mapping
+- Playwright validation built around a renderer routing snapshot rather than speaker-output assertions
 
-Commander Mode, admin surface, and NAT work should stay out of scope until the dual-ear playback milestone is closed.
+The next product phase should therefore move to Commander Mode groundwork. Admin surface and NAT work should remain follow-on phases after that.
 
 ## Renderer State Model Adaptation
 
