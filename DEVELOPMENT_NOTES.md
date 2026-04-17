@@ -53,6 +53,15 @@ Check this file before making further code changes.
   - `UDP1492_USER_DATA_DIR=<path>`
 - Keep those hooks test-only. Do not make production behavior depend on them.
 
+## Managed runtime config
+
+- `UDP1492_MANAGED_BACKEND_URL`
+  - optional app-level default backend base URL for managed mode
+- `UDP1492_MANAGED_REQUEST_TIMEOUT_MS`
+  - optional managed HTTP timeout override
+- `UDP1492_MANAGED_LOCAL_ADDRESSES`
+  - optional comma-separated override for desktop local endpoint addresses used in managed presence payloads
+
 ## Workspace reminders
 
 - This workspace root is not a git repository, so do not assume `git status` is available here.

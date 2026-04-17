@@ -192,8 +192,8 @@ The original extension roadmap remains the baseline, but the desktop app should 
 As of the current implementation:
 
 - Phase 0 is complete
-- most of the desktop Phase 1 client surface already exists
-- the remaining work is concentrated in correctness gaps and desktop-specific runtime integration
+- the revised standalone desktop Phase 1 client slice is complete
+- Cloudflare/backend deployment work remains parallel and intentionally outside the Phase 1 client closeout definition
 
 ### Revised Phase 1 finish line
 
@@ -213,7 +213,7 @@ The backend workspace and deployment remain important, but they are parallel wor
 
 ### Planning artifact
 
-The concrete closeout checklist now lives in:
+The concrete closeout checklist and closeout record now live in:
 
 - `C:\NodeProjects\1492-app\PHASE1_REVISED_CHECKLIST.md`
 

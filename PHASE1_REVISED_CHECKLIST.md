@@ -10,8 +10,9 @@ It does **not** require a live Cloudflare deployment to declare the client phase
 ## Current Position
 
 Phase 0 is complete.
+The revised standalone desktop Phase 1 client checklist is complete.
 
-Most of the original Phase 1 client surface is already implemented:
+The implemented Phase 1 client surface now includes:
 
 - managed API client layer in the renderer
 - session open
@@ -21,9 +22,11 @@ Most of the original Phase 1 client surface is already implemented:
 - peer resolution
 - transport peer adaptation into host `configure.peers`
 - managed-mode persistence through the existing preload/main storage path
-- runtime-config fallback for managed backend URL and request timeout
-
-The remaining work is now correctness and desktop-specific integration work, not broad new surface area.
+- runtime-config fallback for managed backend URL, request timeout, and local endpoint addresses
+- explicit fresh session reopen behavior
+- non-destructive single-channel switching behavior
+- desktop endpoint publication in managed presence
+- end-to-end coverage for the closeout scenarios
 
 ## Revised Phase 1 Finish Line
 
@@ -35,26 +38,26 @@ Phase 1 is complete when all of the following are true:
 4. Managed peer resolution continues adapting into the existing UDP host path without changing host protocol shape.
 5. The above behaviors are covered by Playwright Electron tests.
 
-## Remaining Checklist
+## Closed Checklist
 
 ### A. Session and channel correctness
 
-- [ ] `Open Session` must force a fresh session when the operator intentionally reopens managed mode after changing backend configuration or identity fields.
-- [ ] Joining a replacement channel must not tear down the currently joined channel until the replacement join succeeds.
-- [ ] Session-expiry and membership-loss recovery paths should keep renderer state consistent and non-destructive.
+- [x] `Open Session` forces a fresh session when the operator intentionally reopens managed mode after changing backend configuration or identity fields.
+- [x] Joining a replacement channel does not tear down the currently joined channel until the replacement join succeeds.
+- [x] Session-expiry and membership-loss recovery paths keep renderer state consistent and non-destructive.
 
 ### B. Desktop-native endpoint publication
 
-- [ ] Expose a runtime transport snapshot from desktop shell / host control into the renderer.
-- [ ] Replace the placeholder `buildManagedPresenceEndpoints()` behavior with a real endpoint payload.
-- [ ] Prefer desktop-known transport facts over extension-era assumptions.
-- [ ] Keep the host channel-agnostic even while exposing the minimum data needed for managed presence.
+- [x] Expose desktop runtime transport facts into the renderer through runtime config.
+- [x] Replace the placeholder `buildManagedPresenceEndpoints()` behavior with a real endpoint payload.
+- [x] Prefer desktop-known transport facts over extension-era assumptions.
+- [x] Keep the host channel-agnostic while exposing the minimum data needed for managed presence.
 
 ### C. Validation and regression coverage
 
-- [ ] Add an end-to-end test proving a failed channel switch preserves the original membership.
-- [ ] Add an end-to-end test proving managed presence publishes an endpoint payload.
-- [ ] Add an end-to-end test proving explicit session reopen does not reuse stale session state across backend/profile changes.
+- [x] Add an end-to-end test proving a failed channel switch preserves the original membership.
+- [x] Add an end-to-end test proving managed presence publishes an endpoint payload.
+- [x] Add an end-to-end test proving explicit session reopen does not reuse stale session state across backend/profile changes.
 
 ## Desktop-First Planning Decisions
 

@@ -114,7 +114,10 @@ async function installManagedApiRoutes(page, options = {}) {
       resolvedAt: '2026-04-16T19:25:05Z'
     }
   };
+  const joinErrors = options.joinErrors || {};
+  const openSessionRequests = options.openSessionRequests || [];
   const joinRequests = options.joinRequests || [];
+  const presenceRequests = options.presenceRequests || [];
   const jsonHeaders = {
     'content-type': 'application/json',
     'access-control-allow-origin': '*',
@@ -130,6 +133,8 @@ async function installManagedApiRoutes(page, options = {}) {
       return;
     }
     if (url.pathname === '/api/session/open') {
+      const payload = JSON.parse(request.postData() || '{}');
+      openSessionRequests.push({ payload });
       await route.fulfill({
         status: 200,
         headers: jsonHeaders,
@@ -150,6 +155,18 @@ async function installManagedApiRoutes(page, options = {}) {
       const channelId = decodeURIComponent(joinMatch[1]);
       const payload = JSON.parse(request.postData() || '{}');
       joinRequests.push({ channelId, payload });
+      if (joinErrors[channelId]) {
+        const joinError = joinErrors[channelId];
+        await route.fulfill({
+          status: joinError.status || 409,
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            code: joinError.code || 'managed_join_error',
+            message: joinError.message || 'Join failed.'
+          })
+        });
+        return;
+      }
       await route.fulfill({
         status: 200,
         headers: jsonHeaders,
@@ -160,6 +177,8 @@ async function installManagedApiRoutes(page, options = {}) {
     const presenceMatch = url.pathname.match(/^\/api\/channels\/([^/]+)\/presence$/);
     if (presenceMatch) {
       const channelId = decodeURIComponent(presenceMatch[1]);
+      const payload = JSON.parse(request.postData() || '{}');
+      presenceRequests.push({ channelId, payload });
       await route.fulfill({
         status: 200,
         headers: jsonHeaders,
@@ -206,7 +225,7 @@ async function installManagedApiRoutes(page, options = {}) {
     throw new Error(`Unhandled managed API request: ${request.method()} ${request.url()}`);
   });
 
-  return { baseUrl, joinRequests };
+  return { baseUrl, openSessionRequests, joinRequests, presenceRequests };
 }
 
 test('launches with default persisted settings', async ({ appHarness }) => {
@@ -510,6 +529,125 @@ test.describe('peer fixture', () => {
     });
   });
 
+  test.describe('managed presence publication', () => {
+    test.use({
+      runtimeEnv: {
+        UDP1492_MANAGED_LOCAL_ADDRESSES: '10.0.0.25'
+      }
+    });
+
+    test('publishes a desktop transport endpoint in managed presence', async ({ appHarness }) => {
+      const { page } = appHarness;
+      const presenceRequests = [];
+      const { baseUrl } = await installManagedApiRoutes(page, { presenceRequests });
+
+      await page.locator('#operatingModeManaged').click();
+      await page.locator('#managedDisplayNameInput').fill('Scot');
+      await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+      await page.locator('#managedOpenSessionBtn').click();
+      await page.getByRole('button', { name: 'Join' }).click();
+
+      await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+      expect(presenceRequests.length).toBeGreaterThan(0);
+      expect(presenceRequests[0]).toMatchObject({
+        channelId: 'chn_alpha',
+        payload: {
+          sessionId: 'ses_01',
+          slotId: 'A',
+          onlineState: 'online'
+        }
+      });
+      expect(presenceRequests[0].payload.endpoints).toEqual([
+        {
+          kind: 'local',
+          ip: '10.0.0.25',
+          port: 1492
+        }
+      ]);
+    });
+  });
+
+  test('keeps the current channel active when a replacement join fails', async ({ appHarness }) => {
+    const { page } = appHarness;
+    const { baseUrl } = await installManagedApiRoutes(page, {
+      channelsResponse: {
+        channels: [
+          {
+            channelId: 'chn_alpha',
+            name: 'Alpha',
+            description: 'Primary coordination channel',
+            securityMode: 'open',
+            requiresPasscode: false,
+            concurrentAccessAllowed: true,
+            memberCount: 4
+          },
+          {
+            channelId: 'chn_bravo',
+            name: 'Bravo',
+            description: 'Secondary channel',
+            securityMode: 'open',
+            requiresPasscode: false,
+            concurrentAccessAllowed: true,
+            memberCount: 2
+          }
+        ],
+        syncedAt: '2026-04-16T19:21:00Z'
+      },
+      joinErrors: {
+        chn_bravo: {
+          status: 409,
+          code: 'channel_switch_denied',
+          message: 'Unable to switch channels right now.'
+        }
+      },
+      peersResponses: {
+        chn_alpha: {
+          channelId: 'chn_alpha',
+          peers: [
+            {
+              userId: 'usr_peer_01',
+              sessionId: 'ses_peer_01',
+              channelId: 'chn_alpha',
+              displayName: 'Peer One',
+              connectionState: 'idle',
+              endpoints: [
+                {
+                  endpointId: 'end_01',
+                  kind: 'public',
+                  ip: '198.51.100.10',
+                  port: 1492,
+                  registrationState: 'ready',
+                  lastValidatedAt: '2026-04-16T19:25:00Z'
+                }
+              ]
+            }
+          ],
+          resolvedAt: '2026-04-16T19:25:05Z'
+        },
+        chn_bravo: {
+          channelId: 'chn_bravo',
+          peers: [],
+          resolvedAt: '2026-04-16T19:25:05Z'
+        }
+      }
+    });
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+    await page.locator('#managedChannelList li').filter({ hasText: 'Alpha' }).getByRole('button', { name: 'Join' }).click();
+
+    await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+
+    await page.locator('#managedChannelList li').filter({ hasText: 'Bravo' }).getByRole('button', { name: 'Join' }).click();
+    await expect(page.locator('#managedErrorText')).toContainText('Unable to switch channels right now.');
+    await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+    await expect(page.locator('#managedGroupAStatus')).toContainText('joined');
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+  });
+
   test('clears stale managed state when the backend expires the session during peer refresh', async ({ appHarness }) => {
     const { page } = appHarness;
     const { baseUrl } = await installManagedApiRoutes(page);
@@ -566,6 +704,62 @@ test.describe('peer fixture', () => {
       const savedStorage = await readStorage();
       expect(savedStorage.udp1492_managed_profile.backendBaseUrl).toBe('');
     });
+  });
+
+  test('forces a fresh session when the operator explicitly reopens managed mode', async ({ appHarness }) => {
+    const { page } = appHarness;
+    const firstOpenSessionRequests = [];
+    const secondOpenSessionRequests = [];
+    await installManagedApiRoutes(page, {
+      baseUrl: 'https://managed-one.example.test',
+      openSessionRequests: firstOpenSessionRequests,
+      openSessionResponse: {
+        identity: {
+          userId: 'usr_01',
+          sessionId: 'ses_01',
+          displayName: 'Scot'
+        },
+        session: {
+          openedAt: '2026-04-16T19:20:00Z',
+          expiresAt: '2026-04-16T21:20:00Z',
+          heartbeatIntervalMs: 15000
+        }
+      }
+    });
+    await installManagedApiRoutes(page, {
+      baseUrl: 'https://managed-two.example.test',
+      openSessionRequests: secondOpenSessionRequests,
+      openSessionResponse: {
+        identity: {
+          userId: 'usr_02',
+          sessionId: 'ses_02',
+          displayName: 'Scot Two'
+        },
+        session: {
+          openedAt: '2026-04-16T19:30:00Z',
+          expiresAt: '2026-04-16T21:30:00Z',
+          heartbeatIntervalMs: 15000
+        }
+      }
+    });
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill('https://managed-one.example.test');
+    await page.locator('#managedOpenSessionBtn').click();
+    await expect(page.locator('#managedIdentityMeta')).toContainText('Session ses_01');
+
+    await page.locator('#managedDisplayNameInput').fill('Scot Two');
+    await page.locator('#managedBackendBaseUrlInput').fill('https://managed-two.example.test');
+    await page.locator('#managedOpenSessionBtn').click();
+
+    await expect(page.locator('#managedIdentityMeta')).toContainText('Session ses_02');
+    expect(firstOpenSessionRequests).toHaveLength(1);
+    expect(secondOpenSessionRequests).toHaveLength(1);
+    expect(firstOpenSessionRequests[0].payload.resumeSessionId).toBeNull();
+    expect(secondOpenSessionRequests[0].payload.resumeSessionId).toBeNull();
+    expect(secondOpenSessionRequests[0].payload.displayName).toBe('Scot Two');
+    await expect(page.locator('#managedActiveChannel')).toHaveText('No managed channel joined yet');
   });
 });
 

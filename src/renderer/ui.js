@@ -50,7 +50,8 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
   const testPlatform = window.udp1492Test || null;
   const DEFAULT_RUNTIME_CONFIG = Object.freeze({
     managedBackendUrl: '',
-    managedRequestTimeoutMs: DEFAULT_MANAGED_REQUEST_TIMEOUT_MS
+    managedRequestTimeoutMs: DEFAULT_MANAGED_REQUEST_TIMEOUT_MS,
+    managedLocalAddresses: []
   });
 
   const storage = {
@@ -310,10 +311,22 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
     if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_MANAGED_REQUEST_TIMEOUT_MS;
     return Math.max(1000, Math.min(60000, Math.trunc(parsed)));
   }
+  function sanitizeManagedLocalAddresses(values) {
+    const addresses = [];
+    const seen = new Set();
+    for (const value of Array.isArray(values) ? values : []) {
+      const address = String(value || '').trim();
+      if (!address || address === '0.0.0.0' || seen.has(address)) continue;
+      seen.add(address);
+      addresses.push(address);
+    }
+    return addresses;
+  }
   function createRuntimeConfig(seed = {}) {
     return {
       managedBackendUrl: sanitizeManagedBaseUrl(seed.managedBackendUrl),
-      managedRequestTimeoutMs: sanitizeManagedRequestTimeoutMs(seed.managedRequestTimeoutMs)
+      managedRequestTimeoutMs: sanitizeManagedRequestTimeoutMs(seed.managedRequestTimeoutMs),
+      managedLocalAddresses: sanitizeManagedLocalAddresses(seed.managedLocalAddresses)
     };
   }
   function createDefaultAppStateV2(seed = {}) {
@@ -773,7 +786,13 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
     });
   }
   function buildManagedPresenceEndpoints() {
-    return [];
+    const port = Number(settings.localPort);
+    if (!Number.isFinite(port) || port <= 0) return [];
+    return sanitizeManagedLocalAddresses(runtimeConfig?.managedLocalAddresses).map((ip) => ({
+      kind: 'local',
+      ip,
+      port
+    }));
   }
   function stopManagedTimers() {
     if (managedHeartbeatTimer) {
@@ -798,7 +817,7 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
     }, 15000);
   }
   async function ensureManagedSession(options = {}) {
-    const { force = false } = options;
+    const { force = false, fresh = false } = options;
     const currentSession = getManagedSession();
     if (!force && currentSession.sessionId) return currentSession;
     if (!managedProfile.displayName.trim()) {
@@ -817,10 +836,11 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
         clientVersion: VERSION,
         mode: 'managed',
         requestedUserId: managedProfile.userId || null,
-        resumeSessionId: managedProfile.lastSessionId || null
+        resumeSessionId: fresh ? null : (managedProfile.lastSessionId || null)
       });
     } catch (error) {
       const shouldRetryWithoutResume = !!managedProfile.lastSessionId
+        && !fresh
         && error instanceof ManagedApiError
         && (error.status === 400 || error.status === 401 || error.status === 404 || error.status === 409);
       if (!shouldRetryWithoutResume) throw error;
@@ -835,6 +855,23 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
     }
     const identity = response?.identity || {};
     const session = response?.session || {};
+    const previousSessionId = currentSession.sessionId || '';
+    const shouldResetManagedMembership = (fresh || (previousSessionId && previousSessionId !== (identity.sessionId || '')))
+      && !!(currentSession.channelId || appState.managed.transportPeers.length || connected || managedHeartbeatTimer || managedPeerRefreshTimer);
+    if (shouldResetManagedMembership) {
+      stopManagedTimers();
+      appState.managed.transportPeers = [];
+      appState.managed.session.channelId = '';
+      appState.managed.session.channelName = '';
+      appState.managed.session.membershipState = 'none';
+      appState.managed.session.presenceState = 'offline';
+      appState.managed.session.lastPeerSyncAt = '';
+      await syncTransportPeerRows({
+        mode: OPERATING_MODES.MANAGED,
+        sendHostUpdate: dashboardState.nativeHostConnected
+      });
+      if (connected) doDisconnect();
+    }
     appState.managed.session.status = 'open';
     appState.managed.session.displayName = identity.displayName || managedProfile.displayName.trim();
     appState.managed.session.userId = identity.userId || '';
@@ -966,9 +1003,6 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
   }
   async function joinManagedChannel(channelId) {
     const managedSession = await ensureManagedSession();
-    if (managedSession.channelId && managedSession.channelId !== channelId) {
-      await leaveManagedChannel({ preserveSession: true });
-    }
     const api = createManagedApi();
     const selectedChannelId = channelId || appState?.managed?.shell?.selectedChannelId || managedProfile.preferredChannelId || '';
     if (!selectedChannelId) {
@@ -1008,8 +1042,9 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
     appState.managed.session.presenceState = 'offline';
     appState.managed.session.errorMessage = '';
     managedJoinPasscode = '';
+    await ensureManagedTransportConnected();
     await sendManagedPresence();
-    await refreshManagedPeers({ ensureTransport: true });
+    await refreshManagedPeers({ ensureTransport: false });
     startManagedTimers();
     renderManagedShell();
     await persistAppState({
@@ -1058,7 +1093,7 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
   async function handleManagedSessionOpen() {
     try {
       await updateManagedProfileFromInputs();
-      await ensureManagedSession({ force: false });
+      await ensureManagedSession({ force: true, fresh: true });
       await refreshManagedChannels();
     } catch (error) {
       setManagedError(error?.message || 'Failed to open managed session.');

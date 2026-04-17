@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const { fork } = require('node:child_process');
 const fs = require('node:fs/promises');
+const os = require('node:os');
 const path = require('node:path');
 
 const APP_ID = 'com.udp1492.desktop';
@@ -33,10 +34,47 @@ function sanitizeManagedRequestTimeoutMs(value) {
   return Math.max(1000, Math.min(60000, Math.trunc(parsed)));
 }
 
+function sanitizeManagedLocalAddresses(values) {
+  const ordered = [];
+  const seen = new Set();
+  for (const value of Array.isArray(values) ? values : []) {
+    const address = String(value || '').trim();
+    if (!address || seen.has(address)) continue;
+    seen.add(address);
+    ordered.push(address);
+  }
+  return ordered;
+}
+
+function getManagedLocalAddresses() {
+  const envValue = process.env.UDP1492_MANAGED_LOCAL_ADDRESSES;
+  if (typeof envValue === 'string' && envValue.trim()) {
+    return sanitizeManagedLocalAddresses(envValue.split(','));
+  }
+
+  const interfaces = os.networkInterfaces();
+  const preferred = [];
+  const fallback = [];
+  for (const entries of Object.values(interfaces)) {
+    for (const entry of Array.isArray(entries) ? entries : []) {
+      const family = typeof entry?.family === 'string' ? entry.family : String(entry?.family || '');
+      if (family !== 'IPv4') continue;
+      if (!entry?.address) continue;
+      if (entry.internal) {
+        fallback.push(entry.address);
+      } else {
+        preferred.push(entry.address);
+      }
+    }
+  }
+  return sanitizeManagedLocalAddresses(preferred.length ? preferred : fallback);
+}
+
 function getRuntimeConfig() {
   return {
     managedBackendUrl: sanitizeManagedBackendUrl(process.env.UDP1492_MANAGED_BACKEND_URL),
-    managedRequestTimeoutMs: sanitizeManagedRequestTimeoutMs(process.env.UDP1492_MANAGED_REQUEST_TIMEOUT_MS)
+    managedRequestTimeoutMs: sanitizeManagedRequestTimeoutMs(process.env.UDP1492_MANAGED_REQUEST_TIMEOUT_MS),
+    managedLocalAddresses: getManagedLocalAddresses()
   };
 }
 
