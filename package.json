@@ -1,6 +1,6 @@
 {
   "name": "udp-1492-app",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "private": false,
   "description": "Standalone Electron desktop app for UDP 1492 Audio Link.",
   "main": "src/main/main.js",
