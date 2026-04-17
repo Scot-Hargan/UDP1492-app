@@ -42,10 +42,10 @@ import { createStatusDashboard } from './status-dashboard.js';
 import { sanitizeManagedBaseUrl } from './managed-api.js';
 import { createManagedController } from './managed-controller.js';
 
-// ui.js v0.4.13
+// ui.js v0.4.14
 (() => {
   'use strict';
-  const VERSION = '0.4.13';
+  const VERSION = '0.4.14';
   const platform = window.udp1492;
   const testPlatform = window.udp1492Test || null;
 
@@ -421,6 +421,25 @@ import { createManagedController } from './managed-controller.js';
     targetSlot.intendedChannelId = normalizeManagedChannelId(channelId);
     return targetSlot.intendedChannelId;
   }
+  function syncManagedSlotRuntimeState(slotId = DEFAULT_MANAGED_SLOT_ID) {
+    const targetSlot = getManagedSlot(slotId);
+    const activeChannel = targetSlot.channelId ? findManagedChannel(targetSlot.channelId) : null;
+    const intendedChannel = targetSlot.intendedChannelId ? findManagedChannel(targetSlot.intendedChannelId) : null;
+    if (activeChannel) {
+      targetSlot.channelName = activeChannel.name || targetSlot.channelName || '';
+      targetSlot.securityMode = activeChannel.securityMode || '';
+      return targetSlot;
+    }
+    if (intendedChannel) {
+      targetSlot.securityMode = intendedChannel.securityMode || '';
+      return targetSlot;
+    }
+    if (!targetSlot.channelId) {
+      targetSlot.channelName = '';
+      targetSlot.securityMode = '';
+    }
+    return targetSlot;
+  }
   function setManagedError(message = '') {
     appState.managed.session.errorMessage = typeof message === 'string' ? message : String(message || '');
   }
@@ -437,7 +456,7 @@ import { createManagedController } from './managed-controller.js';
     return managedCache.channels.find((channel) => channel?.channelId === channelId) || null;
   }
   function getSelectedManagedChannel() {
-    const selectedChannelId = getManagedSlotIntent(getActiveManagedSlotId()) || managedProfile.preferredChannelId || '';
+    const selectedChannelId = getManagedSlotIntent(getActiveManagedSlotId()) || '';
     return findManagedChannel(selectedChannelId);
   }
   function channelRequiresPasscode(channel) {
@@ -632,13 +651,13 @@ import { createManagedController } from './managed-controller.js';
   function renderManagedShell() {
     const operatingMode = getOperatingMode();
     const managedSession = getManagedSession();
-    const managedSlot = getManagedSlot(GROUP_SLOT_IDS.A);
+    const managedSlot = syncManagedSlotRuntimeState(GROUP_SLOT_IDS.A);
     const runtimeConfig = getManagedRuntimeConfig();
     const effectiveManagedBaseUrl = getManagedBaseUrl();
     const backendUrlSource = getConfiguredManagedBaseUrl()
       ? 'profile'
       : (runtimeConfig?.managedBackendUrl ? 'app config' : '');
-    const selectedChannelId = managedSlot.intendedChannelId || managedProfile.preferredChannelId || '';
+    const selectedChannelId = managedSlot.intendedChannelId || '';
     const joinedChannel = findManagedChannel(managedSlot.channelId || managedSession.channelId);
     const selectedChannel = findManagedChannel(selectedChannelId);
     const passcodeRequired = channelRequiresPasscode(selectedChannel) || channelRequiresPasscode(joinedChannel);
@@ -1723,6 +1742,8 @@ import { createManagedController } from './managed-controller.js';
     if (!getManagedSlotIntent(GROUP_SLOT_IDS.A) && managedProfile.preferredChannelId) {
       setManagedSlotIntent(GROUP_SLOT_IDS.A, managedProfile.preferredChannelId);
     }
+    syncManagedSlotRuntimeState(GROUP_SLOT_IDS.A);
+    syncManagedSlotRuntimeState(GROUP_SLOT_IDS.B);
     renderManagedShell();
     await syncTransportPeerRows({ sendHostUpdate: false });
     if (needsAppStateNormalization || !got[MANAGED_PROFILE_STORAGE_KEY] || !got[MANAGED_CACHE_STORAGE_KEY]) {

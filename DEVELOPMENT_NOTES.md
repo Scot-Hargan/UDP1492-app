@@ -81,6 +81,7 @@ Check this file before making further code changes.
 - Keep the planning artifacts current when milestone scope or architecture decisions change:
   - `MANAGED_MODE_ADAPTATION_PLAN.md`
   - `PHASE1_REVISED_CHECKLIST.md`
+  - `PHASE2_CLIENT_CHECKLIST.md`
   - `PHASE0_HANDOFF.md` when historical context needs redirect notes
 - Treat documentation updates as part of the decision record so future implementation work can recover the rationale from Git history.
 - For managed mode in the desktop app, prefer standalone-first decisions when they improve correctness:

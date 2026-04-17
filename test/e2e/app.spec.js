@@ -7,6 +7,7 @@ const {
   DEFAULT_STORAGE_FIXTURE,
   MANAGED_RESUME_STORAGE_FIXTURE,
   MANAGED_LEGACY_STATE_STORAGE_FIXTURE,
+  MANAGED_SLOT_PRECEDENCE_STORAGE_FIXTURE,
   SAVED_PEERS_NO_LAST_STORAGE_FIXTURE,
   WITH_PEERS_STORAGE_FIXTURE
 } = require('./fixtures');
@@ -469,7 +470,7 @@ test.describe('peer fixture', () => {
   });
 
   test('requires a passcode for protected managed channels and sends it on join', async ({ appHarness }) => {
-    const { page } = appHarness;
+    const { page, readStorage } = appHarness;
     const joinRequests = [];
     const { baseUrl } = await installManagedApiRoutes(page, {
       joinRequests,
@@ -537,6 +538,8 @@ test.describe('peer fixture', () => {
         passcode: 'alpha-secret'
       }
     });
+    const storageAfterJoin = await readStorage();
+    expect(JSON.stringify(storageAfterJoin)).not.toContain('alpha-secret');
   });
 
   test.describe('managed presence publication', () => {
@@ -847,6 +850,92 @@ test.describe('managed resume fixture', () => {
 
     await expect(page.locator('#managedErrorText')).toContainText('invalid session response');
     await expect(page.locator('#managedIdentityMeta')).not.toContainText('Session');
+  });
+});
+
+test.describe('managed slot intent precedence', () => {
+  test.use({ storageFixture: MANAGED_SLOT_PRECEDENCE_STORAGE_FIXTURE });
+
+  test('uses slot intent instead of legacy profile preference during managed resume', async ({ appHarness }) => {
+    const { page } = appHarness;
+    await installManagedApiRoutes(page, {
+      channelsResponse: {
+        channels: [
+          {
+            channelId: 'chn_alpha',
+            name: 'Alpha',
+            description: 'Primary coordination channel',
+            securityMode: 'open',
+            requiresPasscode: false,
+            concurrentAccessAllowed: true,
+            memberCount: 3
+          },
+          {
+            channelId: 'chn_bravo',
+            name: 'Bravo',
+            description: 'Protected coordination channel',
+            securityMode: 'passcode',
+            requiresPasscode: true,
+            concurrentAccessAllowed: true,
+            memberCount: 2
+          }
+        ],
+        syncedAt: '2026-04-16T19:21:00Z'
+      },
+      joinResponses: {
+        chn_bravo: {
+          membership: {
+            channelId: 'chn_bravo',
+            slotId: 'A',
+            membershipState: 'joined',
+            joinedAt: '2026-04-16T19:22:00Z'
+          },
+          channel: {
+            channelId: 'chn_bravo',
+            name: 'Bravo',
+            description: 'Protected coordination channel',
+            securityMode: 'passcode',
+            requiresPasscode: true,
+            concurrentAccessAllowed: true,
+            memberCount: 2
+          }
+        }
+      },
+      peersResponses: {
+        chn_bravo: {
+          channelId: 'chn_bravo',
+          peers: [
+            {
+              userId: 'usr_peer_02',
+              sessionId: 'ses_peer_02',
+              channelId: 'chn_bravo',
+              displayName: 'Peer Bravo',
+              connectionState: 'idle',
+              endpoints: [
+                {
+                  endpointId: 'end_02',
+                  kind: 'public',
+                  ip: '198.51.100.11',
+                  port: 1492,
+                  registrationState: 'ready',
+                  lastValidatedAt: '2026-04-16T19:25:00Z'
+                }
+              ]
+            }
+          ],
+          resolvedAt: '2026-04-16T19:25:05Z'
+        }
+      }
+    });
+
+    await page.locator('#operatingModeManaged').click();
+    await expect(page.locator('#managedErrorText')).toContainText('requires a passcode');
+    await expect(page.locator('#managedPasscodeLabel')).toContainText('Required');
+    await page.locator('#managedJoinPasscodeInput').fill('alpha-secret');
+    await page.getByRole('button', { name: 'Join Selected' }).click();
+
+    await expect(page.locator('#managedActiveChannel')).toHaveText('Bravo');
+    await expect(page.locator('#managedPeerSyncMeta')).toContainText('1 transport peer');
   });
 });
 

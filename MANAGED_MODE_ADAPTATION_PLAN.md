@@ -217,6 +217,10 @@ The concrete closeout checklist and closeout record now live in:
 
 - `C:\NodeProjects\1492-app\PHASE1_REVISED_CHECKLIST.md`
 
+The next desktop-client security slice should be driven by:
+
+- `C:\NodeProjects\1492-app\PHASE2_CLIENT_CHECKLIST.md`
+
 ### Standalone-first decisions
 
 The Electron app should now prefer the following when they improve correctness:
