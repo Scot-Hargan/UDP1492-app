@@ -1,6 +1,6 @@
 {
   "name": "udp-1492-app",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "private": false,
   "description": "Standalone Electron desktop app for UDP 1492 Audio Link.",
   "main": "src/main/main.js",
@@ -24,8 +24,8 @@
     "test:e2e:headed": "playwright test --headed"
   },
   "devDependencies": {
-    "@playwright/test": "^1.55.0",
-    "electron": "^41.0.3",
+    "@playwright/test": "^1.59.1",
+    "electron": "^41.2.1",
     "electron-builder": "^26.0.12"
   },
   "build": {
