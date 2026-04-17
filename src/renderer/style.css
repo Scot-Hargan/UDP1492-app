@@ -234,6 +234,10 @@ body[data-operating-mode="managed"] .direct-only {
   margin-bottom: 14px;
 }
 
+.managed-card-header-stack {
+  align-items: stretch;
+}
+
 .managed-card-feature {
   background:
     linear-gradient(180deg, rgba(90, 201, 154, 0.12), rgba(90, 201, 154, 0.04)),
@@ -263,10 +267,35 @@ body[data-operating-mode="managed"] .direct-only {
   background: rgba(255, 255, 255, 0.03);
 }
 
+.managed-list-item.is-active {
+  border-color: rgba(90, 201, 154, 0.36);
+  box-shadow: inset 0 0 0 1px rgba(90, 201, 154, 0.18);
+}
+
+.managed-list-item.is-selected:not(.is-active) {
+  border-color: rgba(240, 165, 96, 0.36);
+}
+
 .managed-card-copy,
 .managed-card-foot,
 .managed-card-note {
   margin: 8px 0 0;
+}
+
+.managed-slot-copy {
+  margin: 8px 0 0;
+  color: rgba(232, 238, 248, 0.72);
+  font-size: 13px;
+}
+
+.managed-intent-status {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(240, 165, 96, 0.24);
+  background: rgba(240, 165, 96, 0.12);
+  color: var(--text-primary);
+  font-size: 13px;
 }
 
 .managed-form {
@@ -311,6 +340,52 @@ body[data-operating-mode="managed"] .direct-only {
   flex: 1 1 150px;
 }
 
+.managed-slot-targets {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.managed-slot-target-buttons {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid rgba(143, 224, 188, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.managed-slot-target-buttons button {
+  min-width: 88px;
+  border-radius: 999px;
+}
+
+.managed-slot-target-buttons button.is-active {
+  background: var(--accent);
+  border-color: transparent;
+  color: #04130e;
+}
+
+.managed-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.managed-slot-summary {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(143, 224, 188, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.managed-slot-summary h4 {
+  margin: 0;
+  font-size: 14px;
+}
+
 .managed-card-note {
   padding-top: 12px;
   border-top: 1px solid rgba(143, 224, 188, 0.12);
@@ -333,6 +408,13 @@ body[data-operating-mode="managed"] .direct-only {
   font-size: 14px;
 }
 
+.managed-list-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .managed-list-item button {
   min-width: 96px;
 }
@@ -343,6 +425,40 @@ body[data-operating-mode="managed"] .direct-only {
   flex-wrap: wrap;
   font-size: 12px;
   color: rgba(232, 238, 248, 0.6);
+}
+
+.managed-list-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: rgba(232, 238, 248, 0.68);
+}
+
+.managed-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.managed-badge.is-open {
+  border-color: rgba(90, 201, 154, 0.34);
+  background: rgba(90, 201, 154, 0.12);
+  color: #c8f7e2;
+}
+
+.managed-badge.is-protected {
+  border-color: rgba(240, 165, 96, 0.34);
+  background: rgba(240, 165, 96, 0.14);
+  color: #ffd8b3;
 }
 
 button {
@@ -1102,6 +1218,22 @@ button.danger:hover {
 
   .managed-shell-header {
     flex-direction: column;
+  }
+
+  .managed-slot-targets {
+    align-items: stretch;
+  }
+
+  .managed-slot-target-buttons {
+    width: 100%;
+  }
+
+  .managed-slot-target-buttons button {
+    flex: 1;
+  }
+
+  .managed-slot-grid {
+    grid-template-columns: 1fr;
   }
 
   .status-grid {

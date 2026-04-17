@@ -5,6 +5,7 @@ const {
   test,
   expect,
   DEFAULT_STORAGE_FIXTURE,
+  MANAGED_GROUP_B_RESUME_STORAGE_FIXTURE,
   MANAGED_RESUME_STORAGE_FIXTURE,
   MANAGED_LEGACY_STATE_STORAGE_FIXTURE,
   MANAGED_SLOT_PRECEDENCE_STORAGE_FIXTURE,
@@ -416,7 +417,7 @@ test.describe('peer fixture', () => {
     await expect(page.locator('#managedIdentityMeta')).toContainText('usr_01');
     await expect(page.locator('#managedChannelList')).toContainText('Alpha');
 
-    await page.getByRole('button', { name: 'Join' }).click();
+    await page.getByRole('button', { name: 'Join Selected' }).click();
     await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
     await expect(page.locator('#managedGroupAStatus')).toContainText('joined');
     await expect(page.locator('#managedPeerSyncMeta')).toContainText('1 transport peer');
@@ -465,7 +466,7 @@ test.describe('peer fixture', () => {
     expect(storage.udp1492_app_state_v2.managed.transportPeers).toBeUndefined();
 
     await page.locator('#managedLeaveChannelBtn').click();
-    await expect(page.locator('#managedActiveChannel')).toHaveText('No managed channel joined yet');
+    await expect(page.locator('#managedActiveChannel')).toHaveText('Group A has no active membership');
     await expect(page.locator('#networkTable tbody')).not.toContainText('Peer One');
   });
 
@@ -521,14 +522,18 @@ test.describe('peer fixture', () => {
     await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
     await page.locator('#managedOpenSessionBtn').click();
 
+    await expect(page.locator('#managedLobbyStatus')).toContainText('0 open | 1 protected');
     await expect(page.locator('#managedChannelList')).toContainText('Bravo');
-    await page.getByRole('button', { name: 'Join' }).click();
+    await expect(page.locator('#managedChannelList')).toContainText('Protected');
+    await expect(page.locator('#managedChannelList')).toContainText('Passcode required before join');
+    await page.getByRole('button', { name: 'Join Selected' }).click();
     await expect(page.locator('#managedErrorText')).toContainText('requires a passcode');
     await expect(page.locator('#managedPasscodeLabel')).toContainText('Required');
 
     await page.locator('#managedJoinPasscodeInput').fill('alpha-secret');
     await page.getByRole('button', { name: 'Join Selected' }).click();
     await expect(page.locator('#managedActiveChannel')).toHaveText('Bravo');
+    await expect(page.locator('#managedJoinPasscodeInput')).toHaveValue('');
     expect(joinRequests).toHaveLength(1);
     expect(joinRequests[0]).toMatchObject({
       channelId: 'chn_bravo',
@@ -540,6 +545,58 @@ test.describe('peer fixture', () => {
     });
     const storageAfterJoin = await readStorage();
     expect(JSON.stringify(storageAfterJoin)).not.toContain('alpha-secret');
+
+    await page.locator('#managedJoinPasscodeInput').fill('stale-secret');
+    await page.locator('#managedLeaveChannelBtn').click();
+    await expect(page.locator('#managedJoinPasscodeInput')).toHaveValue('');
+  });
+
+  test('can target Group B from a clean managed session', async ({ appHarness }) => {
+    const { page } = appHarness;
+    const joinRequests = [];
+    const { baseUrl } = await installManagedApiRoutes(page, {
+      joinRequests,
+      joinResponses: {
+        chn_alpha: {
+          membership: {
+            channelId: 'chn_alpha',
+            slotId: 'B',
+            membershipState: 'joined',
+            joinedAt: '2026-04-16T19:22:00Z'
+          },
+          channel: {
+            channelId: 'chn_alpha',
+            name: 'Alpha',
+            description: 'Primary coordination channel',
+            securityMode: 'open',
+            requiresPasscode: false,
+            concurrentAccessAllowed: true,
+            memberCount: 5
+          }
+        }
+      }
+    });
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+    await page.locator('#managedSelectGroupB').click();
+    await expect(page.locator('#managedActiveSlotLabel')).toHaveText('Group B');
+
+    await page.locator('#managedChannelList li').filter({ hasText: 'Alpha' }).getByRole('button', { name: 'Join' }).click();
+    await expect(page.locator('#managedGroupATitle')).toHaveText('Alpha');
+    await expect(page.locator('#managedGroupAStatus')).toContainText('No active managed membership');
+    await expect(page.locator('#managedGroupBTitle')).toHaveText('Alpha');
+    await expect(page.locator('#managedGroupBStatus')).toContainText('joined');
+    expect(joinRequests).toHaveLength(1);
+    expect(joinRequests[0]).toMatchObject({
+      channelId: 'chn_alpha',
+      payload: {
+        sessionId: 'ses_01',
+        slotId: 'B'
+      }
+    });
   });
 
   test.describe('managed presence publication', () => {
@@ -558,7 +615,7 @@ test.describe('peer fixture', () => {
       await page.locator('#managedDisplayNameInput').fill('Scot');
       await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
       await page.locator('#managedOpenSessionBtn').click();
-      await page.getByRole('button', { name: 'Join' }).click();
+      await page.getByRole('button', { name: 'Join Selected' }).click();
 
       await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
       expect(presenceRequests.length).toBeGreaterThan(0);
@@ -649,7 +706,7 @@ test.describe('peer fixture', () => {
     await page.locator('#managedDisplayNameInput').fill('Scot');
     await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
     await page.locator('#managedOpenSessionBtn').click();
-    await page.locator('#managedChannelList li').filter({ hasText: 'Alpha' }).getByRole('button', { name: 'Join' }).click();
+    await page.locator('#managedChannelList li').filter({ hasText: 'Alpha' }).getByRole('button', { name: 'Join Selected' }).click();
 
     await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
     await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
@@ -661,6 +718,245 @@ test.describe('peer fixture', () => {
     await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
   });
 
+  test('supports dual-slot membership and aggregates peers from Group A and Group B', async ({ appHarness }) => {
+    const { page, getSentHostMessages } = appHarness;
+    const { baseUrl } = await installManagedApiRoutes(page, {
+      channelsResponse: {
+        channels: [
+          {
+            channelId: 'chn_alpha',
+            name: 'Alpha',
+            description: 'Primary coordination channel',
+            securityMode: 'open',
+            requiresPasscode: false,
+            concurrentAccessAllowed: true,
+            memberCount: 4
+          },
+          {
+            channelId: 'chn_bravo',
+            name: 'Bravo',
+            description: 'Secondary coordination channel',
+            securityMode: 'open',
+            requiresPasscode: false,
+            concurrentAccessAllowed: true,
+            memberCount: 2
+          }
+        ],
+        syncedAt: '2026-04-16T19:21:00Z'
+      },
+      joinResponses: {
+        chn_alpha: {
+          membership: {
+            channelId: 'chn_alpha',
+            slotId: 'A',
+            membershipState: 'joined',
+            joinedAt: '2026-04-16T19:22:00Z'
+          },
+          channel: {
+            channelId: 'chn_alpha',
+            name: 'Alpha',
+            description: 'Primary coordination channel',
+            securityMode: 'open',
+            requiresPasscode: false,
+            concurrentAccessAllowed: true,
+            memberCount: 4
+          }
+        },
+        chn_bravo: {
+          membership: {
+            channelId: 'chn_bravo',
+            slotId: 'B',
+            membershipState: 'joined',
+            joinedAt: '2026-04-16T19:23:00Z'
+          },
+          channel: {
+            channelId: 'chn_bravo',
+            name: 'Bravo',
+            description: 'Secondary coordination channel',
+            securityMode: 'open',
+            requiresPasscode: false,
+            concurrentAccessAllowed: true,
+            memberCount: 2
+          }
+        }
+      },
+      peersResponses: {
+        chn_alpha: {
+          channelId: 'chn_alpha',
+          peers: [
+            {
+              userId: 'usr_peer_01',
+              sessionId: 'ses_peer_01',
+              channelId: 'chn_alpha',
+              displayName: 'Peer One',
+              connectionState: 'idle',
+              endpoints: [
+                {
+                  endpointId: 'end_01',
+                  kind: 'public',
+                  ip: '198.51.100.10',
+                  port: 1492,
+                  registrationState: 'ready',
+                  lastValidatedAt: '2026-04-16T19:25:00Z'
+                }
+              ]
+            }
+          ],
+          resolvedAt: '2026-04-16T19:25:05Z'
+        },
+        chn_bravo: {
+          channelId: 'chn_bravo',
+          peers: [
+            {
+              userId: 'usr_peer_02',
+              sessionId: 'ses_peer_02',
+              channelId: 'chn_bravo',
+              displayName: 'Peer Two',
+              connectionState: 'idle',
+              endpoints: [
+                {
+                  endpointId: 'end_02',
+                  kind: 'public',
+                  ip: '198.51.100.11',
+                  port: 1492,
+                  registrationState: 'ready',
+                  lastValidatedAt: '2026-04-16T19:26:00Z'
+                }
+              ]
+            }
+          ],
+          resolvedAt: '2026-04-16T19:26:05Z'
+        }
+      }
+    });
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+
+    await page.locator('#managedChannelList li').filter({ hasText: 'Alpha' }).getByRole('button', { name: 'Join Selected' }).click();
+    await expect(page.locator('#managedGroupATitle')).toHaveText('Alpha');
+    await expect(page.locator('#managedGroupAStatus')).toContainText('joined');
+
+    await page.locator('#managedSelectGroupB').click();
+    await page.locator('#managedChannelList li').filter({ hasText: 'Bravo' }).getByRole('button', { name: 'Join' }).click();
+
+    await expect(page.locator('#managedGroupATitle')).toHaveText('Alpha');
+    await expect(page.locator('#managedGroupAStatus')).toContainText('joined');
+    await expect(page.locator('#managedGroupBTitle')).toHaveText('Bravo');
+    await expect(page.locator('#managedGroupBStatus')).toContainText('joined');
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer Two');
+
+    await expect.poll(async () => {
+      const messages = await getSentHostMessages();
+      return messages
+        .filter((message) => message.type === 'configure')
+        .some((message) => Array.isArray(message.peers)
+          && message.peers.some((peer) => peer.name === 'Peer One')
+          && message.peers.some((peer) => peer.name === 'Peer Two'));
+    }).toBe(true);
+  });
+
+  test('preserves the current open membership when a protected replacement join is denied', async ({ appHarness }) => {
+    const { page } = appHarness;
+    const { baseUrl } = await installManagedApiRoutes(page, {
+      channelsResponse: {
+        channels: [
+          {
+            channelId: 'chn_alpha',
+            name: 'Alpha',
+            description: 'Primary coordination channel',
+            securityMode: 'open',
+            requiresPasscode: false,
+            concurrentAccessAllowed: true,
+            memberCount: 4
+          },
+          {
+            channelId: 'chn_bravo',
+            name: 'Bravo',
+            description: 'Protected command channel',
+            securityMode: 'passcode',
+            requiresPasscode: true,
+            concurrentAccessAllowed: true,
+            memberCount: 2
+          }
+        ],
+        syncedAt: '2026-04-16T19:21:00Z'
+      },
+      joinErrors: {
+        chn_bravo: {
+          status: 403,
+          code: 'passcode_invalid',
+          message: 'Incorrect passcode.'
+        }
+      },
+      joinResponses: {
+        chn_alpha: {
+          membership: {
+            channelId: 'chn_alpha',
+            slotId: 'A',
+            membershipState: 'joined',
+            joinedAt: '2026-04-16T19:22:00Z'
+          },
+          channel: {
+            channelId: 'chn_alpha',
+            name: 'Alpha',
+            description: 'Primary coordination channel',
+            securityMode: 'open',
+            requiresPasscode: false,
+            concurrentAccessAllowed: true,
+            memberCount: 4
+          }
+        }
+      },
+      peersResponses: {
+        chn_alpha: {
+          channelId: 'chn_alpha',
+          peers: [
+            {
+              userId: 'usr_peer_01',
+              sessionId: 'ses_peer_01',
+              channelId: 'chn_alpha',
+              displayName: 'Peer One',
+              connectionState: 'idle',
+              endpoints: [
+                {
+                  endpointId: 'end_01',
+                  kind: 'public',
+                  ip: '198.51.100.10',
+                  port: 1492,
+                  registrationState: 'ready',
+                  lastValidatedAt: '2026-04-16T19:25:00Z'
+                }
+              ]
+            }
+          ],
+          resolvedAt: '2026-04-16T19:25:05Z'
+        }
+      }
+    });
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+    await page.locator('#managedChannelList li').filter({ hasText: 'Alpha' }).getByRole('button', { name: 'Join Selected' }).click();
+
+    await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+
+    await page.locator('#managedJoinPasscodeInput').fill('wrong-secret');
+    await page.locator('#managedChannelList li').filter({ hasText: 'Bravo' }).getByRole('button', { name: 'Join Protected' }).click();
+
+    await expect(page.locator('#managedErrorText')).toContainText('Incorrect passcode');
+    await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+    await expect(page.locator('#managedGroupAStatus')).toContainText('joined');
+    await expect(page.locator('#managedIntentStatus')).toContainText('Incorrect passcode');
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+  });
+
   test('clears stale managed state when the backend expires the session during peer refresh', async ({ appHarness }) => {
     const { page } = appHarness;
     const { baseUrl } = await installManagedApiRoutes(page);
@@ -669,10 +965,11 @@ test.describe('peer fixture', () => {
     await page.locator('#managedDisplayNameInput').fill('Scot');
     await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
     await page.locator('#managedOpenSessionBtn').click();
-    await page.getByRole('button', { name: 'Join' }).click();
+    await page.getByRole('button', { name: 'Join Selected' }).click();
 
     await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
     await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+    await page.locator('#managedJoinPasscodeInput').fill('stale-secret');
 
     await page.route(/https:\/\/managed\.example\.test\/api\/channels\/chn_alpha\/peers\?sessionId=.*/, async (route) => {
       await route.fulfill({
@@ -690,9 +987,10 @@ test.describe('peer fixture', () => {
 
     await page.locator('#managedRefreshPeersBtn').click();
     await expect(page.locator('#managedErrorText')).toContainText('Session expired');
-    await expect(page.locator('#managedActiveChannel')).toHaveText('No managed channel joined yet');
+    await expect(page.locator('#managedActiveChannel')).toHaveText('Group A has no active membership');
     await expect(page.locator('#managedIdentityMeta')).not.toContainText('Session ses_01');
     await expect(page.locator('#networkTable tbody')).not.toContainText('Peer One');
+    await expect(page.locator('#managedJoinPasscodeInput')).toHaveValue('');
   });
 
   test.describe('runtime configured backend target', () => {
@@ -772,7 +1070,7 @@ test.describe('peer fixture', () => {
     expect(firstOpenSessionRequests[0].payload.resumeSessionId).toBeNull();
     expect(secondOpenSessionRequests[0].payload.resumeSessionId).toBeNull();
     expect(secondOpenSessionRequests[0].payload.displayName).toBe('Scot Two');
-    await expect(page.locator('#managedActiveChannel')).toHaveText('No managed channel joined yet');
+    await expect(page.locator('#managedActiveChannel')).toHaveText('Group A has no active membership');
   });
 });
 
@@ -858,6 +1156,11 @@ test.describe('managed slot intent precedence', () => {
 
   test('uses slot intent instead of legacy profile preference during managed resume', async ({ appHarness }) => {
     const { page } = appHarness;
+    await page.evaluate(() => {
+      const input = document.querySelector('#managedJoinPasscodeInput');
+      if (!input) throw new Error('managedJoinPasscodeInput not found');
+      input.value = 'stale-secret';
+    });
     await installManagedApiRoutes(page, {
       channelsResponse: {
         channels: [
@@ -929,13 +1232,89 @@ test.describe('managed slot intent precedence', () => {
     });
 
     await page.locator('#operatingModeManaged').click();
-    await expect(page.locator('#managedErrorText')).toContainText('requires a passcode');
+    await expect(page.locator('#managedErrorText')).toContainText('complete resume');
+    await expect(page.locator('#managedIntentStatus')).toContainText('Enter the passcode and choose Join Selected');
+    await expect(page.locator('#managedActiveChannel')).toHaveText('Group A has no active membership');
     await expect(page.locator('#managedPasscodeLabel')).toContainText('Required');
+    await expect(page.locator('#managedJoinPasscodeInput')).toHaveValue('');
     await page.locator('#managedJoinPasscodeInput').fill('alpha-secret');
     await page.getByRole('button', { name: 'Join Selected' }).click();
 
     await expect(page.locator('#managedActiveChannel')).toHaveText('Bravo');
     await expect(page.locator('#managedPeerSyncMeta')).toContainText('1 transport peer');
+  });
+});
+
+test.describe('managed Group B resume fixture', () => {
+  test.use({ storageFixture: MANAGED_GROUP_B_RESUME_STORAGE_FIXTURE });
+
+  test('shows recoverable protected resume state for Group B without disturbing Group A', async ({ appHarness }) => {
+    const { page } = appHarness;
+    await installManagedApiRoutes(page, {
+      channelsResponse: {
+        channels: [
+          {
+            channelId: 'chn_alpha',
+            name: 'Alpha',
+            description: 'Primary coordination channel',
+            securityMode: 'open',
+            requiresPasscode: false,
+            concurrentAccessAllowed: true,
+            memberCount: 3
+          },
+          {
+            channelId: 'chn_bravo',
+            name: 'Bravo',
+            description: 'Protected coordination channel',
+            securityMode: 'passcode',
+            requiresPasscode: true,
+            concurrentAccessAllowed: true,
+            memberCount: 2
+          }
+        ],
+        syncedAt: '2026-04-16T19:21:00Z'
+      },
+      joinResponses: {
+        chn_bravo: {
+          membership: {
+            channelId: 'chn_bravo',
+            slotId: 'B',
+            membershipState: 'joined',
+            joinedAt: '2026-04-16T19:22:00Z'
+          },
+          channel: {
+            channelId: 'chn_bravo',
+            name: 'Bravo',
+            description: 'Protected coordination channel',
+            securityMode: 'passcode',
+            requiresPasscode: true,
+            concurrentAccessAllowed: true,
+            memberCount: 2
+          }
+        }
+      },
+      peersResponses: {
+        chn_bravo: {
+          channelId: 'chn_bravo',
+          peers: [],
+          resolvedAt: '2026-04-16T19:25:05Z'
+        }
+      }
+    });
+
+    await page.locator('#operatingModeManaged').click();
+    await expect(page.locator('#managedActiveSlotLabel')).toHaveText('Group B');
+    await expect(page.locator('#managedErrorText')).toContainText('complete resume');
+    await expect(page.locator('#managedGroupATitle')).toHaveText('No channel selected');
+    await expect(page.locator('#managedGroupAStatus')).toContainText('No active managed membership');
+    await expect(page.locator('#managedGroupBStatus')).toContainText('target Bravo');
+    await expect(page.locator('#managedJoinPasscodeInput')).toHaveValue('');
+
+    await page.locator('#managedJoinPasscodeInput').fill('bravo-secret');
+    await page.getByRole('button', { name: 'Join Selected' }).click();
+
+    await expect(page.locator('#managedGroupBTitle')).toHaveText('Bravo');
+    await expect(page.locator('#managedGroupBStatus')).toContainText('joined');
   });
 });
 

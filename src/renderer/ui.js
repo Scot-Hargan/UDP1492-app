@@ -42,10 +42,10 @@ import { createStatusDashboard } from './status-dashboard.js';
 import { sanitizeManagedBaseUrl } from './managed-api.js';
 import { createManagedController } from './managed-controller.js';
 
-// ui.js v0.4.14
+// ui.js v0.4.16
 (() => {
   'use strict';
-  const VERSION = '0.4.14';
+  const VERSION = '0.4.16';
   const platform = window.udp1492;
   const testPlatform = window.udp1492Test || null;
 
@@ -72,6 +72,7 @@ import { createManagedController } from './managed-controller.js';
     A: 'A',
     B: 'B'
   });
+  const MANAGED_SLOT_ORDER = Object.freeze([GROUP_SLOT_IDS.A, GROUP_SLOT_IDS.B]);
   const DEFAULT_MANAGED_SLOT_ID = GROUP_SLOT_IDS.A;
 
   const connectBtn = $('#connectBtn');
@@ -87,8 +88,20 @@ import { createManagedController } from './managed-controller.js';
   const managedProfileStatusEl = $('#managedProfileStatus');
   const managedChannelListEl = $('#managedChannelList');
   const managedLobbyStatusEl = $('#managedLobbyStatus');
+  const managedActiveSlotLabelEl = $('#managedActiveSlotLabel');
+  const managedSelectGroupABtn = $('#managedSelectGroupA');
+  const managedSelectGroupBBtn = $('#managedSelectGroupB');
   const managedActiveChannelEl = $('#managedActiveChannel');
+  const managedActiveSlotStatusEl = $('#managedActiveSlotStatus');
+  const managedGroupATitleEl = $('#managedGroupATitle');
   const managedGroupAStatusEl = $('#managedGroupAStatus');
+  const managedGroupAIntentEl = $('#managedGroupAIntent');
+  const managedGroupAPeerSyncEl = $('#managedGroupAPeerSync');
+  const managedGroupBTitleEl = $('#managedGroupBTitle');
+  const managedGroupBStatusEl = $('#managedGroupBStatus');
+  const managedGroupBIntentEl = $('#managedGroupBIntent');
+  const managedGroupBPeerSyncEl = $('#managedGroupBPeerSync');
+  const managedIntentStatusEl = $('#managedIntentStatus');
   const managedDisplayNameInputEl = $('#managedDisplayNameInput');
   const managedBackendBaseUrlInputEl = $('#managedBackendBaseUrlInput');
   const managedOpenSessionBtn = $('#managedOpenSessionBtn');
@@ -166,11 +179,15 @@ import { createManagedController } from './managed-controller.js';
   managedRefreshChannelsBtn?.addEventListener('click', () => handleManagedRefreshChannels().catch(err => console.error('managed refresh channels error', err)));
   managedRefreshPeersBtn?.addEventListener('click', () => handleManagedRefreshPeers().catch(err => console.error('managed refresh peers error', err)));
   managedLeaveChannelBtn?.addEventListener('click', () => handleManagedLeaveChannel().catch(err => console.error('managed leave error', err)));
+  managedSelectGroupABtn?.addEventListener('click', () => setActiveManagedSlot(GROUP_SLOT_IDS.A).catch(err => console.error('managed slot A error', err)));
+  managedSelectGroupBBtn?.addEventListener('click', () => setActiveManagedSlot(GROUP_SLOT_IDS.B).catch(err => console.error('managed slot B error', err)));
   managedDisplayNameInputEl?.addEventListener('input', () => syncManagedInputButtonState());
   managedBackendBaseUrlInputEl?.addEventListener('input', () => syncManagedInputButtonState());
   managedDisplayNameInputEl?.addEventListener('change', () => updateManagedProfileFromInputs().catch(err => console.error('managed display name error', err)));
   managedBackendBaseUrlInputEl?.addEventListener('change', () => updateManagedProfileFromInputs().catch(err => console.error('managed backend url error', err)));
-  managedJoinPasscodeInputEl?.addEventListener('input', () => { managedJoinPasscode = managedJoinPasscodeInputEl.value || ''; });
+  managedJoinPasscodeInputEl?.addEventListener('input', () => {
+    setManagedJoinPasscode(getActiveManagedSlotId(), managedJoinPasscodeInputEl.value || '');
+  });
 
   peerListEl?.addEventListener('change', () => handlePeerSelection(peerListEl.value));
   openPeerModalBtn?.addEventListener('click', () => openPeerModal(peerListEl?.value || NEW_PEER_VALUE));
@@ -232,7 +249,7 @@ import { createManagedController } from './managed-controller.js';
   let appState = createDefaultAppStateV2();
   let managedProfile = createDefaultManagedProfile();
   let managedCache = createDefaultManagedCache();
-  let managedJoinPasscode = '';
+  let managedJoinPasscodes = createDefaultManagedJoinPasscodes();
   let nativeHost = null;
   let connected = false;
   let encryptionKeyHex = null;
@@ -312,6 +329,18 @@ import { createManagedController } from './managed-controller.js';
       lastUpdatedAt: typeof seed.lastUpdatedAt === 'string' ? seed.lastUpdatedAt : null
     };
   }
+  function createDefaultManagedJoinPasscodes(seed = {}) {
+    return {
+      A: typeof seed?.A === 'string' ? seed.A : '',
+      B: typeof seed?.B === 'string' ? seed.B : ''
+    };
+  }
+  function createDefaultManagedSlotTransportPeers(seed = {}) {
+    return {
+      A: sanitizeTransportPeers(seed?.A),
+      B: sanitizeTransportPeers(seed?.B)
+    };
+  }
   function createDefaultManagedSlotState(seed = {}, slotId = DEFAULT_MANAGED_SLOT_ID) {
     return {
       slotId: sanitizeManagedSlotId(seed.slotId || slotId),
@@ -364,7 +393,7 @@ import { createManagedController } from './managed-controller.js';
           A: createDefaultManagedSlotState(slotASeed, GROUP_SLOT_IDS.A),
           B: createDefaultManagedSlotState(slotBSeed, GROUP_SLOT_IDS.B)
         },
-        transportPeers: []
+        slotTransportPeers: createDefaultManagedSlotTransportPeers(managed.slotTransportPeers)
       }
     };
   }
@@ -406,12 +435,55 @@ import { createManagedController } from './managed-controller.js';
   function getManagedSession() {
     return appState?.managed?.session || createDefaultAppStateV2().managed.session;
   }
+  function getManagedSlotIds() {
+    return [...MANAGED_SLOT_ORDER];
+  }
   function getManagedSlot(slotId = DEFAULT_MANAGED_SLOT_ID) {
     const managedSlotId = sanitizeManagedSlotId(slotId);
     return appState?.managed?.slots?.[managedSlotId] || createDefaultAppStateV2().managed.slots[managedSlotId];
   }
   function getActiveManagedSlotId() {
     return sanitizeManagedSlotId(appState?.managed?.shell?.activeSlotId);
+  }
+  function getInactiveManagedSlotId() {
+    return getActiveManagedSlotId() === GROUP_SLOT_IDS.A ? GROUP_SLOT_IDS.B : GROUP_SLOT_IDS.A;
+  }
+  function getManagedSlotTransportPeers(slotId = DEFAULT_MANAGED_SLOT_ID) {
+    const managedSlotId = sanitizeManagedSlotId(slotId);
+    return sanitizeTransportPeers(appState?.managed?.slotTransportPeers?.[managedSlotId]);
+  }
+  function setManagedSlotTransportPeers(slotId, peers) {
+    const managedSlotId = sanitizeManagedSlotId(slotId);
+    if (!appState?.managed?.slotTransportPeers || typeof appState.managed.slotTransportPeers !== 'object') {
+      appState.managed.slotTransportPeers = createDefaultManagedSlotTransportPeers();
+    }
+    appState.managed.slotTransportPeers[managedSlotId] = sanitizeTransportPeers(peers);
+    return appState.managed.slotTransportPeers[managedSlotId];
+  }
+  function clearManagedSlotTransportPeers(slotId) {
+    return setManagedSlotTransportPeers(slotId, []);
+  }
+  function clearAllManagedSlotTransportPeers() {
+    for (const slotId of getManagedSlotIds()) clearManagedSlotTransportPeers(slotId);
+  }
+  function getManagedJoinPasscode(slotId = getActiveManagedSlotId()) {
+    const managedSlotId = sanitizeManagedSlotId(slotId);
+    return managedJoinPasscodes?.[managedSlotId] || '';
+  }
+  function setManagedJoinPasscode(slotId, value = '') {
+    const managedSlotId = sanitizeManagedSlotId(slotId);
+    managedJoinPasscodes[managedSlotId] = typeof value === 'string' ? value : String(value || '');
+    if (managedJoinPasscodeInputEl && managedSlotId === getActiveManagedSlotId()) {
+      managedJoinPasscodeInputEl.value = managedJoinPasscodes[managedSlotId];
+    }
+    return managedJoinPasscodes[managedSlotId];
+  }
+  function clearManagedJoinPasscodes(slotId) {
+    if (slotId) {
+      setManagedJoinPasscode(slotId, '');
+      return;
+    }
+    for (const managedSlotId of getManagedSlotIds()) setManagedJoinPasscode(managedSlotId, '');
   }
   function getManagedSlotIntent(slotId = DEFAULT_MANAGED_SLOT_ID) {
     return getManagedSlot(slotId).intendedChannelId || null;
@@ -420,6 +492,17 @@ import { createManagedController } from './managed-controller.js';
     const targetSlot = getManagedSlot(slotId);
     targetSlot.intendedChannelId = normalizeManagedChannelId(channelId);
     return targetSlot.intendedChannelId;
+  }
+  async function setActiveManagedSlot(slotId, options = {}) {
+    appState.managed.shell.activeSlotId = sanitizeManagedSlotId(slotId);
+    renderManagedShell();
+    if (options.persist !== false) {
+      await persistAppState({
+        includeLegacyLastPeers: true,
+        includeManagedProfile: true,
+        includeManagedCache: true
+      });
+    }
   }
   function syncManagedSlotRuntimeState(slotId = DEFAULT_MANAGED_SLOT_ID) {
     const targetSlot = getManagedSlot(slotId);
@@ -462,6 +545,12 @@ import { createManagedController } from './managed-controller.js';
   function channelRequiresPasscode(channel) {
     return !!channel?.requiresPasscode || channel?.securityMode === 'passcode';
   }
+  function getManagedChannelSecurityMode(channel) {
+    return channelRequiresPasscode(channel) ? 'passcode' : 'open';
+  }
+  function getManagedChannelSecurityLabel(channel) {
+    return channelRequiresPasscode(channel) ? 'Protected' : 'Open';
+  }
   function getOperatingMode() {
     return sanitizeOperatingMode(appState?.operatingMode);
   }
@@ -478,7 +567,24 @@ import { createManagedController } from './managed-controller.js';
       .filter(Boolean);
   }
   function getManagedTransportPeers() {
-    return sanitizeTransportPeers(appState?.managed?.transportPeers);
+    const mergedPeers = [];
+    const seenKeys = new Set();
+    for (const slotId of getManagedSlotIds()) {
+      for (const peer of getManagedSlotTransportPeers(slotId)) {
+        const key = getPeerKey(peer);
+        if (!key || seenKeys.has(key)) continue;
+        seenKeys.add(key);
+        mergedPeers.push(peer);
+      }
+    }
+    return mergedPeers;
+  }
+  function findManagedTransportPeer(key) {
+    for (const slotId of getManagedSlotIds()) {
+      const peer = getManagedSlotTransportPeers(slotId).find((entry) => getPeerKey(entry) === key);
+      if (peer) return peer;
+    }
+    return null;
   }
   function pickManagedEndpoint(peer) {
     const endpoints = Array.isArray(peer?.endpoints) ? peer.endpoints : [];
@@ -548,6 +654,8 @@ import { createManagedController } from './managed-controller.js';
     fetchImpl: window.fetch.bind(window),
     version: VERSION,
     operatingModes: OPERATING_MODES,
+    getManagedSlotIds,
+    getActiveManagedSlotId,
     getAppState: () => appState,
     getManagedProfile: () => managedProfile,
     getManagedCache: () => managedCache,
@@ -558,10 +666,13 @@ import { createManagedController } from './managed-controller.js';
     getManagedSlot,
     getManagedSlotIntent,
     setManagedSlotIntent,
-    getManagedJoinPasscode: () => managedJoinPasscode,
-    setManagedJoinPasscode: (value) => {
-      managedJoinPasscode = value || '';
-    },
+    getManagedJoinPasscode,
+    setManagedJoinPasscode,
+    clearManagedJoinPasscodes,
+    getManagedSlotTransportPeers,
+    setManagedSlotTransportPeers,
+    clearManagedSlotTransportPeers,
+    clearAllManagedSlotTransportPeers,
     setManagedError,
     clearManagedError,
     renderManagedShell,
@@ -648,20 +759,84 @@ import { createManagedController } from './managed-controller.js';
       managedOpenSessionBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || !pendingDisplayName || !pendingBaseUrl;
     }
   }
+  function getManagedSlotLabel(slotId) {
+    return `Group ${sanitizeManagedSlotId(slotId)}`;
+  }
+  function buildManagedSlotViewModel(slotId) {
+    const managedSlotId = sanitizeManagedSlotId(slotId);
+    const slot = syncManagedSlotRuntimeState(managedSlotId);
+    const selectedChannelId = slot.intendedChannelId || '';
+    const joinedChannel = findManagedChannel(slot.channelId || '');
+    const selectedChannel = findManagedChannel(selectedChannelId);
+    const activeChannelId = slot.channelId || '';
+    const activeChannelName = joinedChannel?.name || slot.channelName || activeChannelId || '';
+    const selectedChannelName = selectedChannel?.name || selectedChannelId || '';
+    const hasDifferentIntent = !!selectedChannelId && !!activeChannelId && selectedChannelId !== activeChannelId;
+    const resolvedCount = getManagedSlotTransportPeers(managedSlotId).length;
+    const statusText = slot.channelId
+      ? `${slot.membershipState || 'joined'} | presence ${slot.presenceState || 'offline'} | ${getManagedChannelSecurityLabel(joinedChannel)}`
+      : (selectedChannel
+          ? `No active managed membership | target ${selectedChannelName} | ${getManagedChannelSecurityLabel(selectedChannel)}`
+          : 'No active managed membership');
+    let intentText = '';
+    if (slot.errorMessage) {
+      intentText = slot.errorMessage;
+    } else if (hasDifferentIntent && selectedChannel) {
+      intentText = `${selectedChannelName} is selected next for ${getManagedSlotLabel(managedSlotId)}. Current membership stays on ${activeChannelName} until the replacement join succeeds.${channelRequiresPasscode(selectedChannel) ? ' Passcode required.' : ''}`;
+    } else if (!slot.channelId && selectedChannel) {
+      intentText = channelRequiresPasscode(selectedChannel)
+        ? `${selectedChannelName} is the selected ${getManagedSlotLabel(managedSlotId)} target. Enter its passcode, then choose Join Selected to complete resume or join.`
+        : `${selectedChannelName} is selected for ${getManagedSlotLabel(managedSlotId)} and ready to join.`;
+    } else {
+      intentText = `No intended channel selected for ${getManagedSlotLabel(managedSlotId)}.`;
+    }
+    const peerSyncText = slot.lastPeerSyncAt
+      ? `${resolvedCount} transport peer(s) resolved | ${formatManagedTimestamp(slot.lastPeerSyncAt)}`
+      : `${resolvedCount} transport peer(s) resolved`;
+    return {
+      slot: managedSlotId,
+      slotState: slot,
+      joinedChannel,
+      selectedChannel,
+      selectedChannelId,
+      activeChannelId,
+      activeChannelName,
+      selectedChannelName,
+      hasDifferentIntent,
+      resolvedCount,
+      title: slot.channelId
+        ? (joinedChannel?.name || slot.channelName || slot.channelId)
+        : (selectedChannelName || 'No channel selected'),
+      statusText,
+      intentText,
+      peerSyncText,
+      passcodeRequired: channelRequiresPasscode(selectedChannel) || channelRequiresPasscode(joinedChannel)
+    };
+  }
+  function renderManagedSlotSummary(elements, viewModel, isActiveSlot) {
+    if (elements.title) elements.title.textContent = viewModel.title;
+    if (elements.status) elements.status.textContent = `${viewModel.statusText}${isActiveSlot ? ' | active slot' : ''}`;
+    if (elements.intent) {
+      elements.intent.textContent = viewModel.intentText;
+    }
+    if (elements.peerSync) {
+      elements.peerSync.textContent = viewModel.peerSyncText;
+    }
+  }
   function renderManagedShell() {
     const operatingMode = getOperatingMode();
     const managedSession = getManagedSession();
-    const managedSlot = syncManagedSlotRuntimeState(GROUP_SLOT_IDS.A);
+    const activeSlotId = getActiveManagedSlotId();
+    const activeSlotView = buildManagedSlotViewModel(activeSlotId);
+    const slotAView = buildManagedSlotViewModel(GROUP_SLOT_IDS.A);
+    const slotBView = buildManagedSlotViewModel(GROUP_SLOT_IDS.B);
     const runtimeConfig = getManagedRuntimeConfig();
     const effectiveManagedBaseUrl = getManagedBaseUrl();
     const backendUrlSource = getConfiguredManagedBaseUrl()
       ? 'profile'
       : (runtimeConfig?.managedBackendUrl ? 'app config' : '');
-    const selectedChannelId = managedSlot.intendedChannelId || '';
-    const joinedChannel = findManagedChannel(managedSlot.channelId || managedSession.channelId);
-    const selectedChannel = findManagedChannel(selectedChannelId);
-    const passcodeRequired = channelRequiresPasscode(selectedChannel) || channelRequiresPasscode(joinedChannel);
-    const resolvedCount = getManagedTransportPeers().length;
+    const joinedSlotCount = getManagedSlotIds().filter((slotId) => !!getManagedSlot(slotId).channelId).length;
+    const activeSlotLabel = getManagedSlotLabel(activeSlotId);
     document.body.dataset.operatingMode = operatingMode;
     updateOperatingModeButtons();
     if (transportPeersHeadingEl) {
@@ -676,8 +851,8 @@ import { createManagedController } from './managed-controller.js';
     if (managedModeStatusEl) {
       managedModeStatusEl.textContent = operatingMode === OPERATING_MODES.MANAGED
         ? (managedSession.sessionId
-            ? `Session ${managedSession.status || 'open'}${managedSession.expiresAt ? ` until ${formatManagedTimestamp(managedSession.expiresAt)}` : ''}`
-            : 'Open a managed session, then join one channel into Group A.')
+            ? `Session ${managedSession.status || 'open'} | ${joinedSlotCount} slot(s) joined${managedSession.expiresAt ? ` | until ${formatManagedTimestamp(managedSession.expiresAt)}` : ''}`
+            : 'Open a managed session, then target Group A or Group B from the lobby.')
         : 'Managed shell is idle while direct mode is active.';
     }
     if (managedIdentityNameEl) {
@@ -699,36 +874,65 @@ import { createManagedController } from './managed-controller.js';
       managedBackendBaseUrlInputEl.placeholder = runtimeConfig?.managedBackendUrl || 'https://managed.example.test';
     }
     if (managedLobbyStatusEl) {
+      const protectedCount = managedCache.channels.filter((channel) => channelRequiresPasscode(channel)).length;
+      const openCount = Math.max(0, managedCache.channels.length - protectedCount);
       managedLobbyStatusEl.textContent = managedCache.channels.length
-        ? `${managedCache.channels.length} channel(s) cached${managedCache.lastUpdatedAt ? ` | synced ${formatManagedTimestamp(managedCache.lastUpdatedAt)}` : ''}`
+        ? `${managedCache.channels.length} channel(s) cached | ${openCount} open | ${protectedCount} protected${managedCache.lastUpdatedAt ? ` | synced ${formatManagedTimestamp(managedCache.lastUpdatedAt)}` : ''}`
         : 'No channels loaded yet';
     }
-    if (managedActiveChannelEl) {
-      managedActiveChannelEl.textContent = managedSlot.channelId
-        ? (joinedChannel?.name || managedSlot.channelName || managedSlot.channelId)
-        : 'No managed channel joined yet';
+    if (managedActiveSlotLabelEl) {
+      managedActiveSlotLabelEl.textContent = activeSlotLabel;
     }
-    if (managedGroupAStatusEl) {
-      managedGroupAStatusEl.textContent = managedSlot.channelId
-        ? `${managedSlot.membershipState || 'joined'} | presence ${managedSlot.presenceState || 'offline'}`
-        : 'No active managed membership';
+    if (managedSelectGroupABtn) {
+      managedSelectGroupABtn.classList.toggle('is-active', activeSlotId === GROUP_SLOT_IDS.A);
+      managedSelectGroupABtn.setAttribute('aria-pressed', String(activeSlotId === GROUP_SLOT_IDS.A));
+    }
+    if (managedSelectGroupBBtn) {
+      managedSelectGroupBBtn.classList.toggle('is-active', activeSlotId === GROUP_SLOT_IDS.B);
+      managedSelectGroupBBtn.setAttribute('aria-pressed', String(activeSlotId === GROUP_SLOT_IDS.B));
+    }
+    if (managedActiveChannelEl) {
+      managedActiveChannelEl.textContent = activeSlotView.slotState.channelId
+        ? activeSlotView.title
+        : `${activeSlotLabel} has no active membership`;
+    }
+    if (managedActiveSlotStatusEl) {
+      managedActiveSlotStatusEl.textContent = `${activeSlotLabel} | ${activeSlotView.statusText}`;
+    }
+    if (managedIntentStatusEl) {
+      managedIntentStatusEl.hidden = !activeSlotView.intentText;
+      managedIntentStatusEl.textContent = activeSlotView.intentText;
     }
     if (managedPeerSyncMetaEl) {
-      managedPeerSyncMetaEl.textContent = managedSlot.lastPeerSyncAt
-        ? `${resolvedCount} transport peer(s) resolved | ${formatManagedTimestamp(managedSlot.lastPeerSyncAt)}`
-        : `${resolvedCount} transport peer(s) resolved`;
+      managedPeerSyncMetaEl.textContent = activeSlotView.peerSyncText;
     }
+    renderManagedSlotSummary({
+      title: managedGroupATitleEl,
+      status: managedGroupAStatusEl,
+      intent: managedGroupAIntentEl,
+      peerSync: managedGroupAPeerSyncEl
+    }, slotAView, activeSlotId === GROUP_SLOT_IDS.A);
+    renderManagedSlotSummary({
+      title: managedGroupBTitleEl,
+      status: managedGroupBStatusEl,
+      intent: managedGroupBIntentEl,
+      peerSync: managedGroupBPeerSyncEl
+    }, slotBView, activeSlotId === GROUP_SLOT_IDS.B);
     if (managedPasscodeLabelEl) {
-      managedPasscodeLabelEl.textContent = passcodeRequired ? 'Join Passcode (Required)' : 'Join Passcode';
+      managedPasscodeLabelEl.textContent = activeSlotView.passcodeRequired
+        ? `${activeSlotLabel} Passcode (Required)`
+        : `${activeSlotLabel} Passcode`;
     }
     if (managedJoinPasscodeInputEl) {
-      managedJoinPasscodeInputEl.placeholder = passcodeRequired
-        ? 'Enter the protected channel passcode'
+      managedJoinPasscodeInputEl.placeholder = activeSlotView.passcodeRequired
+        ? (activeSlotView.hasDifferentIntent
+            ? `Enter the protected channel passcode to switch ${activeSlotLabel}`
+            : 'Enter the protected channel passcode')
         : 'Only for protected channels';
-      managedJoinPasscodeInputEl.value = managedJoinPasscode;
+      managedJoinPasscodeInputEl.value = getManagedJoinPasscode(getActiveManagedSlotId());
     }
     if (managedErrorTextEl) {
-      const errorMessage = managedSession.errorMessage || '';
+      const errorMessage = activeSlotView.slotState.errorMessage || managedSession.errorMessage || '';
       managedErrorTextEl.hidden = !errorMessage;
       managedErrorTextEl.textContent = errorMessage;
     }
@@ -737,10 +941,10 @@ import { createManagedController } from './managed-controller.js';
       managedRefreshChannelsBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || !managedSession.sessionId;
     }
     if (managedRefreshPeersBtn) {
-      managedRefreshPeersBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || !managedSlot.channelId;
+      managedRefreshPeersBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || !activeSlotView.slotState.channelId;
     }
     if (managedLeaveChannelBtn) {
-      managedLeaveChannelBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || !managedSlot.channelId;
+      managedLeaveChannelBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || !activeSlotView.slotState.channelId;
     }
     if (managedChannelListEl) {
       managedChannelListEl.innerHTML = '';
@@ -760,34 +964,59 @@ import { createManagedController } from './managed-controller.js';
       for (const channel of channels) {
         const item = document.createElement('li');
         item.className = 'managed-list-item';
+        item.dataset.securityMode = getManagedChannelSecurityMode(channel);
         const header = document.createElement('div');
         header.className = 'managed-list-item-header';
         const summary = document.createElement('div');
+        const titleRow = document.createElement('div');
+        titleRow.className = 'managed-list-title';
         const title = document.createElement('strong');
         title.textContent = channel.name || channel.channelId || 'Unnamed channel';
+        const isProtected = channelRequiresPasscode(channel);
+        const isActive = activeSlotView.slotState.channelId === channel.channelId;
+        const isSelected = !isActive && activeSlotView.selectedChannelId === channel.channelId;
+        const stateBadge = document.createElement('span');
+        stateBadge.className = 'managed-badge';
+        if (isActive) {
+          stateBadge.textContent = 'Joined';
+        } else if (isSelected) {
+          stateBadge.textContent = 'Selected';
+        }
+        stateBadge.hidden = !isActive && !isSelected;
         const detail = document.createElement('span');
         detail.textContent = channel.description || channel.note || channel.channelId || 'Managed channel';
         const meta = document.createElement('div');
         meta.className = 'managed-list-meta';
         const security = document.createElement('span');
-        security.textContent = channel.securityMode || 'open';
+        security.className = `managed-badge ${isProtected ? 'is-protected' : 'is-open'}`;
+        security.textContent = getManagedChannelSecurityLabel(channel);
         const members = document.createElement('span');
+        members.className = 'managed-badge';
         members.textContent = `${Number(channel.memberCount) || 0} member(s)`;
+        const note = document.createElement('p');
+        note.className = 'managed-list-note';
+        note.textContent = isProtected
+          ? 'Passcode required before join.'
+          : 'Open channel. No passcode required.';
+        titleRow.append(title, stateBadge);
         meta.append(security, members);
-        summary.append(title, detail, meta);
+        summary.append(titleRow, detail, meta, note);
         const action = document.createElement('button');
-        const isActive = managedSlot.channelId === channel.channelId;
-        const isSelected = !isActive && selectedChannelId === channel.channelId;
         action.type = 'button';
         action.className = isActive ? 'secondary' : 'primary';
-        action.textContent = isActive ? 'Joined' : (isSelected ? 'Join Selected' : 'Join');
+        action.textContent = isActive ? 'Joined' : (isSelected ? 'Join Selected' : (isProtected ? 'Join Protected' : 'Join'));
         action.disabled = !managedSession.sessionId || isActive;
+        item.classList.toggle('is-active', isActive);
+        item.classList.toggle('is-selected', isSelected);
         action.addEventListener('click', () => {
-          setManagedSlotIntent(GROUP_SLOT_IDS.A, channel.channelId);
-          managedProfile.preferredChannelId = channel.channelId;
+          setManagedSlotIntent(activeSlotId, channel.channelId);
+          if (activeSlotId === GROUP_SLOT_IDS.A) managedProfile.preferredChannelId = channel.channelId;
           renderManagedShell();
-          joinManagedChannel(channel.channelId).catch((err) => {
-            setManagedError(err?.message || 'Failed to join the managed channel.');
+          joinManagedChannel(activeSlotId, channel.channelId).catch((err) => {
+            getManagedSlot(activeSlotId).errorMessage = err?.message || 'Failed to join the managed channel.';
+            if (getActiveManagedSlotId() === activeSlotId) {
+              setManagedError(err?.message || 'Failed to join the managed channel.');
+            }
             renderManagedShell();
             console.error('managed join error', err);
           });
@@ -1210,7 +1439,7 @@ import { createManagedController } from './managed-controller.js';
     } else if (msg.type === 'peerUpdate') {
       let peer = allPeers.find(p => `${p.ip}:${p.port}` === msg.key);
       if (!peer && getOperatingMode() === OPERATING_MODES.MANAGED) {
-        peer = appState.managed.transportPeers.find((entry) => `${entry.ip}:${entry.port}` === msg.key) || null;
+        peer = findManagedTransportPeer(msg.key);
       }
       if (!peer || !msg.field) {
         if (msgText) log(`peerUpdate ignored: ${msgText}`);

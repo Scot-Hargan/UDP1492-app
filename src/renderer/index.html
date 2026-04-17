@@ -70,10 +70,38 @@
           <ul id="managedChannelList" class="managed-list"></ul>
         </article>
         <article class="managed-card managed-card-feature">
-          <p class="managed-card-label">Active Group A</p>
-          <h3 id="managedActiveChannel">No managed channel joined yet</h3>
-          <p id="managedGroupAStatus" class="managed-card-copy">Group A reflects the current managed channel membership and resolved transport peers.</p>
+          <div class="managed-card-header managed-card-header-stack">
+            <div>
+              <p class="managed-card-label">Managed Slots</p>
+              <h3 id="managedActiveChannel">Active slot has no membership</h3>
+              <p id="managedActiveSlotStatus" class="managed-card-copy">Select Group A or Group B to target joins, leaves, passcodes, and peer refresh.</p>
+            </div>
+            <div class="managed-slot-targets" role="group" aria-label="Managed slot target">
+              <span id="managedActiveSlotLabel" class="managed-inline-status">Group A</span>
+              <div class="managed-slot-target-buttons">
+                <button id="managedSelectGroupA" class="secondary is-active" type="button" aria-pressed="true">Group A</button>
+                <button id="managedSelectGroupB" class="secondary" type="button" aria-pressed="false">Group B</button>
+              </div>
+            </div>
+          </div>
+          <p id="managedIntentStatus" class="managed-intent-status" hidden></p>
           <p id="managedPeerSyncMeta" class="managed-card-foot">No managed peer sync yet</p>
+          <div class="managed-slot-grid">
+            <section class="managed-slot-summary">
+              <p class="managed-card-label">Group A</p>
+              <h4 id="managedGroupATitle">No channel selected</h4>
+              <p id="managedGroupAStatus" class="managed-card-copy">No active managed membership</p>
+              <p id="managedGroupAIntent" class="managed-slot-copy">No intended channel selected for Group A.</p>
+              <p id="managedGroupAPeerSync" class="managed-card-foot">0 transport peer(s) resolved</p>
+            </section>
+            <section class="managed-slot-summary">
+              <p class="managed-card-label">Group B</p>
+              <h4 id="managedGroupBTitle">No channel selected</h4>
+              <p id="managedGroupBStatus" class="managed-card-copy">No active managed membership</p>
+              <p id="managedGroupBIntent" class="managed-slot-copy">No intended channel selected for Group B.</p>
+              <p id="managedGroupBPeerSync" class="managed-card-foot">0 transport peer(s) resolved</p>
+            </section>
+          </div>
           <label class="managed-field">
             <span id="managedPasscodeLabel">Join Passcode</span>
             <input id="managedJoinPasscodeInput" type="password" placeholder="Only for protected channels" autocomplete="off" />

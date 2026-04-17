@@ -16,6 +16,7 @@ Check this file before making further code changes.
 ## Test discipline
 
 - Run `npm run test:e2e` after meaningful UI/main-process changes.
+- After a complete slice passes its intended validation, update the online GitHub repo before stopping.
 - E2E tests use Playwright Electron fixtures in `test/e2e/fixtures.js`.
 - Tests launch the app with:
   - isolated `userData`
@@ -82,8 +83,12 @@ Check this file before making further code changes.
   - `MANAGED_MODE_ADAPTATION_PLAN.md`
   - `PHASE1_REVISED_CHECKLIST.md`
   - `PHASE2_CLIENT_CHECKLIST.md`
+  - `PHASE3_GROUPB_CHECKLIST.md`
   - `PHASE0_HANDOFF.md` when historical context needs redirect notes
+  - `NEXT_CHAT_HANDOFF.md` when the active slice, validation baseline, or continuation target changes
 - Treat documentation updates as part of the decision record so future implementation work can recover the rationale from Git history.
+- Prefer expanding the active phase checklist with concrete file-level implementation notes over creating redundant one-off planning documents.
+- Delete planning documents only when they are clearly obsolete and no longer useful as a decision record. Historical phase checklists should usually stay.
 - For managed mode in the desktop app, prefer standalone-first decisions when they improve correctness:
   - app/runtime config over renderer-only configuration
   - desktop-native transport/endpoint data over extension-era placeholders

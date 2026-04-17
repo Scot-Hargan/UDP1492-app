@@ -10,6 +10,7 @@ const WITH_PEERS_STORAGE_FIXTURE = path.join(fixtureRoot, 'with-peers.json');
 const MANAGED_RESUME_STORAGE_FIXTURE = path.join(fixtureRoot, 'managed-resume.json');
 const MANAGED_LEGACY_STATE_STORAGE_FIXTURE = path.join(fixtureRoot, 'managed-legacy-state.json');
 const MANAGED_SLOT_PRECEDENCE_STORAGE_FIXTURE = path.join(fixtureRoot, 'managed-slot-precedence.json');
+const MANAGED_GROUP_B_RESUME_STORAGE_FIXTURE = path.join(fixtureRoot, 'managed-group-b-resume.json');
 
 function resolveFixturePath(storageFixture) {
   if (!storageFixture) return DEFAULT_STORAGE_FIXTURE;
@@ -115,5 +116,6 @@ module.exports = {
   WITH_PEERS_STORAGE_FIXTURE,
   MANAGED_RESUME_STORAGE_FIXTURE,
   MANAGED_LEGACY_STATE_STORAGE_FIXTURE,
-  MANAGED_SLOT_PRECEDENCE_STORAGE_FIXTURE
+  MANAGED_SLOT_PRECEDENCE_STORAGE_FIXTURE,
+  MANAGED_GROUP_B_RESUME_STORAGE_FIXTURE
 };

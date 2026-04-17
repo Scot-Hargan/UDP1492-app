@@ -45,15 +45,15 @@ Phase 2 client work is complete when all of the following are true:
 
 ### B. Protected-channel UX
 
-- [ ] Show clear lobby metadata for open vs protected channels.
-- [ ] Make protected-channel actions and passcode prompts explicit in the managed shell.
-- [ ] Clear passcode input on success, leave, failed resume, and session/membership reset.
+- [x] Show clear lobby metadata for open vs protected channels.
+- [x] Make protected-channel actions and passcode prompts explicit in the managed shell.
+- [x] Clear passcode input on success, leave, failed resume, and session/membership reset.
 
 ### C. Mixed deployment behavior
 
 - [x] Open and protected channels can coexist in one lobby without stale state leaks.
-- [ ] Failed protected-channel switches preserve the current active membership.
-- [ ] Resume against a protected intended channel without a passcode yields a clear recoverable state.
+- [x] Failed protected-channel switches preserve the current active membership.
+- [x] Resume against a protected intended channel without a passcode yields a clear recoverable state.
 
 ### D. Validation
 

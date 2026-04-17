@@ -217,9 +217,13 @@ The concrete closeout checklist and closeout record now live in:
 
 - `C:\NodeProjects\1492-app\PHASE1_REVISED_CHECKLIST.md`
 
-The next desktop-client security slice should be driven by:
+The completed protected-channel client slice is recorded in:
 
 - `C:\NodeProjects\1492-app\PHASE2_CLIENT_CHECKLIST.md`
+
+The next active desktop-client implementation plan should be driven by:
+
+- `C:\NodeProjects\1492-app\PHASE3_GROUPB_CHECKLIST.md`
 
 ### Standalone-first decisions
 
@@ -230,12 +234,22 @@ The Electron app should now prefer the following when they improve correctness:
 - Electron IPC seams over extension-native-messaging assumptions
 - preserving the current host protocol shape unless a concrete blocker appears
 
-### Phase 2+
+### Phase 2
 
-- Same as the extension roadmap:
-- channel security behavior
-- two-group model
-- dual-ear routing
+Phase 2 client security work is complete in the desktop app:
+
+- per-channel security metadata is rendered explicitly in the lobby
+- protected joins require a passcode without persisting it
+- failed protected-channel switches preserve the active membership
+- protected intended-channel resume is explicit and recoverable
+- Playwright coverage exists for the protected-channel closeout cases
+
+### Phase 3+
+
+The next active client milestone should now progress in this order:
+
+- `Phase 3`: activate `Group B` as a first-class managed slot
+- dual-ear routing after two-slot membership is stable
 - Commander Mode
 - admin surface
 - NAT integration
@@ -248,7 +262,30 @@ This cleanup is now complete in the desktop app:
 - `Group A` and `Group B` slot records are present even while only `Group A` is active
 - live session IDs, transient membership state, presence state, and resolved peer data are no longer persisted in `udp1492_app_state_v2`
 
-This keeps the Electron client aligned with the original roadmap and reduces stale-state risk before channel-security and two-group work expand the model.
+This keeps the Electron client aligned with the original roadmap and reduces stale-state risk before full two-slot runtime behavior expands the model.
+
+### Immediate standalone-first planning target after Phase 2
+
+The next focused implementation target should be:
+
+- make `Group B` explicit in the managed shell
+- generalize managed runtime slot behavior beyond `Group A`
+- preserve non-destructive per-slot join / leave / resume / recovery behavior
+- adapt one or two active slots into the existing host peer configuration path
+
+That work is intentionally captured in `PHASE3_GROUPB_CHECKLIST.md` before any routing or Commander-specific behavior is added.
+
+### Current Phase 3 client status
+
+The first Group B client slice is now in progress and already has the following implemented:
+
+- explicit slot targeting for `Group A` and `Group B` in the managed shell
+- slot-parameterized managed controller flows
+- slot-scoped transient passcodes
+- slot-scoped runtime peer storage with aggregated host adaptation
+- Playwright coverage for Group B join, dual-slot membership, and protected Group B resume
+
+The remaining Phase 3 work is now focused on closing validation and edge-case gaps rather than reworking the core slot-aware architecture.
 
 ## Renderer State Model Adaptation
 
@@ -452,12 +489,11 @@ This adaptation is complete when the desktop project is understood as:
 
 ## Immediate Next Implementation Target For 1492-app
 
-The first coding target for this repo should be:
+The next coding target for this repo should be:
 
-- Phase 0 only
-- `AppStateV2` in `src/renderer/ui.js`
-- non-destructive storage migration
-- managed-mode shell in renderer HTML/CSS
-- centralized host-config builder
+- `Phase 3` Group B activation only
+- explicit slot targeting in the managed shell
+- slot-local runtime state and recovery for `A` and `B`
+- deterministic dual-slot peer adaptation into the current host `configure.peers` path
 
-That should happen before any backend or multi-group work is implemented in the desktop app.
+That should happen before dual-ear routing, Commander Mode, admin work, or backend redesign.
