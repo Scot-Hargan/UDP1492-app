@@ -67,6 +67,104 @@ body[data-operating-mode="managed"] .direct-only {
   padding: 18px;
 }
 
+.admin-window {
+  min-height: 100vh;
+}
+
+.admin-app {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.admin-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.admin-header h1 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.admin-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-refresh-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-overview-grid,
+.admin-grid,
+.admin-stats-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.admin-overview-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 14px;
+}
+
+.admin-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 14px;
+}
+
+.admin-card {
+  min-height: 0;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.admin-card h2 {
+  margin: 0;
+  font-size: 19px;
+}
+
+.admin-stats-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.admin-stat-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+}
+
+.admin-stat-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.admin-stat-value {
+  font-size: 18px;
+  color: var(--text-primary);
+}
+
+.admin-stat-copy {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 .header {
   display: flex;
   align-items: center;
@@ -1224,6 +1322,13 @@ button.danger:hover {
     align-items: flex-start;
   }
 
+  .admin-header,
+  .admin-overview-grid,
+  .admin-grid,
+  .admin-stats-grid {
+    grid-template-columns: 1fr;
+  }
+
   .header-actions {
     width: 100%;
     flex-direction: column;
@@ -1257,6 +1362,23 @@ button.danger:hover {
 }
 
 @media (max-width: 600px) {
+  .admin-app {
+    padding: 16px;
+  }
+
+  .admin-header {
+    flex-direction: column;
+  }
+
+  .admin-header-actions,
+  .admin-refresh-group {
+    width: 100%;
+  }
+
+  .admin-refresh-group button {
+    flex: 1 1 100%;
+  }
+
   .mode-switch {
     flex-direction: column;
     align-items: stretch;

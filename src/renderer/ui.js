@@ -42,10 +42,10 @@ import { createStatusDashboard } from './status-dashboard.js';
 import { sanitizeManagedBaseUrl } from './managed-api.js';
 import { createManagedController } from './managed-controller.js';
 
-// ui.js v0.4.18
+// ui.js v0.4.19
 (() => {
   'use strict';
-  const VERSION = '0.4.18';
+  const VERSION = '0.4.19';
   const platform = window.udp1492;
   const testPlatform = window.udp1492Test || null;
 
@@ -88,7 +88,13 @@ import { createManagedController } from './managed-controller.js';
     A: GROUP_SLOT_IDS.A,
     B: GROUP_SLOT_IDS.B
   });
+  const ADMIN_REFRESH_ACTIONS = Object.freeze({
+    ALL: 'all',
+    CHANNELS: 'channels',
+    PEERS: 'peers'
+  });
 
+  const openAdminWindowBtn = $('#openAdminWindowBtn');
   const connectBtn = $('#connectBtn');
   const disconnectBtn = $('#disconnectBtn');
   const directModeBtn = $('#operatingModeDirect');
@@ -217,6 +223,7 @@ import { createManagedController } from './managed-controller.js';
   managedMuteAllBtn?.addEventListener('click', () => toggleCommanderMute(COMMANDER_SCOPE_IDS.ALL).catch(err => console.error('commander mute all error', err)));
   managedMuteGroupABtn?.addEventListener('click', () => toggleCommanderMute(COMMANDER_SCOPE_IDS.A).catch(err => console.error('commander mute A error', err)));
   managedMuteGroupBBtn?.addEventListener('click', () => toggleCommanderMute(COMMANDER_SCOPE_IDS.B).catch(err => console.error('commander mute B error', err)));
+  openAdminWindowBtn?.addEventListener('click', () => openAdminWindow().catch(err => console.error('open admin window error', err)));
   bindMomentaryPttButton(managedPttAllBtn, COMMANDER_SCOPE_IDS.ALL);
   bindMomentaryPttButton(managedPttGroupABtn, COMMANDER_SCOPE_IDS.A);
   bindMomentaryPttButton(managedPttGroupBBtn, COMMANDER_SCOPE_IDS.B);
@@ -273,7 +280,10 @@ import { createManagedController } from './managed-controller.js';
   const setMuteButtonVisual = (button, muted) => applyMuteButtonVisual(button, muted);
   const refreshPeerConnectionState = () => statusDashboard.refreshPeerConnectionState(getTransportPeersForMode());
   const markAudioReceiveActivity = (message) => statusDashboard.markAudioReceiveActivity(message);
-  const updateStatusDashboard = () => statusDashboard.render();
+  const updateStatusDashboard = () => {
+    statusDashboard.render();
+    queueAdminSnapshotPublish();
+  };
   let debugEnabled = false;
   let inputGain = DEFAULT_SETTINGS.inputGain;
   let settings = { ...DEFAULT_SETTINGS };
@@ -282,6 +292,8 @@ import { createManagedController } from './managed-controller.js';
   let managedProfile = createDefaultManagedProfile();
   let managedCache = createDefaultManagedCache();
   let managedJoinPasscodes = createDefaultManagedJoinPasscodes();
+  let managedResolvedPeers = createDefaultManagedResolvedPeers();
+  let adminSurfaceState = createDefaultAdminSurfaceState();
   let nativeHost = null;
   let connected = false;
   let encryptionKeyHex = null;
@@ -306,6 +318,7 @@ import { createManagedController } from './managed-controller.js';
   let audioDebug = { rxFrames: [], schedule: [] };
   const peerRuntimeStats = createPeerRuntimeTracker();
   const codecSupportCache = new Map();
+  let adminSnapshotPublishTimer = null;
 
   function sanitizeOperatingMode(mode) {
     return mode === OPERATING_MODES.MANAGED ? OPERATING_MODES.MANAGED : OPERATING_MODES.DIRECT;
@@ -393,6 +406,12 @@ import { createManagedController } from './managed-controller.js';
       B: typeof seed?.B === 'string' ? seed.B : ''
     };
   }
+  function createDefaultManagedResolvedPeers(seed = {}) {
+    return {
+      A: Array.isArray(seed?.A) ? seed.A.filter((peer) => peer && typeof peer === 'object').map((peer) => ({ ...peer })) : [],
+      B: Array.isArray(seed?.B) ? seed.B.filter((peer) => peer && typeof peer === 'object').map((peer) => ({ ...peer })) : []
+    };
+  }
   function createDefaultManagedSlotTransportPeers(seed = {}) {
     return {
       A: sanitizeTransportPeers(seed?.A),
@@ -441,6 +460,15 @@ import { createManagedController } from './managed-controller.js';
       all: !!seed?.all,
       A: !!seed?.A,
       B: !!seed?.B
+    };
+  }
+  function createDefaultAdminSurfaceState(seed = {}) {
+    return {
+      loadingAction: typeof seed?.loadingAction === 'string' ? seed.loadingAction : 'idle',
+      lastAction: typeof seed?.lastAction === 'string' ? seed.lastAction : '',
+      errorMessage: typeof seed?.errorMessage === 'string' ? seed.errorMessage : '',
+      lastRequestedAt: typeof seed?.lastRequestedAt === 'string' ? seed.lastRequestedAt : '',
+      lastCompletedAt: typeof seed?.lastCompletedAt === 'string' ? seed.lastCompletedAt : ''
     };
   }
   function createDefaultAppStateV2(seed = {}) {
@@ -589,6 +617,23 @@ import { createManagedController } from './managed-controller.js';
   }
   function clearAllManagedSlotTransportPeers() {
     for (const slotId of getManagedSlotIds()) clearManagedSlotTransportPeers(slotId);
+  }
+  function getManagedSlotResolvedPeers(slotId = DEFAULT_MANAGED_SLOT_ID) {
+    const managedSlotId = sanitizeManagedSlotId(slotId);
+    return createDefaultManagedResolvedPeers(managedResolvedPeers)[managedSlotId];
+  }
+  function setManagedSlotResolvedPeers(slotId, peers) {
+    const managedSlotId = sanitizeManagedSlotId(slotId);
+    managedResolvedPeers[managedSlotId] = Array.isArray(peers)
+      ? peers.filter((peer) => peer && typeof peer === 'object').map((peer) => ({ ...peer }))
+      : [];
+    return getManagedSlotResolvedPeers(managedSlotId);
+  }
+  function clearManagedSlotResolvedPeers(slotId) {
+    return setManagedSlotResolvedPeers(slotId, []);
+  }
+  function clearAllManagedSlotResolvedPeers() {
+    for (const slotId of getManagedSlotIds()) clearManagedSlotResolvedPeers(slotId);
   }
   function getManagedJoinPasscode(slotId = getActiveManagedSlotId()) {
     const managedSlotId = sanitizeManagedSlotId(slotId);
@@ -920,6 +965,10 @@ import { createManagedController } from './managed-controller.js';
     setManagedSlotTransportPeers,
     clearManagedSlotTransportPeers,
     clearAllManagedSlotTransportPeers,
+    getManagedSlotResolvedPeers,
+    setManagedSlotResolvedPeers,
+    clearManagedSlotResolvedPeers,
+    clearAllManagedSlotResolvedPeers,
     setManagedError,
     clearManagedError,
     renderManagedShell,
@@ -1059,6 +1108,221 @@ import { createManagedController } from './managed-controller.js';
       peerSyncText,
       passcodeRequired: channelRequiresPasscode(selectedChannel) || channelRequiresPasscode(joinedChannel)
     };
+  }
+  function normalizeAdminRefreshAction(value) {
+    if (value === ADMIN_REFRESH_ACTIONS.CHANNELS) return ADMIN_REFRESH_ACTIONS.CHANNELS;
+    if (value === ADMIN_REFRESH_ACTIONS.PEERS) return ADMIN_REFRESH_ACTIONS.PEERS;
+    return ADMIN_REFRESH_ACTIONS.ALL;
+  }
+  function formatAdminRefreshActionLabel(action) {
+    if (action === ADMIN_REFRESH_ACTIONS.CHANNELS) return 'Channels';
+    if (action === ADMIN_REFRESH_ACTIONS.PEERS) return 'Peers';
+    return 'All Data';
+  }
+  function getManagedJoinedSlotCount() {
+    return getManagedSlotIds().filter((slotId) => !!getManagedSlot(slotId).channelId).length;
+  }
+  function getConnectedTransportPeerCount() {
+    return Array.from(activePeers.values()).filter((peer) => !!peer?.connected).length;
+  }
+  function buildAdminHostStatusSummary() {
+    return `${dashboardState.nativeHostConnected ? 'Host connected' : 'Host disconnected'} | ${dashboardState.localEncryptionEnabled ? 'encryption on' : 'encryption off'} | ${getConnectedTransportPeerCount()} connected peer(s)`;
+  }
+  function buildAdminRouteSummary() {
+    const snapshot = getAudioRoutingSnapshot();
+    if (!snapshot.length) return 'No active routes';
+    const counts = {
+      [AUDIO_ROUTE_IDS.LEFT]: 0,
+      [AUDIO_ROUTE_IDS.RIGHT]: 0,
+      [AUDIO_ROUTE_IDS.CENTER]: 0
+    };
+    for (const entry of snapshot) counts[entry.route] += 1;
+    return `${counts.left} left | ${counts.right} right | ${counts.center} centered`;
+  }
+  function buildAdminChannelSnapshot() {
+    return managedCache.channels.map((channel) => {
+      const slotLabels = getManagedSlotIds()
+        .filter((slotId) => getManagedSlot(slotId).channelId === channel.channelId)
+        .map((slotId) => getManagedSlotLabel(slotId));
+      const slotIntentLabels = getManagedSlotIds()
+        .filter((slotId) => getManagedSlotIntent(slotId) === channel.channelId)
+        .map((slotId) => getManagedSlotLabel(slotId));
+      return {
+        channelId: channel.channelId,
+        name: channel.name || channel.channelId,
+        description: channel.description || '',
+        note: channel.note || '',
+        securityMode: channel.securityMode || 'open',
+        requiresPasscode: channelRequiresPasscode(channel),
+        memberCount: Number(channel.memberCount) || 0,
+        slotLabels,
+        slotIntentLabels
+      };
+    });
+  }
+  function buildAdminSlotSnapshot() {
+    return getManagedSlotIds().map((slotId) => {
+      const slot = syncManagedSlotRuntimeState(slotId);
+      const intendedChannel = slot.intendedChannelId ? findManagedChannel(slot.intendedChannelId) : null;
+      return {
+        slotId,
+        isActiveSlot: getActiveManagedSlotId() === slotId,
+        channelId: slot.channelId || '',
+        channelName: slot.channelName || '',
+        intendedChannelId: slot.intendedChannelId || '',
+        intendedChannelName: intendedChannel?.name || slot.intendedChannelId || '',
+        membershipState: slot.membershipState || 'none',
+        presenceState: slot.presenceState || 'offline',
+        securityMode: slot.securityMode || '',
+        lastPeerSyncAt: slot.lastPeerSyncAt || '',
+        errorMessage: slot.errorMessage || '',
+        transportPeerCount: getManagedSlotTransportPeers(slotId).length
+      };
+    });
+  }
+  function buildAdminResolvedEndpointSnapshot() {
+    const rows = [];
+    for (const slotId of getManagedSlotIds()) {
+      const slot = getManagedSlot(slotId);
+      for (const peer of getManagedSlotResolvedPeers(slotId)) {
+        const selectedEndpoint = pickManagedEndpoint(peer);
+        const endpoints = Array.isArray(peer?.endpoints) ? peer.endpoints : [];
+        for (const endpoint of endpoints) {
+          rows.push({
+            slotId,
+            peerKey: endpoint?.ip && endpoint?.port ? `${endpoint.ip}:${endpoint.port}` : '',
+            channelId: peer?.channelId || slot.channelId || '',
+            channelName: findManagedChannel(peer?.channelId || slot.channelId || '')?.name || slot.channelName || '',
+            displayName: peer?.displayName || peer?.userId || peer?.sessionId || 'Unknown peer',
+            connectionState: peer?.connectionState || 'unknown',
+            ip: endpoint?.ip || '',
+            port: Number(endpoint?.port) || 0,
+            kind: endpoint?.kind || 'unknown',
+            registrationState: endpoint?.registrationState || 'unknown',
+            lastValidatedAt: endpoint?.lastValidatedAt || '',
+            selectedTransport: !!selectedEndpoint && selectedEndpoint.ip === endpoint?.ip && Number(selectedEndpoint.port) === Number(endpoint?.port)
+          });
+        }
+      }
+    }
+    return rows.sort((left, right) => `${left.slotId}:${left.displayName}:${left.ip}:${left.port}`.localeCompare(`${right.slotId}:${right.displayName}:${right.ip}:${right.port}`));
+  }
+  function buildAdminSnapshot() {
+    return {
+      generatedAt: new Date().toISOString(),
+      theme: themePreference,
+      operatingMode: getOperatingMode(),
+      managed: {
+        activeSlotId: getActiveManagedSlotId(),
+        baseUrl: getManagedBaseUrl(),
+        runtimeConfig: structuredClone(getManagedRuntimeConfig()),
+        cache: {
+          lastUpdatedAt: managedCache.lastUpdatedAt || ''
+        },
+        profile: {
+          displayName: managedProfile.displayName || '',
+          userId: managedProfile.userId || '',
+          backendBaseUrl: getConfiguredManagedBaseUrl() || ''
+        },
+        session: {
+          ...structuredClone(getManagedSession())
+        },
+        channels: buildAdminChannelSnapshot(),
+        slots: buildAdminSlotSnapshot(),
+        joinedSlotCount: getManagedJoinedSlotCount(),
+        resolvedEndpoints: buildAdminResolvedEndpointSnapshot()
+      },
+      stats: {
+        activeTransportPeerCount: activePeers.size,
+        connectedPeerCount: getConnectedTransportPeerCount(),
+        managedTransportPeerCount: getManagedTransportPeers().length,
+        joinedSlotCount: getManagedJoinedSlotCount(),
+        peerSummary: peerRuntimeStats.summarize(Array.from(activePeers.keys())),
+        routeSummary: buildAdminRouteSummary(),
+        commanderSummary: getCommanderStatusText(),
+        hostStatusSummary: buildAdminHostStatusSummary()
+      },
+      adminSurface: createDefaultAdminSurfaceState(adminSurfaceState)
+    };
+  }
+  function publishAdminSnapshot() {
+    adminSnapshotPublishTimer = null;
+    if (typeof platform?.publishAdminState !== 'function') return;
+    try {
+      platform.publishAdminState(buildAdminSnapshot());
+    } catch (error) {
+      console.error('admin snapshot publish error', error);
+    }
+  }
+  function queueAdminSnapshotPublish() {
+    if (typeof platform?.publishAdminState !== 'function') return;
+    if (adminSnapshotPublishTimer) return;
+    adminSnapshotPublishTimer = window.setTimeout(() => {
+      publishAdminSnapshot();
+    }, 0);
+  }
+  async function openAdminWindow() {
+    if (typeof platform?.openAdminWindow !== 'function') return;
+    queueAdminSnapshotPublish();
+    await platform.openAdminWindow();
+  }
+  async function refreshAllManagedPeersForAdmin(options = {}) {
+    const managedSession = getManagedSession();
+    if (!managedSession.sessionId) {
+      throw new Error('Open a managed session before refreshing peers.');
+    }
+    const joinedSlotIds = getManagedSlotIds().filter((slotId) => !!getManagedSlot(slotId).channelId);
+    if (!joinedSlotIds.length) {
+      if (options.allowEmpty) return [];
+      throw new Error('Join a managed channel before refreshing peers.');
+    }
+    const refreshedPeers = [];
+    for (const slotId of joinedSlotIds) {
+      refreshedPeers.push(await managedController.refreshManagedPeers(slotId, { ensureTransport: true }));
+    }
+    return refreshedPeers;
+  }
+  async function performAdminRefresh(action, options = {}) {
+    const normalizedAction = normalizeAdminRefreshAction(action);
+    const label = formatAdminRefreshActionLabel(normalizedAction);
+    adminSurfaceState.loadingAction = normalizedAction;
+    adminSurfaceState.lastAction = `Refreshing ${label}`;
+    adminSurfaceState.errorMessage = '';
+    adminSurfaceState.lastRequestedAt = new Date().toISOString();
+    adminSurfaceState.lastCompletedAt = '';
+    renderManagedShell();
+    queueAdminSnapshotPublish();
+    try {
+      if (normalizedAction === ADMIN_REFRESH_ACTIONS.CHANNELS || normalizedAction === ADMIN_REFRESH_ACTIONS.ALL) {
+        if (!getManagedSession().sessionId) {
+          throw new Error('Open a managed session before refreshing admin data.');
+        }
+        await refreshManagedChannels({ slotId: getActiveManagedSlotId() });
+      }
+      if (normalizedAction === ADMIN_REFRESH_ACTIONS.PEERS) {
+        await refreshAllManagedPeersForAdmin();
+      } else if (normalizedAction === ADMIN_REFRESH_ACTIONS.ALL) {
+        await refreshAllManagedPeersForAdmin({ allowEmpty: true });
+      }
+      adminSurfaceState.loadingAction = 'idle';
+      adminSurfaceState.lastAction = `${label} refreshed`;
+      adminSurfaceState.errorMessage = '';
+      adminSurfaceState.lastCompletedAt = new Date().toISOString();
+      renderManagedShell();
+      queueAdminSnapshotPublish();
+    } catch (error) {
+      adminSurfaceState.loadingAction = 'idle';
+      adminSurfaceState.lastAction = `${label} failed`;
+      adminSurfaceState.errorMessage = error?.message || `Failed to refresh ${label.toLowerCase()}.`;
+      adminSurfaceState.lastCompletedAt = new Date().toISOString();
+      renderManagedShell();
+      queueAdminSnapshotPublish();
+      if (!options.silent) throw error;
+    }
+  }
+  async function handleAdminRefreshRequest(request = {}) {
+    const action = normalizeAdminRefreshAction(request?.action);
+    await performAdminRefresh(action, { source: request?.source || 'admin-window' });
   }
   function getCommanderStatusText() {
     if (getOperatingMode() !== OPERATING_MODES.MANAGED) {
@@ -1351,6 +1615,7 @@ import { createManagedController } from './managed-controller.js';
         managedChannelListEl.appendChild(item);
       }
     }
+    queueAdminSnapshotPublish();
   }
   async function updateManagedProfileFromInputs() {
     managedProfile.displayName = (managedDisplayNameInputEl?.value || '').trim();
@@ -1553,6 +1818,7 @@ import { createManagedController } from './managed-controller.js';
     if (darkModeToggle) darkModeToggle.checked = themePreference === 'dark';
     if (themeStatusEl) themeStatusEl.textContent = themePreference === 'dark' ? 'Dark mode' : 'Light mode';
     storage.set({ [THEME_STORAGE_KEY]: themePreference });
+    queueAdminSnapshotPublish();
   }
   function updateInputGain(val, opts = {}) {
     const { persist = false, applyWorklet = true, updateSettings = true } = opts;
@@ -2627,6 +2893,7 @@ import { createManagedController } from './managed-controller.js';
     updateSelfStat('selfOoo', summary.ooo);
     updateSelfStat('selfDups', summary.dups);
     updateSelfStat('selfLoss', summary.loss);
+    queueAdminSnapshotPublish();
   }
   function recordRxFrame(meta) {
     if (!debugEnabled) return;
@@ -2733,14 +3000,25 @@ import { createManagedController } from './managed-controller.js';
         timestamp: Math.trunc(performance.now() * 1000)
       })
     };
+    window.udp1492AdminDebug = {
+      getSnapshot: () => structuredClone(buildAdminSnapshot())
+    };
   }
 
   (async function init() {
     try {
       installTestHooks();
+      if (typeof platform?.onAdminRefreshRequest === 'function') {
+        platform.onAdminRefreshRequest((request) => {
+          handleAdminRefreshRequest(request).catch((error) => {
+            console.error('admin refresh request error', error);
+          });
+        });
+      }
       await loadRuntimeConfig();
       await loadSaved();
       updateUIbuttons(false);
+      queueAdminSnapshotPublish();
       log('ui loaded');
     } catch (e) {
       console.error('init error', e);

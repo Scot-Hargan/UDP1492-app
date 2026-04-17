@@ -65,7 +65,7 @@ Check this file before making further code changes.
 
 ## Workspace reminders
 
-- This workspace root is not a git repository, so do not assume `git status` is available here.
+- This workspace root is the git repository at `C:\NodeProjects\1492-app`.
 - Prefer additive refactors around `src/renderer/ui.js`; preserve behavior and keep modules compatible with richer future features.
 
 ## Managed renderer structure
@@ -73,6 +73,11 @@ Check this file before making further code changes.
 - Managed API contract normalization lives in `src/renderer/managed-api.js`.
 - Managed runtime config and endpoint helpers live in `src/renderer/managed-runtime.js`.
 - Managed session/channel/presence orchestration now lives in `src/renderer/managed-controller.js`.
+- The Phase 6 admin surface now lives in:
+  - `src/renderer/admin.html`
+  - `src/renderer/admin.js`
+  - `src/main/main.js` admin-window lifecycle and state relay
+  - `src/main/preload.js` admin open/state/refresh bridge
 - `src/renderer/ui.js` should remain the rendering and app-shell coordination layer, not the long-term home for all managed-mode control flow.
 - `udp1492_app_state_v2` should persist durable operating-mode and slot-intent state only.
 - Live managed session facts such as current session ID, membership status, presence, and resolved transport peers should stay runtime-only and be rebuilt on resume.
@@ -89,6 +94,7 @@ Check this file before making further code changes.
   - `PHASE6_ADMIN_SURFACE_CHECKLIST.md`
   - `PHASE0_HANDOFF.md` when historical context needs redirect notes
   - `NEXT_CHAT_HANDOFF.md` when the active slice, validation baseline, or continuation target changes
+- When a phase closes and there is no new checklist yet, update the closed checklist as a validation record and note the next planning gap explicitly in `NEXT_CHAT_HANDOFF.md`.
 - Treat documentation updates as part of the decision record so future implementation work can recover the rationale from Git history.
 - Prefer expanding the active phase checklist with concrete file-level implementation notes over creating redundant one-off planning documents.
 - Delete planning documents only when they are clearly obsolete and no longer useful as a decision record. Historical phase checklists should usually stay.

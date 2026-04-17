@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' http: https:;" />
+  <title>UDP 1492 Admin Surface</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="theme-dark admin-window">
+  <div class="admin-app">
+    <header class="admin-header">
+      <div>
+        <p class="managed-kicker">Phase 6 Admin Surface</p>
+        <h1 id="adminTitle">UDP 1492 Admin Surface</h1>
+        <p id="adminOverviewStatus" class="header-summary">Waiting for the main control window to publish an inspection snapshot.</p>
+      </div>
+      <div class="admin-header-actions">
+        <div class="admin-refresh-group" role="group" aria-label="Admin refresh actions">
+          <button id="adminRefreshAllBtn" class="primary" type="button">Refresh All</button>
+          <button id="adminRefreshChannelsBtn" class="secondary" type="button">Refresh Channels</button>
+          <button id="adminRefreshPeersBtn" class="secondary" type="button">Refresh Peers</button>
+        </div>
+      </div>
+    </header>
+
+    <section class="admin-overview-grid">
+      <article class="admin-card">
+        <p class="managed-card-label">Window Status</p>
+        <h2 id="adminRefreshStatus">Waiting for snapshot</h2>
+        <p id="adminRefreshMeta" class="managed-card-copy">The admin surface is read-only and relays data from the main renderer.</p>
+        <p id="adminErrorText" class="managed-error" hidden></p>
+      </article>
+      <article class="admin-card">
+        <p class="managed-card-label">Session</p>
+        <h2 id="adminSessionStatus">No managed session</h2>
+        <p id="adminSessionMeta" class="managed-card-copy">Managed session data has not been opened yet.</p>
+      </article>
+      <article class="admin-card">
+        <p class="managed-card-label">Transport</p>
+        <h2 id="adminTransportStatus">0 active transport peers</h2>
+        <p id="adminTransportMeta" class="managed-card-copy">Transport and peer-health summary will appear here.</p>
+      </article>
+    </section>
+
+    <section class="admin-grid">
+      <article class="admin-card">
+        <div class="managed-card-header">
+          <div>
+            <p class="managed-card-label">Channels</p>
+            <h2>Lobby Snapshot</h2>
+          </div>
+          <span id="adminChannelsMeta" class="managed-inline-status">No channels cached</span>
+        </div>
+        <ul id="adminChannelsList" class="managed-list"></ul>
+      </article>
+
+      <article class="admin-card">
+        <div class="managed-card-header">
+          <div>
+            <p class="managed-card-label">Memberships / Presence</p>
+            <h2>Managed Slots</h2>
+          </div>
+          <span id="adminSlotsMeta" class="managed-inline-status">No joined slots</span>
+        </div>
+        <div id="adminSlotsGrid" class="managed-slot-grid"></div>
+      </article>
+    </section>
+
+    <section class="admin-card">
+      <div class="managed-card-header">
+        <div>
+          <p class="managed-card-label">Endpoint State</p>
+          <h2>Resolved Endpoints</h2>
+        </div>
+        <span id="adminEndpointsMeta" class="managed-inline-status">No resolved endpoints</span>
+      </div>
+      <div class="stat-table-wrapper">
+        <table class="stat-table" id="adminEndpointTable">
+          <thead>
+            <tr>
+              <th>Slot</th>
+              <th>Peer</th>
+              <th>Channel</th>
+              <th>State</th>
+              <th>Endpoint</th>
+              <th>Kind</th>
+              <th>Registration</th>
+              <th>Validated</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="admin-card">
+      <div class="managed-card-header">
+        <div>
+          <p class="managed-card-label">Limited Stats</p>
+          <h2>Local Summary</h2>
+        </div>
+        <span id="adminStatsMeta" class="managed-inline-status">No stats yet</span>
+      </div>
+      <div id="adminStatsGrid" class="admin-stats-grid"></div>
+    </section>
+  </div>
+  <script type="module" src="admin.js"></script>
+</body>
+</html>

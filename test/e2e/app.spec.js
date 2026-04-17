@@ -56,6 +56,16 @@ async function sendCommanderTestFrame(page) {
   return page.evaluate(() => window.udp1492CommanderDebug?.sendTestFrame?.());
 }
 
+async function openAdminWindow(appHarness) {
+  const { page, electronApp } = appHarness;
+  const adminWindowPromise = electronApp.waitForEvent('window');
+  await page.locator('#openAdminWindowBtn').click();
+  const adminPage = await adminWindowPromise;
+  await adminPage.waitForLoadState('domcontentloaded');
+  await expect(adminPage.locator('#adminTitle')).toHaveText('UDP 1492 Admin Surface');
+  return adminPage;
+}
+
 async function installManagedApiRoutes(page, options = {}) {
   const baseUrl = options.baseUrl || 'https://managed.example.test';
   const apiBaseUrl = buildManagedApiUrl(baseUrl, '/api');
@@ -287,6 +297,21 @@ test('quits the app when the main window is closed', async ({ appHarness }) => {
   await closed;
 });
 
+test('opens the admin surface with explicit empty state while the main window remains stable', async ({ appHarness }) => {
+  const { page } = appHarness;
+  const adminPage = await openAdminWindow(appHarness);
+
+  await expect(adminPage.locator('#adminOverviewStatus')).toContainText('Direct mode');
+  await expect(adminPage.locator('#adminChannelsList')).toContainText('No channels cached');
+  await expect(adminPage.locator('#adminEndpointTable tbody')).toContainText('No resolved endpoints');
+  await expect(adminPage.locator('#adminRefreshAllBtn')).toBeDisabled();
+  await expect(adminPage.locator('#adminRefreshPeersBtn')).toBeDisabled();
+
+  await expect(page.locator('#connectBtn')).toBeVisible();
+  await expect(page.locator('#disconnectBtn')).toBeDisabled();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('UDP 1492 Desktop');
+});
+
 test('persists a newly created peer across restart', async ({ appHarness }) => {
   const { page, readStorage, relaunch } = appHarness;
 
@@ -507,6 +532,67 @@ test.describe('peer fixture', () => {
     await page.locator('#managedLeaveChannelBtn').click();
     await expect(page.locator('#managedActiveChannel')).toHaveText('Group A has no active membership');
     await expect(page.locator('#networkTable tbody')).not.toContainText('Peer One');
+  });
+
+  test('renders the admin surface with channels, memberships, endpoints, and local stats', async ({ appHarness }) => {
+    const { page } = appHarness;
+    const { baseUrl } = await installManagedApiRoutes(page);
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+    await page.getByRole('button', { name: 'Join Selected' }).click();
+
+    const adminPage = await openAdminWindow(appHarness);
+    await expect(adminPage.locator('#adminOverviewStatus')).toContainText('Managed mode');
+    await expect(adminPage.locator('#adminChannelsList')).toContainText('Alpha');
+    await expect(adminPage.locator('#adminSlotsGrid')).toContainText('joined | presence online');
+    await expect(adminPage.locator('#adminEndpointTable tbody')).toContainText('Peer One');
+    await expect(adminPage.locator('#adminEndpointTable tbody')).toContainText('ready');
+    await expect(adminPage.locator('#adminTransportStatus')).toContainText('1 active transport peers');
+    await expect(adminPage.locator('#adminStatsGrid')).toContainText('Transport Peers');
+    await expect(adminPage.locator('#adminRefreshAllBtn')).toBeEnabled();
+    await expect(adminPage.locator('#adminRefreshPeersBtn')).toBeEnabled();
+
+    await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+  });
+
+  test('shows admin refresh failures without disturbing the main managed window', async ({ appHarness }) => {
+    const { page } = appHarness;
+    const { baseUrl } = await installManagedApiRoutes(page);
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+    await page.getByRole('button', { name: 'Join Selected' }).click();
+
+    const adminPage = await openAdminWindow(appHarness);
+
+    await page.route(/https:\/\/managed\.example\.test\/api\/channels\/chn_alpha\/peers\?sessionId=.*/, async (route) => {
+      await route.fulfill({
+        status: 500,
+        headers: {
+          'content-type': 'application/json',
+          'access-control-allow-origin': '*'
+        },
+        body: JSON.stringify({
+          code: 'peer_sync_failed',
+          message: 'Peer refresh failed for admin surface.'
+        })
+      });
+    });
+
+    await adminPage.locator('#adminRefreshPeersBtn').click();
+    await expect(adminPage.locator('#adminErrorText')).toContainText('Peer refresh failed for admin surface');
+    await expect(adminPage.locator('#adminRefreshStatus')).toHaveText('Read-only snapshot ready');
+    await expect(adminPage.locator('#adminRefreshMeta')).toContainText('Peers failed');
+
+    await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+    await expect(page.locator('#managedGroupAStatus')).toContainText('joined');
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
   });
 
   test('requires a passcode for protected managed channels and sends it on join', async ({ appHarness }) => {

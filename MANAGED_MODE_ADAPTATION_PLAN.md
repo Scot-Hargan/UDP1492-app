@@ -314,19 +314,23 @@ That work is captured in `PHASE5_COMMANDER_MODE_CHECKLIST.md` and now includes:
 
 The next product phase should therefore move to the admin surface milestone. NAT work should remain a follow-on phase after that.
 
-### Current Phase 6 planning target
+### Current Phase 6 client status
 
-The next active desktop-client planning target is the admin surface milestone.
+The admin surface milestone is now complete on the desktop side.
 
-That work is now captured in `PHASE6_ADMIN_SURFACE_CHECKLIST.md` with:
+That work is captured in `PHASE6_ADMIN_SURFACE_CHECKLIST.md` and now includes:
 
-- finish-line criteria
-- locked decisions
-- Electron window/shell assumptions for a separate admin surface
-- staged data-source assumptions that do not block the first slice on brand-new backend admin endpoints
-- a validation strategy centered on read-only windowed inspection rather than mutation workflows
+- a dedicated Electron admin `BrowserWindow` with explicit open/close lifecycle
+- a preload/main/renderer relay for read-only admin snapshots and refresh requests
+- a bounded read-only admin surface for:
+  - channels
+  - memberships / presence
+  - endpoint registration state
+  - limited local stats
+- explicit empty/loading/error states that do not destabilize the main control window
+- Playwright validation for multi-window open/render/error/stability behavior
 
-NAT work should remain out of scope until the first admin/observability milestone is closed.
+The next product phase should therefore move past the first admin observability milestone. NAT planning or a follow-on admin mutation slice should be captured in a new checklist before more code is started.
 
 ## Renderer State Model Adaptation
 
@@ -453,12 +457,13 @@ The desktop app can support the admin requirement in two Electron-native ways:
 - separate BrowserWindow for admin
 - docked renderer panel inside the main window
 
-Recommended first desktop interpretation:
+The implemented first desktop interpretation is:
 
-- use a docked panel first for development speed
-- keep a separate window as a later option if the workflow needs it
+- use a separate `BrowserWindow` first
+- keep the main voice-control shell focused on transport/session control
+- relay read-only admin snapshots from the main renderer instead of duplicating managed orchestration in a second control surface
 
-This is slightly different from the extension version because Electron has fewer surface limitations.
+This keeps the first admin slice bounded and non-destructive while preserving future flexibility for a docked panel if workflow pressure appears later.
 
 ### 3. Test harness integration
 
@@ -530,11 +535,12 @@ This adaptation is complete when the desktop project is understood as:
 
 ## Immediate Next Implementation Target For 1492-app
 
-The next coding target for this repo should be:
+The next coding target for this repo has not been locked into a new checklist yet.
 
-- `Phase 3` Group B activation only
-- explicit slot targeting in the managed shell
-- slot-local runtime state and recovery for `A` and `B`
-- deterministic dual-slot peer adaptation into the current host `configure.peers` path
+Before more implementation work starts, create the next controlling planning artifact and choose between:
 
-That should happen before dual-ear routing, Commander Mode, admin work, or backend redesign.
+- NAT integration planning
+- a follow-on admin slice for mutation workflows or richer observability
+- another bounded desktop-client closeout driven by a concrete checklist
+
+Do not reuse the closed Phase 3 through Phase 6 checklists as if they were still active implementation plans.

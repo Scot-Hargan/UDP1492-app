@@ -50,72 +50,87 @@ Phase 6 admin surface work is complete when all of the following are true:
 
 ## Current Phase 6 Status
 
-Phase 6 has not started yet.
+Phase 6 is complete and validated.
 
-The relevant baseline inherited from Phase 5 is:
+Closed items in this slice include:
 
-- managed session, slot state, dual-ear receive routing, and Commander transmit groundwork are already renderer-owned
-- the current app has no dedicated admin surface, window, or read-only inspection panels
-- the current managed API client only exposes session open, channel list, join, presence, peer list, and leave flows
-- the current Playwright harness already supports Electron multi-window launch patterns if needed
+- a dedicated Electron admin `BrowserWindow` with explicit open/focus/close lifecycle
+- a main/preload/renderer relay for admin snapshots and refresh requests
+- a bounded read-only admin surface for channels, memberships/presence, endpoint registration state, and limited local stats
+- runtime-only raw resolved-peer storage so endpoint registration state remains visible in the admin surface
+- explicit empty/loading/error handling that does not break the main control shell
+- Playwright Electron coverage for:
+  - opening the admin surface
+  - empty-state rendering
+  - populated core data views
+  - refresh failure behavior while the main window remains stable
 
-That means the next work is primarily Electron windowing, admin data presentation, and validation work.
+Validation closeout for this slice:
+
+- `node --check src\\main\\main.js`
+- `node --check src\\main\\preload.js`
+- `node --check src\\renderer\\ui.js`
+- `node --check src\\renderer\\managed-controller.js`
+- `node --check src\\renderer\\admin.js`
+- `node --check test\\e2e\\app.spec.js`
+- `npm run test:e2e`
+- result: `30/30` passing
 
 ## Checklist
 
 ### A. Admin window / shell ownership
 
-- [ ] Define the Electron ownership model for the admin surface:
+- [x] Define the Electron ownership model for the admin surface:
   - separate `BrowserWindow` first
   - explicit open/close lifecycle
-- [ ] Ensure opening or closing the admin surface does not disrupt the main control window.
-- [ ] Keep the initial shell lightweight and read-first.
+- [x] Ensure opening or closing the admin surface does not disrupt the main control window.
+- [x] Keep the initial shell lightweight and read-first.
 
 ### B. Admin data views
 
-- [ ] Add bounded read-only views for channels, memberships/presence, endpoint state, and limited stats/events when available.
-- [ ] Keep empty/error/loading states explicit.
-- [ ] Avoid turning the first slice into a full dashboard framework.
+- [x] Add bounded read-only views for channels, memberships/presence, endpoint state, and limited stats/events when available.
+- [x] Keep empty/error/loading states explicit.
+- [x] Avoid turning the first slice into a full dashboard framework.
 
 ### C. Data access and refresh
 
-- [ ] Define the renderer/main/preload seam needed to fetch or relay admin data for the surface.
-- [ ] Decide which first-slice admin views can be powered from existing managed session/cache state versus which require additional fetch surfaces.
-- [ ] Keep refresh actions explicit and non-destructive.
-- [ ] Handle missing backend/admin data gracefully without destabilizing the main session.
+- [x] Define the renderer/main/preload seam needed to fetch or relay admin data for the surface.
+- [x] Decide which first-slice admin views can be powered from existing managed session/cache state versus which require additional fetch surfaces.
+- [x] Keep refresh actions explicit and non-destructive.
+- [x] Handle missing backend/admin data gracefully without destabilizing the main session.
 
 ### D. Validation
 
-- [ ] Add Playwright coverage for opening the admin surface.
-- [ ] Add Playwright coverage for rendering core data views.
-- [ ] Add Playwright coverage for empty/error states.
-- [ ] Add Playwright coverage proving the main voice-control window remains stable while the admin surface is used.
+- [x] Add Playwright coverage for opening the admin surface.
+- [x] Add Playwright coverage for rendering core data views.
+- [x] Add Playwright coverage for empty/error states.
+- [x] Add Playwright coverage proving the main voice-control window remains stable while the admin surface is used.
 
-## Immediate Coding Order
+## Implementation Order Used
 
-1. Define the Electron window lifecycle for the admin surface in `src/main/`.
-2. Add a minimal admin shell UI and bounded read-only views.
-3. Wire refresh/loading/error handling for the first supported admin datasets.
-4. Add focused Playwright Electron coverage for the extra window and read-only data states.
-5. Run `npm run test:e2e`.
+1. Defined the Electron window lifecycle for the admin surface in `src/main/`.
+2. Added a dedicated admin renderer entrypoint and bounded read-only views.
+3. Wired admin snapshot publication plus explicit refresh/loading/error handling.
+4. Added focused Playwright Electron coverage for the extra window and read-only data states.
+5. Ran `npm run test:e2e`.
 
 ## Current Implementation Baseline
 
 ### `src/main/`
 
-- the app already manages the main window and preload bridge
-- there is no dedicated admin window or lifecycle yet
-- current shutdown logic assumes one main window and host lifecycle owned from that shell
+- the app manages both the main window and the dedicated admin window
+- the main process relays the latest admin snapshot to the admin surface
+- shutdown logic destroys the admin window without treating it as the app-lifetime owner
 
 ### `src/renderer/`
 
-- the main shell focuses on direct mode, managed slots, receive routing, and Commander transmit controls
-- there is no separate admin UI surface yet
-- current managed state already includes useful read-only facts for an initial inspection window:
+- the main shell still focuses on direct mode, managed slots, receive routing, and Commander transmit controls
+- `src/renderer/admin.html` and `src/renderer/admin.js` provide the read-only admin/operator surface
+- the main renderer publishes bounded admin snapshots using:
   - channel lobby cache
-  - slot membership state
-  - peer resolution / endpoint selection data
-  - runtime stats already shown in the main shell
+  - slot membership/presence state
+  - runtime-only raw resolved peer/endpoint data
+  - existing local transport/runtime stats
 
 ### `src/renderer/managed-api.js`
 
@@ -130,13 +145,16 @@ That means the next work is primarily Electron windowing, admin data presentatio
 
 ### `src/main/preload.js`
 
-- the preload bridge already exposes storage, runtime-config, and host lifecycle APIs
-- there is no current bridge API for opening or coordinating a second admin window
+- the preload bridge now exposes:
+  - admin window open
+  - admin snapshot get/publish
+  - admin refresh request
+  - admin snapshot / refresh event subscriptions
 
 ### `test/e2e/`
 
-- Playwright already drives the Electron app and managed flows
-- the next phase can extend that harness to validate a dedicated admin window and its read-only data states
+- Playwright now validates the dedicated admin window alongside the existing managed flows
+- the harness covers empty-state, populated-state, and refresh-failure behavior for the read-only admin surface
 
 ## Concrete Implementation Plan
 

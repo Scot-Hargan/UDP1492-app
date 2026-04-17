@@ -6,14 +6,14 @@ Use this file if work continues in a fresh chat.
 
 - Repo: `C:\NodeProjects\1492-app`
 - Branch: `main`
-- Package/app version: `0.1.19`
-- Renderer version marker in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js): `0.4.18`
+- Package/app version: `0.1.20`
+- Renderer version marker in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js): `0.4.19`
 - Phase 1 is closed
 - Phase 2 protected-channel client work is closed
 - Phase 3 Group B desktop-client work is closed
 - Phase 4 dual-ear routing desktop-client work is closed
 - Phase 5 Commander Mode desktop-client work is closed
-- Phase 6 admin-surface planning is now active
+- Phase 6 admin-surface work is closed and validated
 
 ## Start Here
 
@@ -29,11 +29,14 @@ Read these in order:
 8. [PHASE1_REVISED_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE1_REVISED_CHECKLIST.md)
 9. [src/renderer/managed-controller.js](C:/NodeProjects/1492-app/src/renderer/managed-controller.js)
 10. [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js)
-11. [src/renderer/index.html](C:/NodeProjects/1492-app/src/renderer/index.html)
-12. [src/renderer/style.css](C:/NodeProjects/1492-app/src/renderer/style.css)
-13. [src/main/preload.js](C:/NodeProjects/1492-app/src/main/preload.js)
-14. [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
-15. [test/e2e/fixtures.js](C:/NodeProjects/1492-app/test/e2e/fixtures.js)
+11. [src/renderer/admin.html](C:/NodeProjects/1492-app/src/renderer/admin.html)
+12. [src/renderer/admin.js](C:/NodeProjects/1492-app/src/renderer/admin.js)
+13. [src/renderer/index.html](C:/NodeProjects/1492-app/src/renderer/index.html)
+14. [src/renderer/style.css](C:/NodeProjects/1492-app/src/renderer/style.css)
+15. [src/main/main.js](C:/NodeProjects/1492-app/src/main/main.js)
+16. [src/main/preload.js](C:/NodeProjects/1492-app/src/main/preload.js)
+17. [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
+18. [test/e2e/fixtures.js](C:/NodeProjects/1492-app/test/e2e/fixtures.js)
 
 ## What Is Already Complete
 
@@ -132,34 +135,52 @@ Closed items in this slice include:
   - `Group B` Commander targeting
   - overlap dedupe for shared endpoints
 
+### Phase 6
+
+The admin surface desktop-client checklist is complete and validated.
+
+Closed items in this slice include:
+
+- a dedicated Electron admin window with explicit open/focus/close lifecycle
+- preload/main/renderer relay APIs for admin snapshot publication and refresh requests
+- a bounded read-only admin renderer for channels, memberships/presence, endpoint registration state, and limited local stats
+- runtime-only raw resolved-peer storage so endpoint registration state stays visible without persisting live managed facts
+- Playwright coverage for:
+  - opening the admin surface
+  - empty-state rendering
+  - populated admin data views
+  - refresh failure while the main control window remains stable
+
 ## Active Planning Artifact
 
-[PHASE6_ADMIN_SURFACE_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE6_ADMIN_SURFACE_CHECKLIST.md) is now the controlling checklist for the next implementation slice.
+[PHASE6_ADMIN_SURFACE_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE6_ADMIN_SURFACE_CHECKLIST.md) is now the closeout record for the completed admin-surface slice.
 
-It also contains:
+There is not yet a new controlling checklist after Phase 6.
+
+Use the Phase 6 checklist plus the managed-mode adaptation plan to decide the next planning artifact.
+
+The Phase 6 checklist now contains:
 
 - finish-line criteria
 - locked decisions
-- immediate coding order
-- current codebase baseline
-- concrete file-level implementation notes for Electron windowing, read-only admin views, and Playwright expansion
+- completed implementation order
+- current implementation baseline
+- validation closeout for the dedicated admin window slice
 
 ## Immediate Next Slice
 
 Do not reopen the Phase 3 Group B client checklist unless a regression appears.
 Do not reopen the Phase 4 dual-ear routing checklist unless a regression appears.
 Do not reopen the Phase 5 Commander checklist unless a regression appears.
+Do not reopen the Phase 6 admin checklist unless a regression appears.
 
-The next concrete target is implementing the Phase 6 admin-surface slice.
+The next concrete target is creating the next planning artifact before more code is started.
 
-The first coding targets should be:
+Recommended next planning choices:
 
-1. Define the Electron window lifecycle for a dedicated admin/operator surface.
-2. Decide the first admin data-source mix:
-   current renderer/session/cache state first, current managed HTTP surfaces where sufficient, no forced dependency on new backend admin endpoints.
-3. Add a minimal read-only admin shell for channels, presence, endpoint state, and limited stats.
-4. Keep admin refresh/error states explicit and non-destructive to the main control window.
-5. Add focused Playwright Electron coverage for the extra window and its read-only data views.
+1. NAT integration planning.
+2. A follow-on admin slice for mutation workflows or richer observability.
+3. Another bounded desktop-client milestone driven by a new checklist.
 
 ## Important Constraints
 
@@ -174,32 +195,34 @@ The first coding targets should be:
 
 Last clean validation before this handoff:
 
+- `node --check src\\main\\main.js`
+- `node --check src\\main\\preload.js`
 - `node --check src\\renderer\\ui.js`
 - `node --check src\\renderer\\managed-controller.js`
+- `node --check src\\renderer\\admin.js`
+- `node --check test\\e2e\\app.spec.js`
 - `npm run test:e2e`
-- result: `27/27` passing
+- result: `30/30` passing
 
 Validated implementation updates after that baseline:
 
-- Commander preference/state helpers and subset-send logic added in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js)
-- Commander controls added in [src/renderer/index.html](C:/NodeProjects/1492-app/src/renderer/index.html) and [src/renderer/style.css](C:/NodeProjects/1492-app/src/renderer/style.css)
-- Commander snapshot/send assertions added in [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
-- package/app version bumped to `0.1.19`
-- renderer version bumped to `0.4.18`
-- `PHASE5_COMMANDER_MODE_CHECKLIST.md`, `MANAGED_MODE_ADAPTATION_PLAN.md`, and `NEXT_CHAT_HANDOFF.md` updated to mark Phase 5 closed
-
-Planning-only updates after that validated slice:
-
-- `PHASE6_ADMIN_SURFACE_CHECKLIST.md` created
-- `PHASE6_ADMIN_SURFACE_CHECKLIST.md` expanded with concrete Electron windowing, staged data-source assumptions, and read-only validation order
-- `MANAGED_MODE_ADAPTATION_PLAN.md` updated for the Phase 6 planning target
-- `DEVELOPMENT_NOTES.md` updated to include the new active planning artifact
-- `NEXT_CHAT_HANDOFF.md` updated to point the next chat at the Phase 6 admin-surface slice
+- admin window lifecycle and relay logic added in [src/main/main.js](C:/NodeProjects/1492-app/src/main/main.js) and [src/main/preload.js](C:/NodeProjects/1492-app/src/main/preload.js)
+- read-only admin renderer added in [src/renderer/admin.html](C:/NodeProjects/1492-app/src/renderer/admin.html) and [src/renderer/admin.js](C:/NodeProjects/1492-app/src/renderer/admin.js)
+- main renderer admin snapshot/refresh wiring plus runtime-only resolved-peer detail added in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js) and [src/renderer/managed-controller.js](C:/NodeProjects/1492-app/src/renderer/managed-controller.js)
+- admin entry control and shared styling added in [src/renderer/index.html](C:/NodeProjects/1492-app/src/renderer/index.html) and [src/renderer/style.css](C:/NodeProjects/1492-app/src/renderer/style.css)
+- Playwright admin multi-window coverage added in [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
+- package/app version bumped to `0.1.20`
+- renderer version bumped to `0.4.19`
+- `PHASE6_ADMIN_SURFACE_CHECKLIST.md`, `MANAGED_MODE_ADAPTATION_PLAN.md`, `DEVELOPMENT_NOTES.md`, and `NEXT_CHAT_HANDOFF.md` updated for the Phase 6 closeout
 
 Safe validation commands for the next chat:
 
+- `node --check src\\main\\main.js`
+- `node --check src\\main\\preload.js`
 - `node --check src\\renderer\\ui.js`
 - `node --check src\\renderer\\managed-controller.js`
+- `node --check src\\renderer\\admin.js`
+- `node --check test\\e2e\\app.spec.js`
 - `npm run test:e2e`
 
 ## Useful Test Fixtures
@@ -215,7 +238,7 @@ Safe validation commands for the next chat:
 - Workflow file: [.github/workflows/windows-release.yml](C:/NodeProjects/1492-app/.github/workflows/windows-release.yml)
 - Release publishing was fixed earlier by building with `--publish never` in the build step
 - Latest published release from the prior chat context was `v0.1.13`
-- Current code version is `0.1.19`
+- Current code version is `0.1.20`
 - After a complete validated slice, update the online GitHub repo before stopping
 
 ## If Continuing Immediately
@@ -226,5 +249,5 @@ Treat Phase 2 as closed.
 Treat Phase 3 Group B desktop-client activation as closed.
 Treat Phase 4 dual-ear routing as closed.
 Treat Phase 5 Commander groundwork as closed.
-Treat Phase 6 admin surface as the active next slice.
-If work continues immediately, start from the Phase 6 checklist and implement the Electron admin window and read-only inspection views.
+Treat Phase 6 admin surface as closed.
+If work continues immediately, first create or update the next controlling checklist before starting code.

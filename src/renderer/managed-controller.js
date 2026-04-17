@@ -86,6 +86,7 @@ export function createManagedController(deps) {
     slot.lastPeerSyncAt = '';
     slot.errorMessage = '';
     deps.clearManagedSlotTransportPeers(slot.slotId);
+    if (typeof deps.clearManagedSlotResolvedPeers === 'function') deps.clearManagedSlotResolvedPeers(slot.slotId);
     deps.setManagedJoinPasscode(slot.slotId, '');
     return slot;
   }
@@ -249,6 +250,7 @@ export function createManagedController(deps) {
     const managedProfile = getManagedProfile();
     stopManagedTimers();
     deps.clearAllManagedSlotTransportPeers();
+    if (typeof deps.clearAllManagedSlotResolvedPeers === 'function') deps.clearAllManagedSlotResolvedPeers();
     clearAllSlotRuntimeState();
     managedSession.sessionId = '';
     managedSession.status = 'idle';
@@ -369,6 +371,7 @@ export function createManagedController(deps) {
     if (shouldResetManagedMembership) {
       stopManagedTimers();
       deps.clearAllManagedSlotTransportPeers();
+      if (typeof deps.clearAllManagedSlotResolvedPeers === 'function') deps.clearAllManagedSlotResolvedPeers();
       clearAllSlotRuntimeState();
       if (typeof deps.clearManagedJoinPasscodes === 'function') deps.clearManagedJoinPasscodes();
       await deps.syncTransportPeerRows({
@@ -498,6 +501,9 @@ export function createManagedController(deps) {
       throw error;
     }
     const resolvedPeers = Array.isArray(response?.peers) ? response.peers.map((peer) => ({ ...peer })) : [];
+    if (typeof deps.setManagedSlotResolvedPeers === 'function') {
+      deps.setManagedSlotResolvedPeers(targetSlotId, resolvedPeers);
+    }
     deps.setManagedSlotTransportPeers(targetSlotId, resolvedPeers.map(deps.adaptResolvedPeerToTransportPeer).filter(Boolean));
     slot.lastPeerSyncAt = response?.resolvedAt || new Date().toISOString();
     clearSlotError(targetSlotId);

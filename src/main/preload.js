@@ -5,6 +5,20 @@ contextBridge.exposeInMainWorld('udp1492', {
   storageGet: (keys) => ipcRenderer.invoke('udp1492:storage-get', keys),
   storageSet: (values) => ipcRenderer.invoke('udp1492:storage-set', values),
   getRuntimeConfig: () => ipcRenderer.invoke('udp1492:runtime-config'),
+  openAdminWindow: () => ipcRenderer.invoke('udp1492:admin-open'),
+  getAdminState: () => ipcRenderer.invoke('udp1492:admin-state-get'),
+  publishAdminState: (snapshot) => ipcRenderer.send('udp1492:admin-state-publish', snapshot),
+  requestAdminRefresh: (request) => ipcRenderer.invoke('udp1492:admin-refresh-request', request),
+  onAdminState: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('udp1492:admin-state', handler);
+    return () => ipcRenderer.removeListener('udp1492:admin-state', handler);
+  },
+  onAdminRefreshRequest: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('udp1492:admin-refresh-request', handler);
+    return () => ipcRenderer.removeListener('udp1492:admin-refresh-request', handler);
+  },
   startHost: () => ipcRenderer.invoke('udp1492:host-start'),
   sendHostMessage: (message) => ipcRenderer.invoke('udp1492:host-send', message),
   stopHost: () => ipcRenderer.invoke('udp1492:host-stop'),

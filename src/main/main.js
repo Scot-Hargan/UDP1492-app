@@ -11,6 +11,8 @@ const useMockHost = isTestMode && process.env.UDP1492_TEST_MOCK_HOST === '1';
 const customUserDataPath = process.env.UDP1492_USER_DATA_DIR;
 const hostScriptPath = path.join(__dirname, '..', 'host', 'udp_audio1492_host.js');
 let mainWindow = null;
+let adminWindow = null;
+let latestAdminState = null;
 let storageWriteQueue = Promise.resolve();
 let quitRequested = false;
 let quitPromise = null;
@@ -407,6 +409,13 @@ function requestAppQuit() {
       console.error('[app] Failed to stop host bridge during quit', error);
     })
     .finally(() => {
+      if (adminWindow && !adminWindow.isDestroyed()) {
+        try {
+          adminWindow.destroy();
+        } catch (error) {
+          console.error('[app] Failed to destroy admin window during quit', error);
+        }
+      }
       if (mainWindow && !mainWindow.isDestroyed()) {
         try {
           mainWindow.destroy();
@@ -420,7 +429,33 @@ function requestAppQuit() {
   return quitPromise;
 }
 
-function createWindow() {
+function attachWindowDiagnostics(targetWindow, label) {
+  targetWindow.webContents.on('console-message', (event, details, levelArg, messageArg, lineArg, sourceIdArg) => {
+    const isDetailsObject = details && typeof details === 'object' && Object.prototype.hasOwnProperty.call(details, 'message');
+    const level = isDetailsObject ? details.level : levelArg;
+    const message = isDetailsObject ? details.message : messageArg;
+    const line = isDetailsObject ? details.lineNumber : lineArg;
+    const sourceId = isDetailsObject ? details.sourceId : sourceIdArg;
+    const prefix = sourceId ? `${sourceId}:${line}` : `${label}:${line}`;
+    const stream = level >= 2 ? console.error : console.log;
+    stream(`[renderer:${label}] ${prefix} ${message}`);
+  });
+
+  targetWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error(`[renderer:${label}] render-process-gone`, details);
+  });
+
+  targetWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error(`[renderer:${label}] did-fail-load ${errorCode} ${errorDescription} ${validatedURL}`);
+  });
+}
+
+function broadcastAdminState() {
+  if (!adminWindow || adminWindow.isDestroyed()) return;
+  adminWindow.webContents.send('udp1492:admin-state', latestAdminState);
+}
+
+function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 860,
@@ -436,25 +471,7 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
-
-  mainWindow.webContents.on('console-message', (event, details, levelArg, messageArg, lineArg, sourceIdArg) => {
-    const isDetailsObject = details && typeof details === 'object' && Object.prototype.hasOwnProperty.call(details, 'message');
-    const level = isDetailsObject ? details.level : levelArg;
-    const message = isDetailsObject ? details.message : messageArg;
-    const line = isDetailsObject ? details.lineNumber : lineArg;
-    const sourceId = isDetailsObject ? details.sourceId : sourceIdArg;
-    const prefix = sourceId ? `${sourceId}:${line}` : `renderer:${line}`;
-    const stream = level >= 2 ? console.error : console.log;
-    stream(`[renderer] ${prefix} ${message}`);
-  });
-
-  mainWindow.webContents.on('render-process-gone', (_event, details) => {
-    console.error('[renderer] render-process-gone', details);
-  });
-
-  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
-    console.error(`[renderer] did-fail-load ${errorCode} ${errorDescription} ${validatedURL}`);
-  });
+  attachWindowDiagnostics(mainWindow, 'main');
 
   mainWindow.on('close', (event) => {
     if (quitRequested) return;
@@ -465,6 +482,51 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+}
+
+function createAdminWindow() {
+  if (adminWindow && !adminWindow.isDestroyed()) {
+    if (adminWindow.isMinimized()) adminWindow.restore();
+    adminWindow.show();
+    adminWindow.focus();
+    return adminWindow;
+  }
+
+  adminWindow = new BrowserWindow({
+    width: 1120,
+    height: 860,
+    minWidth: 900,
+    minHeight: 640,
+    show: false,
+    autoHideMenuBar: true,
+    backgroundColor: '#0b1018',
+    title: 'UDP 1492 Admin Surface',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    }
+  });
+
+  adminWindow.loadFile(path.join(__dirname, '..', 'renderer', 'admin.html'));
+  attachWindowDiagnostics(adminWindow, 'admin');
+
+  adminWindow.once('ready-to-show', () => {
+    if (!adminWindow || adminWindow.isDestroyed()) return;
+    adminWindow.show();
+    broadcastAdminState();
+  });
+
+  adminWindow.webContents.on('did-finish-load', () => {
+    broadcastAdminState();
+  });
+
+  adminWindow.on('closed', () => {
+    adminWindow = null;
+  });
+
+  return adminWindow;
 }
 
 app.on('before-quit', (event) => {
@@ -483,6 +545,23 @@ app.whenReady().then(async () => {
   ipcMain.handle('udp1492:storage-get', async (_event, keys) => storageGet(keys));
   ipcMain.handle('udp1492:storage-set', async (_event, values) => storageSet(values));
   ipcMain.handle('udp1492:runtime-config', async () => getRuntimeConfig());
+  ipcMain.handle('udp1492:admin-open', async () => {
+    createAdminWindow();
+    return { ok: true };
+  });
+  ipcMain.handle('udp1492:admin-state-get', async () => latestAdminState);
+  ipcMain.handle('udp1492:admin-refresh-request', async (_event, request) => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      throw new Error('Main window is unavailable.');
+    }
+    mainWindow.webContents.send('udp1492:admin-refresh-request', request || {});
+    return { ok: true };
+  });
+  ipcMain.on('udp1492:admin-state-publish', (event, snapshot) => {
+    if (!mainWindow || event.sender !== mainWindow.webContents) return;
+    latestAdminState = snapshot && typeof snapshot === 'object' ? snapshot : null;
+    broadcastAdminState();
+  });
   ipcMain.handle('udp1492:host-start', async (event) => {
     hostBridge.start(event.sender);
     return { ok: true };
@@ -507,10 +586,10 @@ app.whenReady().then(async () => {
     ipcMain.handle('udp1492:test:host-sent', async () => hostBridge.getSentMessages());
   }
 
-  createWindow();
+  createMainWindow();
 
   app.on('activate', () => {
-    if (!quitRequested && BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (!quitRequested && (!mainWindow || mainWindow.isDestroyed())) createMainWindow();
   });
 });
 
