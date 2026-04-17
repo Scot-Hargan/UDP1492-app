@@ -67,6 +67,13 @@ Check this file before making further code changes.
 - This workspace root is not a git repository, so do not assume `git status` is available here.
 - Prefer additive refactors around `src/renderer/ui.js`; preserve behavior and keep modules compatible with richer future features.
 
+## Managed renderer structure
+
+- Managed API contract normalization lives in `src/renderer/managed-api.js`.
+- Managed runtime config and endpoint helpers live in `src/renderer/managed-runtime.js`.
+- Managed session/channel/presence orchestration now lives in `src/renderer/managed-controller.js`.
+- `src/renderer/ui.js` should remain the rendering and app-shell coordination layer, not the long-term home for all managed-mode control flow.
+
 ## Planning discipline
 
 - Keep the planning artifacts current when milestone scope or architecture decisions change:

@@ -93,15 +93,15 @@ The renderer should not stay stuck with browser-era limitations if the desktop s
 
 Managed mode should continue adapting into the host's existing peer-oriented `configure` payloads unless a concrete protocol blocker appears.
 
-## Planned Follow-On After Phase 1
+## Follow-On Refactor
 
-Once the Phase 1 checklist above is complete, the next cleanup slice should be a small standalone-first refactor:
+The first standalone-first cleanup pass after Phase 1 is now complete:
 
-- extract managed orchestration out of `src/renderer/ui.js` into a dedicated controller/module
-- formalize the runtime transport info bridge for presence publication
-- make app-level backend configuration the primary source, with renderer override as a secondary path
+- managed orchestration was extracted from `src/renderer/ui.js` into `src/renderer/managed-controller.js`
+- runtime config and endpoint helpers were formalized in `src/renderer/managed-runtime.js`
+- app-level backend configuration remains the primary managed default, with renderer input as an override
 
-That refactor should happen before broadening the scope to:
+Further cleanup can continue incrementally before broadening scope to:
 
 - Group B
 - dual-ear routing
