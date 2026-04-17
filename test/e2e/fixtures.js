@@ -7,6 +7,7 @@ const fixtureRoot = path.join(repoRoot, 'test', 'fixtures', 'storage');
 const DEFAULT_STORAGE_FIXTURE = path.join(fixtureRoot, 'default.json');
 const SAVED_PEERS_NO_LAST_STORAGE_FIXTURE = path.join(fixtureRoot, 'saved-peers-no-last.json');
 const WITH_PEERS_STORAGE_FIXTURE = path.join(fixtureRoot, 'with-peers.json');
+const MANAGED_RESUME_STORAGE_FIXTURE = path.join(fixtureRoot, 'managed-resume.json');
 
 function resolveFixturePath(storageFixture) {
   if (!storageFixture) return DEFAULT_STORAGE_FIXTURE;
@@ -107,5 +108,6 @@ module.exports = {
   expect,
   DEFAULT_STORAGE_FIXTURE,
   SAVED_PEERS_NO_LAST_STORAGE_FIXTURE,
-  WITH_PEERS_STORAGE_FIXTURE
+  WITH_PEERS_STORAGE_FIXTURE,
+  MANAGED_RESUME_STORAGE_FIXTURE
 };

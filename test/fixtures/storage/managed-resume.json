@@ -1,0 +1,57 @@
+{
+  "udp1492_selected_codec": "opus",
+  "udp1492_theme": "dark",
+  "udp1492_app_state_v2": {
+    "version": 2,
+    "operatingMode": "direct",
+    "direct": {
+      "activePeerKeys": []
+    },
+    "managed": {
+      "session": {
+        "status": "idle",
+        "displayName": "Scot",
+        "sessionId": "",
+        "channelId": "",
+        "channelName": "",
+        "userId": "usr_01",
+        "membershipState": "none",
+        "presenceState": "offline",
+        "heartbeatIntervalMs": 15000,
+        "expiresAt": "",
+        "lastOpenedAt": "",
+        "lastPeerSyncAt": "",
+        "errorMessage": ""
+      },
+      "shell": {
+        "selectedChannelId": "chn_alpha",
+        "activeSlotId": "group-a"
+      },
+      "transportPeers": []
+    }
+  },
+  "udp1492_managed_profile": {
+    "version": 1,
+    "displayName": "Scot",
+    "callsign": "",
+    "preferredChannelId": "chn_alpha",
+    "backendBaseUrl": "https://managed.example.test",
+    "userId": "usr_01",
+    "lastSessionId": "ses_old"
+  },
+  "udp1492_managed_cache": {
+    "version": 1,
+    "channels": [
+      {
+        "channelId": "chn_alpha",
+        "name": "Alpha",
+        "description": "Primary coordination channel",
+        "securityMode": "open",
+        "requiresPasscode": false,
+        "concurrentAccessAllowed": true,
+        "memberCount": 3
+      }
+    ],
+    "lastUpdatedAt": "2026-04-16T19:21:00Z"
+  }
+}

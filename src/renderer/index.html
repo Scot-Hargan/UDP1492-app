@@ -32,9 +32,9 @@
     <section id="managedModeShell" class="managed-shell" hidden>
       <div class="managed-shell-header">
         <div>
-          <p class="managed-kicker">Phase 0 Managed Shell</p>
+          <p class="managed-kicker">Phase 1 Managed Shell</p>
           <h2>Managed Coordination</h2>
-          <p id="managedModeStatus" class="managed-copy">Managed shell is ready. Backend session, presence, and peer resolution remain Phase 1 work.</p>
+          <p id="managedModeStatus" class="managed-copy">Managed shell is ready for session open, channel join, presence, and peer resolution over the documented HTTP contract.</p>
         </div>
         <div class="managed-shell-badge">Group A First</div>
       </div>
@@ -72,8 +72,12 @@
         <article class="managed-card managed-card-feature">
           <p class="managed-card-label">Active Group A</p>
           <h3 id="managedActiveChannel">No managed channel joined yet</h3>
-          <p id="managedGroupAStatus" class="managed-card-copy">Group A shell only. Join, leave, and peer resolution arrive in Phase 1.</p>
+          <p id="managedGroupAStatus" class="managed-card-copy">Group A reflects the current managed channel membership and resolved transport peers.</p>
           <p id="managedPeerSyncMeta" class="managed-card-foot">No managed peer sync yet</p>
+          <label class="managed-field">
+            <span id="managedPasscodeLabel">Join Passcode</span>
+            <input id="managedJoinPasscodeInput" type="password" placeholder="Only for protected channels" autocomplete="off" />
+          </label>
           <p id="managedErrorText" class="managed-error" hidden></p>
           <div class="managed-actions">
             <button id="managedRefreshPeersBtn" class="secondary" type="button">Refresh Peers</button>

@@ -5,6 +5,7 @@ const {
   test,
   expect,
   DEFAULT_STORAGE_FIXTURE,
+  MANAGED_RESUME_STORAGE_FIXTURE,
   SAVED_PEERS_NO_LAST_STORAGE_FIXTURE,
   WITH_PEERS_STORAGE_FIXTURE
 } = require('./fixtures');
@@ -21,6 +22,173 @@ async function safeCloseElectronApp(electronApp) {
       throw error;
     }
   }
+}
+
+async function installManagedApiRoutes(page, options = {}) {
+  const baseUrl = options.baseUrl || 'https://managed.example.test';
+  const openSessionResponse = options.openSessionResponse || {
+    identity: {
+      userId: 'usr_01',
+      sessionId: 'ses_01',
+      displayName: 'Scot'
+    },
+    session: {
+      openedAt: '2026-04-16T19:20:00Z',
+      expiresAt: '2026-04-16T21:20:00Z',
+      heartbeatIntervalMs: 15000
+    }
+  };
+  const channelsResponse = options.channelsResponse || {
+    channels: [
+      {
+        channelId: 'chn_alpha',
+        name: 'Alpha',
+        description: 'Primary coordination channel',
+        securityMode: 'open',
+        requiresPasscode: false,
+        concurrentAccessAllowed: true,
+        memberCount: 4
+      }
+    ],
+    syncedAt: '2026-04-16T19:21:00Z'
+  };
+  const joinResponses = options.joinResponses || {
+    chn_alpha: {
+      membership: {
+        channelId: 'chn_alpha',
+        slotId: 'A',
+        membershipState: 'joined',
+        joinedAt: '2026-04-16T19:22:00Z'
+      },
+      channel: {
+        channelId: 'chn_alpha',
+        name: 'Alpha',
+        description: 'Primary coordination channel',
+        securityMode: 'open',
+        requiresPasscode: false,
+        concurrentAccessAllowed: true,
+        memberCount: 5
+      }
+    }
+  };
+  const peersResponses = options.peersResponses || {
+    chn_alpha: {
+      channelId: 'chn_alpha',
+      peers: [
+        {
+          userId: 'usr_peer_01',
+          sessionId: 'ses_peer_01',
+          channelId: 'chn_alpha',
+          displayName: 'Peer One',
+          connectionState: 'idle',
+          endpoints: [
+            {
+              endpointId: 'end_01',
+              kind: 'public',
+              ip: '198.51.100.10',
+              port: 1492,
+              registrationState: 'ready',
+              lastValidatedAt: '2026-04-16T19:25:00Z'
+            }
+          ]
+        }
+      ],
+      resolvedAt: '2026-04-16T19:25:05Z'
+    }
+  };
+  const joinRequests = options.joinRequests || [];
+  const jsonHeaders = {
+    'content-type': 'application/json',
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET,POST,OPTIONS',
+    'access-control-allow-headers': '*'
+  };
+
+  await page.route(`${baseUrl}/api/**`, async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() === 'OPTIONS') {
+      await route.fulfill({ status: 204, headers: jsonHeaders, body: '' });
+      return;
+    }
+    if (url.pathname === '/api/session/open') {
+      await route.fulfill({
+        status: 200,
+        headers: jsonHeaders,
+        body: JSON.stringify(openSessionResponse)
+      });
+      return;
+    }
+    if (url.pathname === '/api/channels') {
+      await route.fulfill({
+        status: 200,
+        headers: jsonHeaders,
+        body: JSON.stringify(channelsResponse)
+      });
+      return;
+    }
+    const joinMatch = url.pathname.match(/^\/api\/channels\/([^/]+)\/join$/);
+    if (joinMatch) {
+      const channelId = decodeURIComponent(joinMatch[1]);
+      const payload = JSON.parse(request.postData() || '{}');
+      joinRequests.push({ channelId, payload });
+      await route.fulfill({
+        status: 200,
+        headers: jsonHeaders,
+        body: JSON.stringify(joinResponses[channelId])
+      });
+      return;
+    }
+    const presenceMatch = url.pathname.match(/^\/api\/channels\/([^/]+)\/presence$/);
+    if (presenceMatch) {
+      const channelId = decodeURIComponent(presenceMatch[1]);
+      await route.fulfill({
+        status: 200,
+        headers: jsonHeaders,
+        body: JSON.stringify({
+          presence: {
+            channelId,
+            sessionId: openSessionResponse.identity.sessionId,
+            onlineState: 'online',
+            lastSeenAt: '2026-04-16T19:23:00Z'
+          },
+          registrations: [],
+          nextHeartbeatAt: '2026-04-16T19:23:15Z'
+        })
+      });
+      return;
+    }
+    const peersMatch = url.pathname.match(/^\/api\/channels\/([^/]+)\/peers$/);
+    if (peersMatch) {
+      const channelId = decodeURIComponent(peersMatch[1]);
+      await route.fulfill({
+        status: 200,
+        headers: jsonHeaders,
+        body: JSON.stringify(peersResponses[channelId])
+      });
+      return;
+    }
+    const leaveMatch = url.pathname.match(/^\/api\/channels\/([^/]+)\/leave$/);
+    if (leaveMatch) {
+      const channelId = decodeURIComponent(leaveMatch[1]);
+      await route.fulfill({
+        status: 200,
+        headers: jsonHeaders,
+        body: JSON.stringify({
+          membership: {
+            channelId,
+            slotId: 'A',
+            membershipState: 'none',
+            leftAt: '2026-04-16T19:26:00Z'
+          }
+        })
+      });
+      return;
+    }
+    throw new Error(`Unhandled managed API request: ${request.method()} ${request.url()}`);
+  });
+
+  return { baseUrl, joinRequests };
 }
 
 test('launches with default persisted settings', async ({ appHarness }) => {
@@ -191,149 +359,7 @@ test.describe('peer fixture', () => {
 
   test('opens a managed session, joins a channel, and adapts resolved peers into host config', async ({ appHarness }) => {
     const { page, getSentHostMessages, readStorage } = appHarness;
-    const baseUrl = 'https://managed.example.test';
-    const jsonHeaders = {
-      'content-type': 'application/json',
-      'access-control-allow-origin': '*',
-      'access-control-allow-methods': 'GET,POST,OPTIONS',
-      'access-control-allow-headers': '*'
-    };
-
-    await page.route(`${baseUrl}/api/**`, async (route) => {
-      const request = route.request();
-      const url = new URL(request.url());
-      if (request.method() === 'OPTIONS') {
-        await route.fulfill({ status: 204, headers: jsonHeaders, body: '' });
-        return;
-      }
-      if (url.pathname === '/api/session/open') {
-        await route.fulfill({
-          status: 200,
-          headers: jsonHeaders,
-          body: JSON.stringify({
-            identity: {
-              userId: 'usr_01',
-              sessionId: 'ses_01',
-              displayName: 'Scot'
-            },
-            session: {
-              openedAt: '2026-04-16T19:20:00Z',
-              expiresAt: '2026-04-16T21:20:00Z',
-              heartbeatIntervalMs: 15000
-            }
-          })
-        });
-        return;
-      }
-      if (url.pathname === '/api/channels') {
-        await route.fulfill({
-          status: 200,
-          headers: jsonHeaders,
-          body: JSON.stringify({
-            channels: [
-              {
-                channelId: 'chn_alpha',
-                name: 'Alpha',
-                description: 'Primary coordination channel',
-                securityMode: 'open',
-                requiresPasscode: false,
-                concurrentAccessAllowed: true,
-                memberCount: 4
-              }
-            ],
-            syncedAt: '2026-04-16T19:21:00Z'
-          })
-        });
-        return;
-      }
-      if (url.pathname === '/api/channels/chn_alpha/join') {
-        await route.fulfill({
-          status: 200,
-          headers: jsonHeaders,
-          body: JSON.stringify({
-            membership: {
-              channelId: 'chn_alpha',
-              slotId: 'A',
-              membershipState: 'joined',
-              joinedAt: '2026-04-16T19:22:00Z'
-            },
-            channel: {
-              channelId: 'chn_alpha',
-              name: 'Alpha',
-              description: 'Primary coordination channel',
-              securityMode: 'open',
-              requiresPasscode: false,
-              concurrentAccessAllowed: true,
-              memberCount: 5
-            }
-          })
-        });
-        return;
-      }
-      if (url.pathname === '/api/channels/chn_alpha/presence') {
-        await route.fulfill({
-          status: 200,
-          headers: jsonHeaders,
-          body: JSON.stringify({
-            presence: {
-              channelId: 'chn_alpha',
-              sessionId: 'ses_01',
-              onlineState: 'online',
-              lastSeenAt: '2026-04-16T19:23:00Z'
-            },
-            registrations: [],
-            nextHeartbeatAt: '2026-04-16T19:23:15Z'
-          })
-        });
-        return;
-      }
-      if (url.pathname === '/api/channels/chn_alpha/peers') {
-        await route.fulfill({
-          status: 200,
-          headers: jsonHeaders,
-          body: JSON.stringify({
-            channelId: 'chn_alpha',
-            peers: [
-              {
-                userId: 'usr_peer_01',
-                sessionId: 'ses_peer_01',
-                channelId: 'chn_alpha',
-                displayName: 'Peer One',
-                connectionState: 'idle',
-                endpoints: [
-                  {
-                    endpointId: 'end_01',
-                    kind: 'public',
-                    ip: '198.51.100.10',
-                    port: 1492,
-                    registrationState: 'ready',
-                    lastValidatedAt: '2026-04-16T19:25:00Z'
-                  }
-                ]
-              }
-            ],
-            resolvedAt: '2026-04-16T19:25:05Z'
-          })
-        });
-        return;
-      }
-      if (url.pathname === '/api/channels/chn_alpha/leave') {
-        await route.fulfill({
-          status: 200,
-          headers: jsonHeaders,
-          body: JSON.stringify({
-            membership: {
-              channelId: 'chn_alpha',
-              slotId: 'A',
-              membershipState: 'none',
-              leftAt: '2026-04-16T19:26:00Z'
-            }
-          })
-        });
-        return;
-      }
-      throw new Error(`Unhandled managed API request: ${request.method()} ${request.url()}`);
-    });
+    const { baseUrl } = await installManagedApiRoutes(page);
 
     await page.locator('#operatingModeManaged').click();
     await page.locator('#managedDisplayNameInput').fill('Scot');
@@ -393,5 +419,103 @@ test.describe('peer fixture', () => {
     await page.locator('#managedLeaveChannelBtn').click();
     await expect(page.locator('#managedActiveChannel')).toHaveText('No managed channel joined yet');
     await expect(page.locator('#networkTable tbody')).not.toContainText('Peer One');
+  });
+
+  test('requires a passcode for protected managed channels and sends it on join', async ({ appHarness }) => {
+    const { page } = appHarness;
+    const joinRequests = [];
+    const { baseUrl } = await installManagedApiRoutes(page, {
+      joinRequests,
+      channelsResponse: {
+        channels: [
+          {
+            channelId: 'chn_bravo',
+            name: 'Bravo',
+            description: 'Protected command channel',
+            securityMode: 'passcode',
+            requiresPasscode: true,
+            concurrentAccessAllowed: false,
+            memberCount: 2
+          }
+        ],
+        syncedAt: '2026-04-16T19:21:00Z'
+      },
+      joinResponses: {
+        chn_bravo: {
+          membership: {
+            channelId: 'chn_bravo',
+            slotId: 'A',
+            membershipState: 'joined',
+            joinedAt: '2026-04-16T19:22:00Z'
+          },
+          channel: {
+            channelId: 'chn_bravo',
+            name: 'Bravo',
+            description: 'Protected command channel',
+            securityMode: 'passcode',
+            requiresPasscode: true,
+            concurrentAccessAllowed: false,
+            memberCount: 2
+          }
+        }
+      },
+      peersResponses: {
+        chn_bravo: {
+          channelId: 'chn_bravo',
+          peers: [],
+          resolvedAt: '2026-04-16T19:25:05Z'
+        }
+      }
+    });
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+
+    await expect(page.locator('#managedChannelList')).toContainText('Bravo');
+    await page.getByRole('button', { name: 'Join' }).click();
+    await expect(page.locator('#managedErrorText')).toContainText('requires a passcode');
+    await expect(page.locator('#managedPasscodeLabel')).toContainText('Required');
+
+    await page.locator('#managedJoinPasscodeInput').fill('alpha-secret');
+    await page.getByRole('button', { name: 'Join Selected' }).click();
+    await expect(page.locator('#managedActiveChannel')).toHaveText('Bravo');
+    expect(joinRequests).toHaveLength(1);
+    expect(joinRequests[0]).toMatchObject({
+      channelId: 'chn_bravo',
+      payload: {
+        sessionId: 'ses_01',
+        slotId: 'A',
+        passcode: 'alpha-secret'
+      }
+    });
+  });
+});
+
+test.describe('managed resume fixture', () => {
+  test.use({ storageFixture: MANAGED_RESUME_STORAGE_FIXTURE });
+
+  test('auto-resumes managed mode on mode switch when profile and channel intent already exist', async ({ appHarness }) => {
+    const { page } = appHarness;
+    await installManagedApiRoutes(page, {
+      openSessionResponse: {
+        identity: {
+          userId: 'usr_01',
+          sessionId: 'ses_new',
+          displayName: 'Scot'
+        },
+        session: {
+          openedAt: '2026-04-16T19:20:00Z',
+          expiresAt: '2026-04-16T21:20:00Z',
+          heartbeatIntervalMs: 15000
+        }
+      }
+    });
+
+    await page.locator('#operatingModeManaged').click();
+    await expect(page.locator('#managedIdentityMeta')).toContainText('ses_new');
+    await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
   });
 });

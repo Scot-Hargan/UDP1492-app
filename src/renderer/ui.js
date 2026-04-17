@@ -91,6 +91,8 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
   const managedLeaveChannelBtn = $('#managedLeaveChannelBtn');
   const managedPeerSyncMetaEl = $('#managedPeerSyncMeta');
   const managedErrorTextEl = $('#managedErrorText');
+  const managedPasscodeLabelEl = $('#managedPasscodeLabel');
+  const managedJoinPasscodeInputEl = $('#managedJoinPasscodeInput');
 
   const nativeHostDot = $('#nativeHostDot');
   const nativeHostStatus = $('#nativeHostStatus');
@@ -162,6 +164,7 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
   managedBackendBaseUrlInputEl?.addEventListener('input', () => syncManagedInputButtonState());
   managedDisplayNameInputEl?.addEventListener('change', () => updateManagedProfileFromInputs().catch(err => console.error('managed display name error', err)));
   managedBackendBaseUrlInputEl?.addEventListener('change', () => updateManagedProfileFromInputs().catch(err => console.error('managed backend url error', err)));
+  managedJoinPasscodeInputEl?.addEventListener('input', () => { managedJoinPasscode = managedJoinPasscodeInputEl.value || ''; });
 
   peerListEl?.addEventListener('change', () => handlePeerSelection(peerListEl.value));
   openPeerModalBtn?.addEventListener('click', () => openPeerModal(peerListEl?.value || NEW_PEER_VALUE));
@@ -223,6 +226,7 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
   let appState = createDefaultAppStateV2();
   let managedProfile = createDefaultManagedProfile();
   let managedCache = createDefaultManagedCache();
+  let managedJoinPasscode = '';
   let managedHeartbeatTimer = null;
   let managedPeerRefreshTimer = null;
   let nativeHost = null;
@@ -364,6 +368,19 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
   function findManagedChannel(channelId) {
     return managedCache.channels.find((channel) => channel?.channelId === channelId) || null;
   }
+  function getSelectedManagedChannel() {
+    const selectedChannelId = appState?.managed?.shell?.selectedChannelId || managedProfile.preferredChannelId || '';
+    return findManagedChannel(selectedChannelId);
+  }
+  function channelRequiresPasscode(channel) {
+    return !!channel?.requiresPasscode || channel?.securityMode === 'passcode';
+  }
+  function shouldAttemptManagedResume() {
+    return getOperatingMode() === OPERATING_MODES.MANAGED
+      && !!managedProfile.displayName.trim()
+      && !!managedProfile.backendBaseUrl
+      && !!(managedProfile.lastSessionId || managedProfile.preferredChannelId || getManagedSession().channelId);
+  }
   function getOperatingMode() {
     return sanitizeOperatingMode(appState?.operatingMode);
   }
@@ -475,6 +492,8 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
     const managedSession = getManagedSession();
     const selectedChannelId = appState?.managed?.shell?.selectedChannelId || managedProfile.preferredChannelId || '';
     const joinedChannel = findManagedChannel(managedSession.channelId);
+    const selectedChannel = findManagedChannel(selectedChannelId);
+    const passcodeRequired = channelRequiresPasscode(selectedChannel) || channelRequiresPasscode(joinedChannel);
     const resolvedCount = getManagedTransportPeers().length;
     document.body.dataset.operatingMode = operatingMode;
     updateOperatingModeButtons();
@@ -499,7 +518,7 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
     }
     if (managedIdentityMetaEl) {
       managedIdentityMetaEl.textContent = managedSession.userId
-        ? `User ${managedSession.userId}${managedSession.sessionId ? ` • Session ${managedSession.sessionId}` : ''}`
+        ? `User ${managedSession.userId}${managedSession.sessionId ? ` | Session ${managedSession.sessionId}` : ''}`
         : (managedProfile.callsign ? `Callsign ${managedProfile.callsign}` : 'Managed identity scaffold only');
     }
     if (managedProfileStatusEl) {
@@ -511,7 +530,7 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
     if (managedBackendBaseUrlInputEl) managedBackendBaseUrlInputEl.value = managedProfile.backendBaseUrl || '';
     if (managedLobbyStatusEl) {
       managedLobbyStatusEl.textContent = managedCache.channels.length
-        ? `${managedCache.channels.length} channel(s) cached${managedCache.lastUpdatedAt ? ` • synced ${formatManagedTimestamp(managedCache.lastUpdatedAt)}` : ''}`
+        ? `${managedCache.channels.length} channel(s) cached${managedCache.lastUpdatedAt ? ` | synced ${formatManagedTimestamp(managedCache.lastUpdatedAt)}` : ''}`
         : 'No channels loaded yet';
     }
     if (managedActiveChannelEl) {
@@ -521,13 +540,22 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
     }
     if (managedGroupAStatusEl) {
       managedGroupAStatusEl.textContent = managedSession.channelId
-        ? `${managedSession.membershipState || 'joined'} • presence ${managedSession.presenceState || 'offline'}`
+        ? `${managedSession.membershipState || 'joined'} | presence ${managedSession.presenceState || 'offline'}`
         : 'No active managed membership';
     }
     if (managedPeerSyncMetaEl) {
       managedPeerSyncMetaEl.textContent = managedSession.lastPeerSyncAt
-        ? `${resolvedCount} transport peer(s) resolved • ${formatManagedTimestamp(managedSession.lastPeerSyncAt)}`
+        ? `${resolvedCount} transport peer(s) resolved | ${formatManagedTimestamp(managedSession.lastPeerSyncAt)}`
         : `${resolvedCount} transport peer(s) resolved`;
+    }
+    if (managedPasscodeLabelEl) {
+      managedPasscodeLabelEl.textContent = passcodeRequired ? 'Join Passcode (Required)' : 'Join Passcode';
+    }
+    if (managedJoinPasscodeInputEl) {
+      managedJoinPasscodeInputEl.placeholder = passcodeRequired
+        ? 'Enter the protected channel passcode'
+        : 'Only for protected channels';
+      managedJoinPasscodeInputEl.value = managedJoinPasscode;
     }
     if (managedErrorTextEl) {
       const errorMessage = managedSession.errorMessage || '';
@@ -585,6 +613,9 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
         action.textContent = isActive ? 'Joined' : (isSelected ? 'Join Selected' : 'Join');
         action.disabled = !managedSession.sessionId || isActive;
         action.addEventListener('click', () => {
+          appState.managed.shell.selectedChannelId = channel.channelId;
+          managedProfile.preferredChannelId = channel.channelId;
+          renderManagedShell();
           joinManagedChannel(channel.channelId).catch((err) => {
             setManagedError(err?.message || 'Failed to join the managed channel.');
             renderManagedShell();
@@ -646,13 +677,29 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
     clearManagedError();
     appState.managed.session.status = 'opening';
     renderManagedShell();
-    const response = await api.openSession({
-      displayName: managedProfile.displayName.trim(),
-      clientVersion: VERSION,
-      mode: 'managed',
-      requestedUserId: managedProfile.userId || null,
-      resumeSessionId: managedProfile.lastSessionId || null
-    });
+    let response;
+    try {
+      response = await api.openSession({
+        displayName: managedProfile.displayName.trim(),
+        clientVersion: VERSION,
+        mode: 'managed',
+        requestedUserId: managedProfile.userId || null,
+        resumeSessionId: managedProfile.lastSessionId || null
+      });
+    } catch (error) {
+      const shouldRetryWithoutResume = !!managedProfile.lastSessionId
+        && error instanceof ManagedApiError
+        && (error.status === 400 || error.status === 401 || error.status === 404 || error.status === 409);
+      if (!shouldRetryWithoutResume) throw error;
+      managedProfile.lastSessionId = '';
+      response = await api.openSession({
+        displayName: managedProfile.displayName.trim(),
+        clientVersion: VERSION,
+        mode: 'managed',
+        requestedUserId: managedProfile.userId || null,
+        resumeSessionId: null
+      });
+    }
     const identity = response?.identity || {};
     const session = response?.session || {};
     appState.managed.session.status = 'open';
@@ -673,6 +720,19 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
       includeManagedCache: true
     });
     return getManagedSession();
+  }
+  async function resumeManagedMode(options = {}) {
+    if (!shouldAttemptManagedResume()) return false;
+    await ensureManagedSession({ force: !!options.forceSession });
+    await refreshManagedChannels();
+    const targetChannelId = getManagedSession().channelId
+      || appState?.managed?.shell?.selectedChannelId
+      || managedProfile.preferredChannelId
+      || '';
+    if (options.rejoinChannel !== false && targetChannelId) {
+      await joinManagedChannel(targetChannelId);
+    }
+    return true;
   }
   async function refreshManagedChannels(options = {}) {
     const managedSession = await ensureManagedSession({ force: !!options.forceSession });
@@ -765,6 +825,13 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
         code: 'managed_channel_required'
       });
     }
+    const channel = findManagedChannel(selectedChannelId);
+    const passcode = managedJoinPasscode.trim();
+    if (channelRequiresPasscode(channel) && !passcode) {
+      throw new ManagedApiError('This channel requires a passcode before you can join it.', {
+        code: 'managed_passcode_required'
+      });
+    }
     clearManagedError();
     appState.managed.session.status = 'joining';
     appState.managed.shell.selectedChannelId = selectedChannelId;
@@ -773,16 +840,17 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
     const response = await api.joinChannel(selectedChannelId, {
       sessionId: managedSession.sessionId,
       slotId: 'A',
-      passcode: null
+      passcode: passcode || null
     });
     const membership = response?.membership || {};
-    const channel = response?.channel || findManagedChannel(selectedChannelId) || {};
+    const joinedChannel = response?.channel || channel || {};
     appState.managed.session.status = 'joined';
     appState.managed.session.channelId = membership.channelId || selectedChannelId;
-    appState.managed.session.channelName = channel.name || '';
+    appState.managed.session.channelName = joinedChannel.name || '';
     appState.managed.session.membershipState = membership.membershipState || 'joined';
     appState.managed.session.presenceState = 'offline';
     appState.managed.session.errorMessage = '';
+    managedJoinPasscode = '';
     await sendManagedPresence();
     await refreshManagedPeers({ ensureTransport: true });
     startManagedTimers();
@@ -918,6 +986,14 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
     });
     if (changed && mode === OPERATING_MODES.MANAGED && managedProfile.preferredChannelId && !appState.managed.shell.selectedChannelId) {
       appState.managed.shell.selectedChannelId = managedProfile.preferredChannelId;
+    }
+    if (changed && mode === OPERATING_MODES.MANAGED && shouldAttemptManagedResume()) {
+      try {
+        await resumeManagedMode({ rejoinChannel: true });
+      } catch (error) {
+        setManagedError(error?.message || 'Failed to resume managed mode.');
+        renderManagedShell();
+      }
     }
     if (options.persist !== false) {
       await persistAppState({
@@ -1782,6 +1858,14 @@ import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from 
         includeManagedProfile: true,
         includeManagedCache: true
       });
+    }
+    if (shouldAttemptManagedResume()) {
+      try {
+        await resumeManagedMode({ rejoinChannel: true });
+      } catch (error) {
+        setManagedError(error?.message || 'Failed to restore managed mode.');
+        renderManagedShell();
+      }
     }
 
 
