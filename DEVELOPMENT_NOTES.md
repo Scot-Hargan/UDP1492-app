@@ -73,6 +73,8 @@ Check this file before making further code changes.
 - Managed runtime config and endpoint helpers live in `src/renderer/managed-runtime.js`.
 - Managed session/channel/presence orchestration now lives in `src/renderer/managed-controller.js`.
 - `src/renderer/ui.js` should remain the rendering and app-shell coordination layer, not the long-term home for all managed-mode control flow.
+- `udp1492_app_state_v2` should persist durable operating-mode and slot-intent state only.
+- Live managed session facts such as current session ID, membership status, presence, and resolved transport peers should stay runtime-only and be rebuilt on resume.
 
 ## Planning discipline
 

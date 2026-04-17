@@ -100,8 +100,10 @@ The first standalone-first cleanup pass after Phase 1 is now complete:
 - managed orchestration was extracted from `src/renderer/ui.js` into `src/renderer/managed-controller.js`
 - runtime config and endpoint helpers were formalized in `src/renderer/managed-runtime.js`
 - app-level backend configuration remains the primary managed default, with renderer input as an override
+- the original `Group A` / `Group B` slot intent scaffold was restored in `AppStateV2`
+- `udp1492_app_state_v2` now persists durable operating-mode and slot-intent data only
 
-Further cleanup can continue incrementally before broadening scope to:
+Broader scope work can continue from here:
 
 - Group B
 - dual-ear routing

@@ -6,6 +6,7 @@ const {
   expect,
   DEFAULT_STORAGE_FIXTURE,
   MANAGED_RESUME_STORAGE_FIXTURE,
+  MANAGED_LEGACY_STATE_STORAGE_FIXTURE,
   SAVED_PEERS_NO_LAST_STORAGE_FIXTURE,
   WITH_PEERS_STORAGE_FIXTURE
 } = require('./fixtures');
@@ -270,9 +271,17 @@ test('persists a newly created peer across restart', async ({ appHarness }) => {
 
   await expect(page.locator('#peerList')).toContainText('Persist Test');
 
-  const savedStorage = await readStorage();
-  expect(savedStorage.udp1492_peers.some((peer) => peer.name === 'Persist Test')).toBe(true);
-  expect(savedStorage.udp1492_last_peers).toContain('198.51.100.42:1492');
+  await expect.poll(async () => {
+    const savedStorage = await readStorage();
+    return {
+      peersPersisted: !!savedStorage.udp1492_peers?.some((peer) => peer.name === 'Persist Test'),
+      lastPeerPersisted: Array.isArray(savedStorage.udp1492_last_peers)
+        && savedStorage.udp1492_last_peers.includes('198.51.100.42:1492')
+    };
+  }).toEqual({
+    peersPersisted: true,
+    lastPeerPersisted: true
+  });
 
   const relaunchedPage = await relaunch();
   await expect(relaunchedPage.locator('#peerList')).toContainText('Persist Test');
@@ -438,20 +447,21 @@ test.describe('peer fixture', () => {
     expect(storage.udp1492_app_state_v2).toMatchObject({
       operatingMode: 'managed',
       managed: {
-        session: {
-          sessionId: 'ses_01',
-          channelId: 'chn_alpha',
-          membershipState: 'joined'
+        shell: {
+          activeSlotId: 'A'
         },
-        transportPeers: [
-          expect.objectContaining({
-            name: 'Peer One',
-            ip: '198.51.100.10',
-            port: 1492
-          })
-        ]
+        slots: {
+          A: {
+            intendedChannelId: 'chn_alpha'
+          },
+          B: {
+            intendedChannelId: null
+          }
+        }
       }
     });
+    expect(storage.udp1492_app_state_v2.managed.session).toBeUndefined();
+    expect(storage.udp1492_app_state_v2.managed.transportPeers).toBeUndefined();
 
     await page.locator('#managedLeaveChannelBtn').click();
     await expect(page.locator('#managedActiveChannel')).toHaveText('No managed channel joined yet');
@@ -837,5 +847,42 @@ test.describe('managed resume fixture', () => {
 
     await expect(page.locator('#managedErrorText')).toContainText('invalid session response');
     await expect(page.locator('#managedIdentityMeta')).not.toContainText('Session');
+  });
+});
+
+test.describe('managed legacy state migration', () => {
+  test.use({ storageFixture: MANAGED_LEGACY_STATE_STORAGE_FIXTURE });
+
+  test('normalizes legacy managed app state into slot intent persistence on startup', async ({ appHarness }) => {
+    const { readStorage } = appHarness;
+
+    await expect.poll(async () => {
+      const storage = await readStorage();
+      return storage.udp1492_app_state_v2;
+    }).toMatchObject({
+      version: 2,
+      operatingMode: 'managed',
+      direct: {
+        activePeerKeys: []
+      },
+      managed: {
+        shell: {
+          activeSlotId: 'A'
+        },
+        slots: {
+          A: {
+            intendedChannelId: 'chn_alpha'
+          },
+          B: {
+            intendedChannelId: null
+          }
+        }
+      }
+    });
+
+    const normalizedStorage = await readStorage();
+    expect(normalizedStorage.udp1492_app_state_v2.managed.session).toBeUndefined();
+    expect(normalizedStorage.udp1492_app_state_v2.managed.transportPeers).toBeUndefined();
+    expect(normalizedStorage.udp1492_managed_profile.preferredChannelId).toBe('chn_alpha');
   });
 });

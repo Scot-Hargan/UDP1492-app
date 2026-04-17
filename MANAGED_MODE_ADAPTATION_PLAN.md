@@ -236,6 +236,16 @@ The Electron app should now prefer the following when they improve correctness:
 - admin surface
 - NAT integration
 
+### Immediate standalone-first cleanup before broader Phase 2/3 work
+
+This cleanup is now complete in the desktop app:
+
+- durable `AppStateV2` now focuses on operating mode and managed slot intent
+- `Group A` and `Group B` slot records are present even while only `Group A` is active
+- live session IDs, transient membership state, presence state, and resolved peer data are no longer persisted in `udp1492_app_state_v2`
+
+This keeps the Electron client aligned with the original roadmap and reduces stale-state risk before channel-security and two-group work expand the model.
+
 ## Renderer State Model Adaptation
 
 The same `AppStateV2` model should be used in the Electron renderer, with one project-specific note:
@@ -278,7 +288,7 @@ Instead:
 - persist new keys through preload storage APIs
 - continue writing legacy peer keys during migration
 
-This matches the extension plan while respecting Electron’s storage architecture.
+This matches the extension plan while respecting Electron's storage architecture.
 
 ### Adapted persistence rule
 

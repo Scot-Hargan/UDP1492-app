@@ -3,22 +3,31 @@
   "udp1492_theme": "dark",
   "udp1492_app_state_v2": {
     "version": 2,
-    "operatingMode": "direct",
+    "operatingMode": "managed",
     "direct": {
       "activePeerKeys": []
     },
     "managed": {
-      "shell": {
-        "activeSlotId": "A"
+      "session": {
+        "status": "idle",
+        "displayName": "Scot",
+        "sessionId": "",
+        "channelId": "",
+        "channelName": "",
+        "userId": "usr_01",
+        "membershipState": "none",
+        "presenceState": "offline",
+        "heartbeatIntervalMs": 15000,
+        "expiresAt": "",
+        "lastOpenedAt": "",
+        "lastPeerSyncAt": "",
+        "errorMessage": ""
       },
-      "slots": {
-        "A": {
-          "intendedChannelId": "chn_alpha"
-        },
-        "B": {
-          "intendedChannelId": null
-        }
-      }
+      "shell": {
+        "selectedChannelId": "chn_alpha",
+        "activeSlotId": "group-a"
+      },
+      "transportPeers": []
     }
   },
   "udp1492_managed_profile": {

@@ -42,10 +42,10 @@ import { createStatusDashboard } from './status-dashboard.js';
 import { sanitizeManagedBaseUrl } from './managed-api.js';
 import { createManagedController } from './managed-controller.js';
 
-// ui.js v0.4.12
+// ui.js v0.4.13
 (() => {
   'use strict';
-  const VERSION = '0.4.12';
+  const VERSION = '0.4.13';
   const platform = window.udp1492;
   const testPlatform = window.udp1492Test || null;
 
@@ -68,6 +68,11 @@ import { createManagedController } from './managed-controller.js';
     DIRECT: 'direct',
     MANAGED: 'managed'
   });
+  const GROUP_SLOT_IDS = Object.freeze({
+    A: 'A',
+    B: 'B'
+  });
+  const DEFAULT_MANAGED_SLOT_ID = GROUP_SLOT_IDS.A;
 
   const connectBtn = $('#connectBtn');
   const disconnectBtn = $('#disconnectBtn');
@@ -254,6 +259,15 @@ import { createManagedController } from './managed-controller.js';
   function sanitizeOperatingMode(mode) {
     return mode === OPERATING_MODES.MANAGED ? OPERATING_MODES.MANAGED : OPERATING_MODES.DIRECT;
   }
+  function sanitizeManagedSlotId(slotId) {
+    if (slotId === GROUP_SLOT_IDS.B || slotId === 'group-b') return GROUP_SLOT_IDS.B;
+    return GROUP_SLOT_IDS.A;
+  }
+  function normalizeManagedChannelId(value) {
+    if (typeof value !== 'string') return null;
+    const channelId = value.trim();
+    return channelId || null;
+  }
   function normalizePeerKey(value) {
     return typeof value === 'string' && value.includes(':') ? value : null;
   }
@@ -298,11 +312,29 @@ import { createManagedController } from './managed-controller.js';
       lastUpdatedAt: typeof seed.lastUpdatedAt === 'string' ? seed.lastUpdatedAt : null
     };
   }
+  function createDefaultManagedSlotState(seed = {}, slotId = DEFAULT_MANAGED_SLOT_ID) {
+    return {
+      slotId: sanitizeManagedSlotId(seed.slotId || slotId),
+      intendedChannelId: normalizeManagedChannelId(seed.intendedChannelId),
+      channelId: typeof seed.channelId === 'string' ? seed.channelId : '',
+      channelName: typeof seed.channelName === 'string' ? seed.channelName : '',
+      securityMode: typeof seed.securityMode === 'string' ? seed.securityMode : '',
+      membershipState: typeof seed.membershipState === 'string' ? seed.membershipState : 'none',
+      presenceState: typeof seed.presenceState === 'string' ? seed.presenceState : 'offline',
+      lastPeerSyncAt: typeof seed.lastPeerSyncAt === 'string' ? seed.lastPeerSyncAt : '',
+      errorMessage: typeof seed.errorMessage === 'string' ? seed.errorMessage : ''
+    };
+  }
   function createDefaultAppStateV2(seed = {}) {
     const direct = seed.direct && typeof seed.direct === 'object' ? seed.direct : {};
     const managed = seed.managed && typeof seed.managed === 'object' ? seed.managed : {};
-    const managedSession = managed.session && typeof managed.session === 'object' ? managed.session : {};
     const managedShell = managed.shell && typeof managed.shell === 'object' ? managed.shell : {};
+    const managedSlots = managed.slots && typeof managed.slots === 'object' ? managed.slots : {};
+    const legacySelectedChannelId = normalizeManagedChannelId(managedShell.selectedChannelId);
+    const slotASeed = managedSlots.A && typeof managedSlots.A === 'object'
+      ? managedSlots.A
+      : { intendedChannelId: legacySelectedChannelId };
+    const slotBSeed = managedSlots.B && typeof managedSlots.B === 'object' ? managedSlots.B : {};
     return {
       version: 2,
       operatingMode: sanitizeOperatingMode(seed.operatingMode),
@@ -311,25 +343,50 @@ import { createManagedController } from './managed-controller.js';
       },
       managed: {
         session: {
-          status: typeof managedSession.status === 'string' ? managedSession.status : 'idle',
-          displayName: typeof managedSession.displayName === 'string' ? managedSession.displayName : '',
-          sessionId: typeof managedSession.sessionId === 'string' ? managedSession.sessionId : '',
-          channelId: typeof managedSession.channelId === 'string' ? managedSession.channelId : '',
-          channelName: typeof managedSession.channelName === 'string' ? managedSession.channelName : '',
-          userId: typeof managedSession.userId === 'string' ? managedSession.userId : '',
-          membershipState: typeof managedSession.membershipState === 'string' ? managedSession.membershipState : 'none',
-          presenceState: typeof managedSession.presenceState === 'string' ? managedSession.presenceState : 'offline',
-          heartbeatIntervalMs: Number.isFinite(Number(managedSession.heartbeatIntervalMs)) ? Number(managedSession.heartbeatIntervalMs) : 15000,
-          expiresAt: typeof managedSession.expiresAt === 'string' ? managedSession.expiresAt : '',
-          lastOpenedAt: typeof managedSession.lastOpenedAt === 'string' ? managedSession.lastOpenedAt : '',
-          lastPeerSyncAt: typeof managedSession.lastPeerSyncAt === 'string' ? managedSession.lastPeerSyncAt : '',
-          errorMessage: typeof managedSession.errorMessage === 'string' ? managedSession.errorMessage : ''
+          status: 'idle',
+          displayName: '',
+          sessionId: '',
+          channelId: '',
+          channelName: '',
+          userId: '',
+          membershipState: 'none',
+          presenceState: 'offline',
+          heartbeatIntervalMs: 15000,
+          expiresAt: '',
+          lastOpenedAt: '',
+          lastPeerSyncAt: '',
+          errorMessage: ''
         },
         shell: {
-          selectedChannelId: typeof managedShell.selectedChannelId === 'string' ? managedShell.selectedChannelId : '',
-          activeSlotId: typeof managedShell.activeSlotId === 'string' ? managedShell.activeSlotId : 'group-a'
+          activeSlotId: sanitizeManagedSlotId(managedShell.activeSlotId)
         },
-        transportPeers: sanitizeTransportPeers(managed.transportPeers)
+        slots: {
+          A: createDefaultManagedSlotState(slotASeed, GROUP_SLOT_IDS.A),
+          B: createDefaultManagedSlotState(slotBSeed, GROUP_SLOT_IDS.B)
+        },
+        transportPeers: []
+      }
+    };
+  }
+  function buildPersistedAppStateV2(source = appState) {
+    return {
+      version: 2,
+      operatingMode: sanitizeOperatingMode(source?.operatingMode),
+      direct: {
+        activePeerKeys: dedupePeerKeys(source?.direct?.activePeerKeys)
+      },
+      managed: {
+        shell: {
+          activeSlotId: sanitizeManagedSlotId(source?.managed?.shell?.activeSlotId)
+        },
+        slots: {
+          A: {
+            intendedChannelId: normalizeManagedChannelId(source?.managed?.slots?.A?.intendedChannelId)
+          },
+          B: {
+            intendedChannelId: normalizeManagedChannelId(source?.managed?.slots?.B?.intendedChannelId)
+          }
+        }
       }
     };
   }
@@ -349,6 +406,21 @@ import { createManagedController } from './managed-controller.js';
   function getManagedSession() {
     return appState?.managed?.session || createDefaultAppStateV2().managed.session;
   }
+  function getManagedSlot(slotId = DEFAULT_MANAGED_SLOT_ID) {
+    const managedSlotId = sanitizeManagedSlotId(slotId);
+    return appState?.managed?.slots?.[managedSlotId] || createDefaultAppStateV2().managed.slots[managedSlotId];
+  }
+  function getActiveManagedSlotId() {
+    return sanitizeManagedSlotId(appState?.managed?.shell?.activeSlotId);
+  }
+  function getManagedSlotIntent(slotId = DEFAULT_MANAGED_SLOT_ID) {
+    return getManagedSlot(slotId).intendedChannelId || null;
+  }
+  function setManagedSlotIntent(slotId, channelId) {
+    const targetSlot = getManagedSlot(slotId);
+    targetSlot.intendedChannelId = normalizeManagedChannelId(channelId);
+    return targetSlot.intendedChannelId;
+  }
   function setManagedError(message = '') {
     appState.managed.session.errorMessage = typeof message === 'string' ? message : String(message || '');
   }
@@ -365,7 +437,7 @@ import { createManagedController } from './managed-controller.js';
     return managedCache.channels.find((channel) => channel?.channelId === channelId) || null;
   }
   function getSelectedManagedChannel() {
-    const selectedChannelId = appState?.managed?.shell?.selectedChannelId || managedProfile.preferredChannelId || '';
+    const selectedChannelId = getManagedSlotIntent(getActiveManagedSlotId()) || managedProfile.preferredChannelId || '';
     return findManagedChannel(selectedChannelId);
   }
   function channelRequiresPasscode(channel) {
@@ -439,7 +511,7 @@ import { createManagedController } from './managed-controller.js';
   }
   async function persistAppState(options = {}) {
     const payload = {
-      [APP_STATE_V2_STORAGE_KEY]: appState
+      [APP_STATE_V2_STORAGE_KEY]: buildPersistedAppStateV2()
     };
     if (options.includeLegacyLastPeers) {
       payload.udp1492_last_peers = dedupePeerKeys(appState?.direct?.activePeerKeys);
@@ -464,6 +536,9 @@ import { createManagedController } from './managed-controller.js';
     getDashboardState: () => dashboardState,
     getSettings: () => settings,
     getOperatingMode,
+    getManagedSlot,
+    getManagedSlotIntent,
+    setManagedSlotIntent,
     getManagedJoinPasscode: () => managedJoinPasscode,
     setManagedJoinPasscode: (value) => {
       managedJoinPasscode = value || '';
@@ -557,13 +632,14 @@ import { createManagedController } from './managed-controller.js';
   function renderManagedShell() {
     const operatingMode = getOperatingMode();
     const managedSession = getManagedSession();
+    const managedSlot = getManagedSlot(GROUP_SLOT_IDS.A);
     const runtimeConfig = getManagedRuntimeConfig();
     const effectiveManagedBaseUrl = getManagedBaseUrl();
     const backendUrlSource = getConfiguredManagedBaseUrl()
       ? 'profile'
       : (runtimeConfig?.managedBackendUrl ? 'app config' : '');
-    const selectedChannelId = appState?.managed?.shell?.selectedChannelId || managedProfile.preferredChannelId || '';
-    const joinedChannel = findManagedChannel(managedSession.channelId);
+    const selectedChannelId = managedSlot.intendedChannelId || managedProfile.preferredChannelId || '';
+    const joinedChannel = findManagedChannel(managedSlot.channelId || managedSession.channelId);
     const selectedChannel = findManagedChannel(selectedChannelId);
     const passcodeRequired = channelRequiresPasscode(selectedChannel) || channelRequiresPasscode(joinedChannel);
     const resolvedCount = getManagedTransportPeers().length;
@@ -609,18 +685,18 @@ import { createManagedController } from './managed-controller.js';
         : 'No channels loaded yet';
     }
     if (managedActiveChannelEl) {
-      managedActiveChannelEl.textContent = managedSession.channelId
-        ? (joinedChannel?.name || managedSession.channelName || managedSession.channelId)
+      managedActiveChannelEl.textContent = managedSlot.channelId
+        ? (joinedChannel?.name || managedSlot.channelName || managedSlot.channelId)
         : 'No managed channel joined yet';
     }
     if (managedGroupAStatusEl) {
-      managedGroupAStatusEl.textContent = managedSession.channelId
-        ? `${managedSession.membershipState || 'joined'} | presence ${managedSession.presenceState || 'offline'}`
+      managedGroupAStatusEl.textContent = managedSlot.channelId
+        ? `${managedSlot.membershipState || 'joined'} | presence ${managedSlot.presenceState || 'offline'}`
         : 'No active managed membership';
     }
     if (managedPeerSyncMetaEl) {
-      managedPeerSyncMetaEl.textContent = managedSession.lastPeerSyncAt
-        ? `${resolvedCount} transport peer(s) resolved | ${formatManagedTimestamp(managedSession.lastPeerSyncAt)}`
+      managedPeerSyncMetaEl.textContent = managedSlot.lastPeerSyncAt
+        ? `${resolvedCount} transport peer(s) resolved | ${formatManagedTimestamp(managedSlot.lastPeerSyncAt)}`
         : `${resolvedCount} transport peer(s) resolved`;
     }
     if (managedPasscodeLabelEl) {
@@ -642,10 +718,10 @@ import { createManagedController } from './managed-controller.js';
       managedRefreshChannelsBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || !managedSession.sessionId;
     }
     if (managedRefreshPeersBtn) {
-      managedRefreshPeersBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || !managedSession.channelId;
+      managedRefreshPeersBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || !managedSlot.channelId;
     }
     if (managedLeaveChannelBtn) {
-      managedLeaveChannelBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || !managedSession.channelId;
+      managedLeaveChannelBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || !managedSlot.channelId;
     }
     if (managedChannelListEl) {
       managedChannelListEl.innerHTML = '';
@@ -681,14 +757,14 @@ import { createManagedController } from './managed-controller.js';
         meta.append(security, members);
         summary.append(title, detail, meta);
         const action = document.createElement('button');
-        const isActive = managedSession.channelId === channel.channelId;
+        const isActive = managedSlot.channelId === channel.channelId;
         const isSelected = !isActive && selectedChannelId === channel.channelId;
         action.type = 'button';
         action.className = isActive ? 'secondary' : 'primary';
         action.textContent = isActive ? 'Joined' : (isSelected ? 'Join Selected' : 'Join');
         action.disabled = !managedSession.sessionId || isActive;
         action.addEventListener('click', () => {
-          appState.managed.shell.selectedChannelId = channel.channelId;
+          setManagedSlotIntent(GROUP_SLOT_IDS.A, channel.channelId);
           managedProfile.preferredChannelId = channel.channelId;
           renderManagedShell();
           joinManagedChannel(channel.channelId).catch((err) => {
@@ -706,7 +782,7 @@ import { createManagedController } from './managed-controller.js';
   async function updateManagedProfileFromInputs() {
     managedProfile.displayName = (managedDisplayNameInputEl?.value || '').trim();
     managedProfile.backendBaseUrl = sanitizeManagedBaseUrl(managedBackendBaseUrlInputEl?.value || '');
-    managedProfile.preferredChannelId = appState?.managed?.shell?.selectedChannelId || managedProfile.preferredChannelId || '';
+    managedProfile.preferredChannelId = getManagedSlotIntent(GROUP_SLOT_IDS.A) || managedProfile.preferredChannelId || '';
     renderManagedShell();
     await persistAppState({
       includeLegacyLastPeers: true,
@@ -773,8 +849,8 @@ import { createManagedController } from './managed-controller.js';
       mode,
       sendHostUpdate: changed && dashboardState.nativeHostConnected
     });
-    if (changed && mode === OPERATING_MODES.MANAGED && managedProfile.preferredChannelId && !appState.managed.shell.selectedChannelId) {
-      appState.managed.shell.selectedChannelId = managedProfile.preferredChannelId;
+    if (changed && mode === OPERATING_MODES.MANAGED && managedProfile.preferredChannelId && !getManagedSlotIntent(GROUP_SLOT_IDS.A)) {
+      setManagedSlotIntent(GROUP_SLOT_IDS.A, managedProfile.preferredChannelId);
     }
     if (changed && mode === OPERATING_MODES.MANAGED && shouldAttemptManagedResume()) {
       try {
@@ -1631,6 +1707,11 @@ import { createManagedController } from './managed-controller.js';
     allPeers = Array.isArray(got['udp1492_peers']) ? got['udp1492_peers'] : [];
     const storedAppState = got[APP_STATE_V2_STORAGE_KEY];
     const hasStoredAppState = storedAppState && typeof storedAppState === 'object' && Number(storedAppState.version) === 2;
+    const needsAppStateNormalization = !hasStoredAppState
+      || !!storedAppState?.managed?.session
+      || Array.isArray(storedAppState?.managed?.transportPeers)
+      || typeof storedAppState?.managed?.shell?.selectedChannelId === 'string'
+      || !storedAppState?.managed?.slots;
     appState = hasStoredAppState
       ? createDefaultAppStateV2(storedAppState)
       : synthesizeAppStateV2({
@@ -1639,9 +1720,12 @@ import { createManagedController } from './managed-controller.js';
         });
     managedProfile = createDefaultManagedProfile(got[MANAGED_PROFILE_STORAGE_KEY]);
     managedCache = createDefaultManagedCache(got[MANAGED_CACHE_STORAGE_KEY]);
+    if (!getManagedSlotIntent(GROUP_SLOT_IDS.A) && managedProfile.preferredChannelId) {
+      setManagedSlotIntent(GROUP_SLOT_IDS.A, managedProfile.preferredChannelId);
+    }
     renderManagedShell();
     await syncTransportPeerRows({ sendHostUpdate: false });
-    if (!hasStoredAppState || !got[MANAGED_PROFILE_STORAGE_KEY] || !got[MANAGED_CACHE_STORAGE_KEY]) {
+    if (needsAppStateNormalization || !got[MANAGED_PROFILE_STORAGE_KEY] || !got[MANAGED_CACHE_STORAGE_KEY]) {
       await persistAppState({
         includeLegacyLastPeers: true,
         includeManagedProfile: true,

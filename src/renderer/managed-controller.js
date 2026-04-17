@@ -9,6 +9,7 @@ import {
 } from './managed-runtime.js';
 
 export function createManagedController(deps) {
+  const PRIMARY_SLOT_ID = 'A';
   let runtimeConfig = { ...DEFAULT_RUNTIME_CONFIG };
   let managedHeartbeatTimer = null;
   let managedPeerRefreshTimer = null;
@@ -31,6 +32,10 @@ export function createManagedController(deps) {
 
   function getManagedSession() {
     return deps.getManagedSession();
+  }
+
+  function getPrimaryManagedSlot() {
+    return deps.getManagedSlot(PRIMARY_SLOT_ID);
   }
 
   function getRuntimeConfig() {
@@ -117,6 +122,7 @@ export function createManagedController(deps) {
   async function resetManagedSessionState(message) {
     const appState = getAppState();
     const managedProfile = getManagedProfile();
+    const primarySlot = getPrimaryManagedSlot();
     stopManagedTimers();
     appState.managed.transportPeers = [];
     appState.managed.session.sessionId = '';
@@ -126,6 +132,13 @@ export function createManagedController(deps) {
     appState.managed.session.presenceState = 'offline';
     appState.managed.session.lastPeerSyncAt = '';
     appState.managed.session.status = 'idle';
+    primarySlot.channelId = '';
+    primarySlot.channelName = '';
+    primarySlot.securityMode = '';
+    primarySlot.membershipState = 'none';
+    primarySlot.presenceState = 'offline';
+    primarySlot.lastPeerSyncAt = '';
+    primarySlot.errorMessage = '';
     managedProfile.lastSessionId = '';
     await deps.syncTransportPeerRows({
       mode: deps.operatingModes.MANAGED,
@@ -143,6 +156,7 @@ export function createManagedController(deps) {
 
   async function resetManagedMembershipState(message) {
     const appState = getAppState();
+    const primarySlot = getPrimaryManagedSlot();
     stopManagedTimers();
     appState.managed.transportPeers = [];
     appState.managed.session.channelId = '';
@@ -151,6 +165,13 @@ export function createManagedController(deps) {
     appState.managed.session.presenceState = 'offline';
     appState.managed.session.lastPeerSyncAt = '';
     appState.managed.session.status = getManagedSession().sessionId ? 'open' : 'idle';
+    primarySlot.channelId = '';
+    primarySlot.channelName = '';
+    primarySlot.securityMode = '';
+    primarySlot.membershipState = 'none';
+    primarySlot.presenceState = 'offline';
+    primarySlot.lastPeerSyncAt = '';
+    primarySlot.errorMessage = '';
     deps.setManagedJoinPasscode('');
     await deps.syncTransportPeerRows({
       mode: deps.operatingModes.MANAGED,
@@ -192,12 +213,13 @@ export function createManagedController(deps) {
     return deps.getOperatingMode() === deps.operatingModes.MANAGED
       && !!managedProfile.displayName.trim()
       && !!getManagedBaseUrl()
-      && !!(managedProfile.lastSessionId || managedProfile.preferredChannelId || getManagedSession().channelId);
+      && !!(managedProfile.lastSessionId || deps.getManagedSlotIntent(PRIMARY_SLOT_ID) || managedProfile.preferredChannelId || getManagedSession().channelId);
   }
 
   async function ensureManagedSession(options = {}) {
     const { force = false, fresh = false } = options;
     const currentSession = getManagedSession();
+    const primarySlot = getPrimaryManagedSlot();
     if (!force && currentSession.sessionId) return currentSession;
     const managedProfile = getManagedProfile();
     if (!managedProfile.displayName.trim()) {
@@ -246,6 +268,13 @@ export function createManagedController(deps) {
       currentSession.membershipState = 'none';
       currentSession.presenceState = 'offline';
       currentSession.lastPeerSyncAt = '';
+      primarySlot.channelId = '';
+      primarySlot.channelName = '';
+      primarySlot.securityMode = '';
+      primarySlot.membershipState = 'none';
+      primarySlot.presenceState = 'offline';
+      primarySlot.lastPeerSyncAt = '';
+      primarySlot.errorMessage = '';
       await deps.syncTransportPeerRows({
         mode: deps.operatingModes.MANAGED,
         sendHostUpdate: getDashboardState().nativeHostConnected
@@ -276,10 +305,9 @@ export function createManagedController(deps) {
     if (!shouldAttemptManagedResume()) return false;
     await ensureManagedSession({ force: !!options.forceSession });
     await refreshManagedChannels();
-    const appState = getAppState();
     const managedProfile = getManagedProfile();
-    const targetChannelId = getManagedSession().channelId
-      || appState?.managed?.shell?.selectedChannelId
+    const targetChannelId = getPrimaryManagedSlot().channelId
+      || deps.getManagedSlotIntent(PRIMARY_SLOT_ID)
       || managedProfile.preferredChannelId
       || '';
     if (options.rejoinChannel !== false && targetChannelId) {
@@ -302,13 +330,14 @@ export function createManagedController(deps) {
     const appState = getAppState();
     const managedProfile = getManagedProfile();
     const managedCache = getManagedCache();
+    const selectedChannelId = deps.getManagedSlotIntent(PRIMARY_SLOT_ID);
     managedCache.channels = Array.isArray(response?.channels) ? response.channels.map((channel) => ({ ...channel })) : [];
     managedCache.lastUpdatedAt = response?.syncedAt || new Date().toISOString();
-    if (!appState.managed.shell.selectedChannelId && managedProfile.preferredChannelId) {
-      appState.managed.shell.selectedChannelId = managedProfile.preferredChannelId;
+    if (!selectedChannelId && managedProfile.preferredChannelId) {
+      deps.setManagedSlotIntent(PRIMARY_SLOT_ID, managedProfile.preferredChannelId);
     }
-    if (!appState.managed.shell.selectedChannelId && managedCache.channels[0]?.channelId) {
-      appState.managed.shell.selectedChannelId = managedCache.channels[0].channelId;
+    if (!deps.getManagedSlotIntent(PRIMARY_SLOT_ID) && managedCache.channels[0]?.channelId) {
+      deps.setManagedSlotIntent(PRIMARY_SLOT_ID, managedCache.channels[0].channelId);
     }
     deps.renderManagedShell();
     await deps.persistAppState({
@@ -321,6 +350,7 @@ export function createManagedController(deps) {
 
   async function sendManagedPresence() {
     const managedSession = getManagedSession();
+    const primarySlot = getPrimaryManagedSlot();
     if (!managedSession.sessionId || !managedSession.channelId) return null;
     const api = createManagedApi();
     let response;
@@ -328,7 +358,7 @@ export function createManagedController(deps) {
       response = await api.sendPresence(managedSession.channelId, {
         sessionId: managedSession.sessionId,
         userId: managedSession.userId || getManagedProfile().userId || null,
-        slotId: 'A',
+        slotId: PRIMARY_SLOT_ID,
         onlineState: 'online',
         clientVersion: deps.version,
         endpoints: buildManagedPresenceEndpoints({
@@ -341,6 +371,7 @@ export function createManagedController(deps) {
       throw error;
     }
     getManagedSession().presenceState = response?.presence?.onlineState || 'online';
+    primarySlot.presenceState = getManagedSession().presenceState;
     deps.renderManagedShell();
     await deps.persistAppState({
       includeLegacyLastPeers: true,
@@ -352,6 +383,7 @@ export function createManagedController(deps) {
 
   async function refreshManagedPeers(options = {}) {
     const managedSession = getManagedSession();
+    const primarySlot = getPrimaryManagedSlot();
     if (!managedSession.sessionId || !managedSession.channelId) return [];
     const api = createManagedApi();
     deps.clearManagedError();
@@ -367,6 +399,8 @@ export function createManagedController(deps) {
     appState.managed.transportPeers = resolvedPeers.map(deps.adaptResolvedPeerToTransportPeer).filter(Boolean);
     managedSession.lastPeerSyncAt = response?.resolvedAt || new Date().toISOString();
     managedSession.status = 'active';
+    primarySlot.lastPeerSyncAt = managedSession.lastPeerSyncAt;
+    primarySlot.errorMessage = '';
     await deps.syncTransportPeerRows({
       mode: deps.operatingModes.MANAGED,
       sendHostUpdate: getDashboardState().nativeHostConnected
@@ -386,9 +420,9 @@ export function createManagedController(deps) {
   async function joinManagedChannel(channelId) {
     const managedSession = await ensureManagedSession();
     const api = createManagedApi();
-    const appState = getAppState();
     const managedProfile = getManagedProfile();
-    const selectedChannelId = channelId || appState?.managed?.shell?.selectedChannelId || managedProfile.preferredChannelId || '';
+    const primarySlot = getPrimaryManagedSlot();
+    const selectedChannelId = channelId || deps.getManagedSlotIntent(PRIMARY_SLOT_ID) || managedProfile.preferredChannelId || '';
     if (!selectedChannelId) {
       throw new ManagedApiError('Select a channel before joining managed mode.', {
         code: 'managed_channel_required'
@@ -403,14 +437,14 @@ export function createManagedController(deps) {
     }
     deps.clearManagedError();
     managedSession.status = 'joining';
-    appState.managed.shell.selectedChannelId = selectedChannelId;
+    deps.setManagedSlotIntent(PRIMARY_SLOT_ID, selectedChannelId);
     managedProfile.preferredChannelId = selectedChannelId;
     deps.renderManagedShell();
     let response;
     try {
       response = await api.joinChannel(selectedChannelId, {
         sessionId: managedSession.sessionId,
-        slotId: 'A',
+        slotId: PRIMARY_SLOT_ID,
         passcode: passcode || null
       });
     } catch (error) {
@@ -425,6 +459,13 @@ export function createManagedController(deps) {
     managedSession.membershipState = membership.membershipState || 'joined';
     managedSession.presenceState = 'offline';
     managedSession.errorMessage = '';
+    primarySlot.channelId = managedSession.channelId;
+    primarySlot.channelName = managedSession.channelName;
+    primarySlot.securityMode = joinedChannel.securityMode || '';
+    primarySlot.membershipState = managedSession.membershipState;
+    primarySlot.presenceState = managedSession.presenceState;
+    primarySlot.lastPeerSyncAt = '';
+    primarySlot.errorMessage = '';
     deps.setManagedJoinPasscode('');
     await deps.ensureManagedTransportConnected();
     await sendManagedPresence();
@@ -442,6 +483,7 @@ export function createManagedController(deps) {
     const { preserveSession = true } = options;
     const managedSession = getManagedSession();
     const appState = getAppState();
+    const primarySlot = getPrimaryManagedSlot();
     const activeChannelId = managedSession.channelId;
     const activeSessionId = managedSession.sessionId;
     stopManagedTimers();
@@ -450,7 +492,7 @@ export function createManagedController(deps) {
         const api = createManagedApi();
         await api.leaveChannel(activeChannelId, {
           sessionId: activeSessionId,
-          slotId: 'A'
+          slotId: PRIMARY_SLOT_ID
         });
       } catch (error) {
         if (await recoverManagedApiError(error, 'Managed channel membership is no longer active.')) return;
@@ -464,6 +506,13 @@ export function createManagedController(deps) {
     managedSession.presenceState = 'offline';
     managedSession.lastPeerSyncAt = '';
     managedSession.status = preserveSession && activeSessionId ? 'open' : 'idle';
+    primarySlot.channelId = '';
+    primarySlot.channelName = '';
+    primarySlot.securityMode = '';
+    primarySlot.membershipState = 'none';
+    primarySlot.presenceState = 'offline';
+    primarySlot.lastPeerSyncAt = '';
+    primarySlot.errorMessage = '';
     await deps.syncTransportPeerRows({
       mode: deps.operatingModes.MANAGED,
       sendHostUpdate: getDashboardState().nativeHostConnected
