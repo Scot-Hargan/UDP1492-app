@@ -277,15 +277,15 @@ That work is intentionally captured in `PHASE3_GROUPB_CHECKLIST.md` before any r
 
 ### Current Phase 3 client status
 
-The first Group B client slice is now in progress and already has the following implemented:
+The Group B client slice is now complete on the desktop side and includes:
 
 - explicit slot targeting for `Group A` and `Group B` in the managed shell
 - slot-parameterized managed controller flows
 - slot-scoped transient passcodes
 - slot-scoped runtime peer storage with aggregated host adaptation
-- Playwright coverage for Group B join, dual-slot membership, and protected Group B resume
+- Playwright coverage for Group B join, dual-slot membership, slot-isolated leave/failure behavior, overlapping-peer dedupe, and protected Group B resume
 
-The remaining Phase 3 work is now focused on closing validation and edge-case gaps rather than reworking the core slot-aware architecture.
+The Phase 3 desktop-client milestone is therefore closed. Follow-on work should move to the next product phase rather than reopening Group B slot activation unless a regression appears.
 
 ## Renderer State Model Adaptation
 

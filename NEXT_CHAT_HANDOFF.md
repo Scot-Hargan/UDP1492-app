@@ -10,7 +10,7 @@ Use this file if work continues in a fresh chat.
 - Renderer version marker in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js): `0.4.16`
 - Phase 1 is closed
 - Phase 2 protected-channel client work is closed
-- Phase 3 Group B implementation is in progress
+- Phase 3 Group B desktop-client work is closed
 
 ## Start Here
 
@@ -73,7 +73,7 @@ Closed items include:
 
 ### Phase 3
 
-The first Group B implementation slice is complete and validated.
+The Group B desktop-client checklist is complete and validated.
 
 Closed items in this slice include:
 
@@ -82,7 +82,13 @@ Closed items in this slice include:
 - slot-parameterized join / leave / presence / peer-refresh / recovery control flow
 - explicit `Group A` / `Group B` slot targeting in the managed shell
 - dual slot status cards in the renderer
-- Playwright coverage for `Group B`-only join, dual-slot membership, and protected `Group B` resume
+- Playwright coverage for:
+  - `Group B`-only join
+  - dual-slot membership
+  - slot-isolated leave behavior
+  - slot-isolated failure behavior
+  - overlapping endpoint dedupe with conservative peer removal
+  - protected `Group B` resume
 
 ## Active Planning Artifact
 
@@ -98,14 +104,15 @@ It also contains:
 
 ## Immediate Next Slice
 
-Continue the Phase 3 Group B closeout pass.
+Do not reopen the Phase 3 Group B client checklist unless a regression appears.
 
-The next concrete targets are:
+The next concrete target is planning the next post-Phase-3 slice.
 
-1. Add explicit validation proving one active slot can leave without tearing down the other active slot.
-2. Add explicit validation proving a failure in one active slot does not tear down the other active slot.
-3. Tighten overlap / dedupe validation when both slots resolve the same transport endpoint.
-4. Update the remaining Phase 3 checklist items and handoff/docs once those gaps are closed.
+Reasonable next candidates, in order:
+
+1. Decide whether the next client milestone is dual-ear routing semantics, Commander Mode groundwork, or backend/admin integration follow-through.
+2. Create or update the active checklist for that next milestone before code changes begin.
+3. Keep `PHASE3_GROUPB_CHECKLIST.md` as a closed decision record rather than continuing to edit it for unrelated work.
 
 ## Important Constraints
 
@@ -123,7 +130,7 @@ Last clean validation before this handoff:
 - `node --check src\\renderer\\ui.js`
 - `node --check src\\renderer\\managed-controller.js`
 - `npm run test:e2e`
-- result: `23/23` passing
+- result: `26/26` passing
 
 Safe validation commands for the next chat:
 
@@ -152,4 +159,5 @@ Safe validation commands for the next chat:
 Do not re-open the Phase 1 question.
 Treat Phase 1 as closed.
 Treat Phase 2 as closed.
-Continue from the Phase 3 Group B checklist and close the remaining validation gaps around per-slot leave/failure isolation and peer-overlap dedupe.
+Treat Phase 3 Group B desktop-client activation as closed.
+If work continues immediately, start by defining the next active checklist rather than reworking the closed Group B slice.

@@ -40,7 +40,7 @@ Phase 3 Group B work is complete when all of the following are true:
 
 ## Current Phase 3 Status
 
-Phase 3 has started and the slot-aware foundation is now in place.
+Phase 3 Group B desktop-client work is now complete by this checklist.
 
 The completed work in this slice includes:
 
@@ -52,14 +52,13 @@ The completed work in this slice includes:
 - Playwright coverage for:
   - `Group B`-only join
   - dual-slot membership with distinct peers
+  - leaving one active slot without tearing down the other slot
+  - failed slot-local replacement joins without tearing down other active slots
+  - overlapping endpoint dedupe and conservative shared-peer removal
   - protected `Group B` resume
 
-The next remaining gaps inside Phase 3 are focused, not architectural:
-
-- prove leaving one slot never tears down the other slot
-- prove a failure in one active slot does not tear down the other active slot
-- tighten overlap / dedupe validation when both slots resolve the same endpoint
-- decide whether any additional shell refinements are needed before dual-ear routing work
+With those validations in place, the Phase 3 finish line is satisfied for the desktop client.
+Follow-on work should move to the next phase rather than reopening Group B slot activation.
 
 ## Checklist
 
@@ -80,7 +79,7 @@ The next remaining gaps inside Phase 3 are focused, not architectural:
 ### C. Slot behavior and recovery
 
 - [x] Support joining a channel into `Group B` without disturbing an active `Group A` membership.
-- [ ] Support leaving one slot without tearing down the other slot.
+- [x] Support leaving one slot without tearing down the other slot.
 - [x] Support replacement-channel switching per slot without destructive teardown if the replacement join fails.
 - [x] Make protected-channel resume/rejoin behavior explicit and recoverable per slot when no passcode is available.
 
@@ -88,14 +87,14 @@ The next remaining gaps inside Phase 3 are focused, not architectural:
 
 - [x] Combine resolved peers from `Group A` and `Group B` into the existing renderer-owned host `configure.peers` adapter.
 - [x] Define deterministic dedupe behavior when the same peer endpoint appears in both slots.
-- [ ] Ensure host updates remove peers only when no active slot still requires them.
+- [x] Ensure host updates remove peers only when no active slot still requires them.
 - [x] Keep transport adaptation channel-agnostic from the host's perspective unless a proven blocker appears.
 
 ### E. Validation
 
 - [x] Add Playwright coverage for joining only `Group B` from a clean managed session.
 - [x] Add Playwright coverage for dual-slot membership with distinct channels active at the same time.
-- [ ] Add Playwright coverage proving a failure in one slot does not tear down the other slot.
+- [x] Add Playwright coverage proving a failure in one slot does not tear down the other slot.
 - [x] Add Playwright coverage for protected-channel resume or rejoin behavior in `Group B`.
 - [x] Add Playwright coverage for deterministic peer adaptation when both slots resolve peers.
 
@@ -135,9 +134,9 @@ This is the concrete state of the repo after the first Phase 3 implementation sl
 
 ### `test/e2e/app.spec.js` and `test/e2e/fixtures.js`
 
-- Group B join, dual-slot membership, and protected Group B resume are now covered
+- Group B join, dual-slot membership, protected Group B resume, slot-isolated leave/failure handling, and overlapping-peer dedupe are now covered
 - a dedicated Group B resume storage fixture now exists
-- the main remaining test gap is explicit proof that one active slot can fail or leave without tearing down the other active slot
+- the current Phase 3 client gap is no longer validation coverage; the next work should be a new phase definition
 
 ## Concrete Implementation Plan
 
