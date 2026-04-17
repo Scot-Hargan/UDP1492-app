@@ -40,10 +40,10 @@ import {
 import { createPeerRuntimeTracker } from './peer-runtime-stats.js';
 import { createStatusDashboard } from './status-dashboard.js';
 
-// ui.js v0.4.10
+// ui.js v0.4.11
 (() => {
   'use strict';
-  const VERSION = '0.4.10';
+  const VERSION = '0.4.11';
   const platform = window.udp1492;
   const testPlatform = window.udp1492Test || null;
 
@@ -58,10 +58,30 @@ import { createStatusDashboard } from './status-dashboard.js';
   const $ = sel => document.querySelector(sel);
 
   const THEME_STORAGE_KEY = 'udp1492_theme';
+  const APP_STATE_V2_STORAGE_KEY = 'udp1492_app_state_v2';
+  const MANAGED_PROFILE_STORAGE_KEY = 'udp1492_managed_profile';
+  const MANAGED_CACHE_STORAGE_KEY = 'udp1492_managed_cache';
   const NEW_PEER_VALUE = '__new__';
+  const OPERATING_MODES = Object.freeze({
+    DIRECT: 'direct',
+    MANAGED: 'managed'
+  });
 
   const connectBtn = $('#connectBtn');
   const disconnectBtn = $('#disconnectBtn');
+  const directModeBtn = $('#operatingModeDirect');
+  const managedModeBtn = $('#operatingModeManaged');
+  const operatingModeSummaryEl = $('#operatingModeSummary');
+  const transportPeersHeadingEl = $('#transportPeersHeading');
+  const managedModeShellEl = $('#managedModeShell');
+  const managedModeStatusEl = $('#managedModeStatus');
+  const managedIdentityNameEl = $('#managedIdentityName');
+  const managedIdentityMetaEl = $('#managedIdentityMeta');
+  const managedProfileStatusEl = $('#managedProfileStatus');
+  const managedChannelListEl = $('#managedChannelList');
+  const managedLobbyStatusEl = $('#managedLobbyStatus');
+  const managedActiveChannelEl = $('#managedActiveChannel');
+  const managedGroupAStatusEl = $('#managedGroupAStatus');
 
   const nativeHostDot = $('#nativeHostDot');
   const nativeHostStatus = $('#nativeHostStatus');
@@ -123,6 +143,8 @@ import { createStatusDashboard } from './status-dashboard.js';
 
   connectBtn?.addEventListener('click', () => { connect().catch(err => console.error('connect error', err)); });
   disconnectBtn?.addEventListener('click', () => doDisconnect());
+  directModeBtn?.addEventListener('click', () => setOperatingMode(OPERATING_MODES.DIRECT).catch(err => console.error('direct mode error', err)));
+  managedModeBtn?.addEventListener('click', () => setOperatingMode(OPERATING_MODES.MANAGED).catch(err => console.error('managed mode error', err)));
 
   peerListEl?.addEventListener('change', () => handlePeerSelection(peerListEl.value));
   openPeerModalBtn?.addEventListener('click', () => openPeerModal(peerListEl?.value || NEW_PEER_VALUE));
@@ -181,6 +203,9 @@ import { createStatusDashboard } from './status-dashboard.js';
   let inputGain = DEFAULT_SETTINGS.inputGain;
   let settings = { ...DEFAULT_SETTINGS };
   let themePreference = 'dark';
+  let appState = createDefaultAppStateV2();
+  let managedProfile = createDefaultManagedProfile();
+  let managedCache = createDefaultManagedCache();
   let nativeHost = null;
   let connected = false;
   let encryptionKeyHex = null;
@@ -203,6 +228,273 @@ import { createStatusDashboard } from './status-dashboard.js';
   let audioDebug = { rxFrames: [], schedule: [] };
   const peerRuntimeStats = createPeerRuntimeTracker();
   const codecSupportCache = new Map();
+
+  function sanitizeOperatingMode(mode) {
+    return mode === OPERATING_MODES.MANAGED ? OPERATING_MODES.MANAGED : OPERATING_MODES.DIRECT;
+  }
+  function normalizePeerKey(value) {
+    return typeof value === 'string' && value.includes(':') ? value : null;
+  }
+  function dedupePeerKeys(values) {
+    const keys = [];
+    const seen = new Set();
+    for (const value of Array.isArray(values) ? values : []) {
+      const key = normalizePeerKey(value);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      keys.push(key);
+    }
+    return keys;
+  }
+  function sanitizeTransportPeers(values) {
+    const peers = [];
+    const seen = new Set();
+    for (const peer of Array.isArray(values) ? values : []) {
+      if (!peer?.ip || !peer?.port) continue;
+      const key = `${peer.ip}:${peer.port}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      peers.push({ ...peer });
+    }
+    return peers;
+  }
+  function createDefaultManagedProfile(seed = {}) {
+    return {
+      version: 1,
+      displayName: typeof seed.displayName === 'string' ? seed.displayName : '',
+      callsign: typeof seed.callsign === 'string' ? seed.callsign : '',
+      preferredChannelId: typeof seed.preferredChannelId === 'string' ? seed.preferredChannelId : '',
+      backendBaseUrl: typeof seed.backendBaseUrl === 'string' ? seed.backendBaseUrl : ''
+    };
+  }
+  function createDefaultManagedCache(seed = {}) {
+    return {
+      version: 1,
+      channels: Array.isArray(seed.channels) ? seed.channels.filter((channel) => channel && typeof channel === 'object').map((channel) => ({ ...channel })) : [],
+      lastUpdatedAt: typeof seed.lastUpdatedAt === 'string' ? seed.lastUpdatedAt : null
+    };
+  }
+  function createDefaultAppStateV2(seed = {}) {
+    const direct = seed.direct && typeof seed.direct === 'object' ? seed.direct : {};
+    const managed = seed.managed && typeof seed.managed === 'object' ? seed.managed : {};
+    const managedSession = managed.session && typeof managed.session === 'object' ? managed.session : {};
+    const managedShell = managed.shell && typeof managed.shell === 'object' ? managed.shell : {};
+    return {
+      version: 2,
+      operatingMode: sanitizeOperatingMode(seed.operatingMode),
+      direct: {
+        activePeerKeys: dedupePeerKeys(direct.activePeerKeys)
+      },
+      managed: {
+        session: {
+          status: typeof managedSession.status === 'string' ? managedSession.status : 'idle',
+          sessionId: typeof managedSession.sessionId === 'string' ? managedSession.sessionId : '',
+          channelId: typeof managedSession.channelId === 'string' ? managedSession.channelId : '',
+          userId: typeof managedSession.userId === 'string' ? managedSession.userId : ''
+        },
+        shell: {
+          selectedChannelId: typeof managedShell.selectedChannelId === 'string' ? managedShell.selectedChannelId : '',
+          activeSlotId: typeof managedShell.activeSlotId === 'string' ? managedShell.activeSlotId : 'group-a'
+        },
+        transportPeers: sanitizeTransportPeers(managed.transportPeers)
+      }
+    };
+  }
+  function synthesizeAppStateV2(legacyState = {}) {
+    const directPeerKeys = dedupePeerKeys(
+      Array.isArray(legacyState.lastPeers) && legacyState.lastPeers.length
+        ? legacyState.lastPeers
+        : (Array.isArray(legacyState.peers) ? legacyState.peers.map((peer) => `${peer.ip}:${peer.port}`) : [])
+    );
+    return createDefaultAppStateV2({
+      operatingMode: OPERATING_MODES.DIRECT,
+      direct: {
+        activePeerKeys: directPeerKeys
+      }
+    });
+  }
+  function getOperatingMode() {
+    return sanitizeOperatingMode(appState?.operatingMode);
+  }
+  function getPeerKey(peer) {
+    if (!peer?.ip || !peer?.port) return null;
+    return `${peer.ip}:${peer.port}`;
+  }
+  function findSavedPeer(key) {
+    return allPeers.find((peer) => getPeerKey(peer) === key) || null;
+  }
+  function getDirectTransportPeers() {
+    return dedupePeerKeys(appState?.direct?.activePeerKeys)
+      .map((key) => findSavedPeer(key))
+      .filter(Boolean);
+  }
+  function getManagedTransportPeers() {
+    return sanitizeTransportPeers(appState?.managed?.transportPeers);
+  }
+  function getTransportPeersForMode(mode = getOperatingMode()) {
+    return sanitizeOperatingMode(mode) === OPERATING_MODES.MANAGED ? getManagedTransportPeers() : getDirectTransportPeers();
+  }
+  function buildHostConfigurePayload(mode = getOperatingMode()) {
+    return {
+      type: 'configure',
+      peers: getTransportPeersForMode(mode),
+      port: settings.localPort,
+      deadTime: settings.deadTime,
+      pingInterval: settings.pingInterval,
+      pingHistoryDuration: settings.pingHistory,
+      statsReportInterval: settings.statsInterval,
+      jitterSamplesCount: settings.jitterSamples,
+      encryptionEnabled: !!settings.encrypt
+    };
+  }
+  function buildHostPeerDeltaPayload(peer, options = {}) {
+    if (!peer) return null;
+    const payloadPeer = structuredClone(peer);
+    if (options.remove) payloadPeer.remove = true;
+    return {
+      type: 'configure',
+      peers: [payloadPeer]
+    };
+  }
+  function rememberDirectPeerSelection(keys = Array.from(activePeers.keys())) {
+    appState.direct.activePeerKeys = dedupePeerKeys(keys);
+    return appState.direct.activePeerKeys;
+  }
+  async function persistAppState(options = {}) {
+    const payload = {
+      [APP_STATE_V2_STORAGE_KEY]: appState
+    };
+    if (options.includeLegacyLastPeers) {
+      payload.udp1492_last_peers = dedupePeerKeys(appState?.direct?.activePeerKeys);
+    }
+    if (options.includeManagedProfile) {
+      payload[MANAGED_PROFILE_STORAGE_KEY] = managedProfile;
+    }
+    if (options.includeManagedCache) {
+      payload[MANAGED_CACHE_STORAGE_KEY] = managedCache;
+    }
+    await storage.set(payload);
+  }
+  function updateOperatingModeButtons() {
+    const operatingMode = getOperatingMode();
+    if (directModeBtn) {
+      directModeBtn.classList.toggle('is-active', operatingMode === OPERATING_MODES.DIRECT);
+      directModeBtn.setAttribute('aria-pressed', String(operatingMode === OPERATING_MODES.DIRECT));
+    }
+    if (managedModeBtn) {
+      managedModeBtn.classList.toggle('is-active', operatingMode === OPERATING_MODES.MANAGED);
+      managedModeBtn.setAttribute('aria-pressed', String(operatingMode === OPERATING_MODES.MANAGED));
+    }
+  }
+  function renderManagedShell() {
+    const operatingMode = getOperatingMode();
+    document.body.dataset.operatingMode = operatingMode;
+    updateOperatingModeButtons();
+    if (transportPeersHeadingEl) {
+      transportPeersHeadingEl.textContent = operatingMode === OPERATING_MODES.MANAGED ? 'Transport Peers' : 'Active Peers';
+    }
+    if (operatingModeSummaryEl) {
+      operatingModeSummaryEl.textContent = operatingMode === OPERATING_MODES.MANAGED
+        ? 'Managed mode shell enabled. Direct peer controls are parked until Phase 1 session APIs arrive.'
+        : 'Direct mode uses the saved UDP peer list and current host bridge.';
+    }
+    if (managedModeShellEl) managedModeShellEl.hidden = operatingMode !== OPERATING_MODES.MANAGED;
+    if (managedModeStatusEl) {
+      managedModeStatusEl.textContent = operatingMode === OPERATING_MODES.MANAGED
+        ? 'Managed shell is ready. Backend session, presence, and peer resolution remain Phase 1 work.'
+        : 'Managed shell is idle while direct mode is active.';
+    }
+    if (managedIdentityNameEl) {
+      managedIdentityNameEl.textContent = managedProfile.displayName || managedProfile.callsign || 'Unconfigured operator';
+    }
+    if (managedIdentityMetaEl) {
+      managedIdentityMetaEl.textContent = managedProfile.callsign
+        ? `Callsign ${managedProfile.callsign}`
+        : 'Managed identity scaffold only';
+    }
+    if (managedProfileStatusEl) {
+      managedProfileStatusEl.textContent = managedProfile.backendBaseUrl
+        ? `Backend placeholder: ${managedProfile.backendBaseUrl}`
+        : 'Backend base URL not set yet';
+    }
+    if (managedLobbyStatusEl) {
+      managedLobbyStatusEl.textContent = managedCache.channels.length
+        ? `${managedCache.channels.length} cached channel stub(s)`
+        : 'No cached channels yet';
+    }
+    if (managedActiveChannelEl) {
+      const activeChannelId = appState?.managed?.session?.channelId || appState?.managed?.shell?.selectedChannelId || '';
+      managedActiveChannelEl.textContent = activeChannelId || 'No managed channel joined yet';
+    }
+    if (managedGroupAStatusEl) {
+      managedGroupAStatusEl.textContent = appState?.managed?.session?.status === 'active'
+        ? 'Group A transport is active.'
+        : 'Group A shell only. Join, leave, and peer resolution arrive in Phase 1.';
+    }
+    if (managedChannelListEl) {
+      managedChannelListEl.innerHTML = '';
+      const channels = managedCache.channels.length
+        ? managedCache.channels
+        : [
+            { id: 'placeholder-alpha', name: 'Alpha channel', note: 'Channel discovery not implemented yet' },
+            { id: 'placeholder-bravo', name: 'Bravo channel', note: 'Lobby shell placeholder' }
+          ];
+      for (const channel of channels) {
+        const item = document.createElement('li');
+        item.className = 'managed-list-item';
+        const title = document.createElement('strong');
+        title.textContent = channel.name || channel.id || 'Unnamed channel';
+        const detail = document.createElement('span');
+        detail.textContent = channel.note || channel.id || 'Managed channel placeholder';
+        item.append(title, detail);
+        managedChannelListEl.appendChild(item);
+      }
+    }
+  }
+  async function syncTransportPeerRows(options = {}) {
+    const desiredPeers = getTransportPeersForMode(options.mode);
+    const desiredKeys = new Set(desiredPeers.map((peer) => getPeerKey(peer)).filter(Boolean));
+    for (const key of Array.from(activePeers.keys())) {
+      if (!desiredKeys.has(key)) {
+        deactivatePeer(key, {
+          trackDirectState: false,
+          persistState: false,
+          sendHostUpdate: false,
+          refreshSelects: false
+        });
+      }
+    }
+    for (const peer of desiredPeers) {
+      if (!activePeers.has(getPeerKey(peer))) {
+        activatePeer(peer, {
+          trackDirectState: false,
+          persistState: false,
+          sendHostUpdate: false,
+          refreshSelects: false
+        });
+      }
+    }
+    refreshPeerSelects(peerListEl?.value || NEW_PEER_VALUE, peerModalSelectEl?.value || NEW_PEER_VALUE);
+    refreshPeerConnectionState();
+    updateStatusDashboard();
+    if (options.sendHostUpdate && nativeHost) {
+      await hostSend(buildHostConfigurePayload(options.mode));
+    }
+  }
+  async function setOperatingMode(nextMode, options = {}) {
+    const mode = sanitizeOperatingMode(nextMode);
+    const changed = mode !== getOperatingMode();
+    appState.operatingMode = mode;
+    renderManagedShell();
+    if (mode === OPERATING_MODES.MANAGED) closePeerModal(true);
+    await syncTransportPeerRows({
+      mode,
+      sendHostUpdate: changed && dashboardState.nativeHostConnected
+    });
+    if (options.persist !== false) {
+      await persistAppState({ includeLegacyLastPeers: true });
+    }
+  }
   function setCodecWarning(msg) {
     if (!codecSupportWarningEl) return;
     if (msg) {
@@ -915,24 +1207,7 @@ import { createStatusDashboard } from './status-dashboard.js';
       log('native host unavailable; connect aborted');
       return;
     }
-    const config = {
-      type: 'configure',
-      peers: [],
-      port: settings.localPort,
-      deadTime: settings.deadTime,
-      pingInterval: settings.pingInterval,
-      pingHistoryDuration: settings.pingHistory,
-      statsReportInterval: settings.statsInterval,
-      jitterSamplesCount: settings.jitterSamples,
-      encryptionEnabled: !!settings.encrypt
-    };
-    const list = Array.from(activePeers.keys());
-    for (const key of list) {
-      const peer = allPeers.find(p => `${p.ip}:${p.port}` === key);
-      if (peer) config.peers.push(peer);
-    }
-
-    await hostSend(config);
+    await hostSend(buildHostConfigurePayload());
     await startAudioCapture();
     connected = true;
     dashboardState.localEncryptionEnabled = !!settings.encrypt;
@@ -1001,6 +1276,9 @@ import { createStatusDashboard } from './status-dashboard.js';
     const got = await storage.get([
       SETTINGS_STORAGE_KEY,
       THEME_STORAGE_KEY,
+      APP_STATE_V2_STORAGE_KEY,
+      MANAGED_PROFILE_STORAGE_KEY,
+      MANAGED_CACHE_STORAGE_KEY,
       'udp1492_peers',
       'udp1492_last_peers',
       'udp1492_debug_enabled',
@@ -1046,18 +1324,25 @@ import { createStatusDashboard } from './status-dashboard.js';
     applyTheme(typeof storedTheme === 'string' ? storedTheme : themePreference);
 
     allPeers = Array.isArray(got['udp1492_peers']) ? got['udp1492_peers'] : [];
-
-    if (!dashboardState.nativeHostConnected) {
-      const last = Array.isArray(got['udp1492_last_peers']) ? got['udp1492_last_peers'] : [];
-      const peersToRestore = last.length ? last : allPeers.map((peer) => `${peer.ip}:${peer.port}`);
-      for (const key of peersToRestore) {
-        if (!activePeers.has(key)){
-          const peer = allPeers.find(p => `${p.ip}:${p.port}` === key);
-          if (peer) activatePeer(peer);
-        }
-      }
+    const storedAppState = got[APP_STATE_V2_STORAGE_KEY];
+    const hasStoredAppState = storedAppState && typeof storedAppState === 'object' && Number(storedAppState.version) === 2;
+    appState = hasStoredAppState
+      ? createDefaultAppStateV2(storedAppState)
+      : synthesizeAppStateV2({
+          peers: allPeers,
+          lastPeers: got['udp1492_last_peers']
+        });
+    managedProfile = createDefaultManagedProfile(got[MANAGED_PROFILE_STORAGE_KEY]);
+    managedCache = createDefaultManagedCache(got[MANAGED_CACHE_STORAGE_KEY]);
+    renderManagedShell();
+    await syncTransportPeerRows({ sendHostUpdate: false });
+    if (!hasStoredAppState || !got[MANAGED_PROFILE_STORAGE_KEY] || !got[MANAGED_CACHE_STORAGE_KEY]) {
+      await persistAppState({
+        includeLegacyLastPeers: true,
+        includeManagedProfile: true,
+        includeManagedCache: true
+      });
     }
-    refreshPeerSelects(peerListEl?.value || NEW_PEER_VALUE, peerModalSelectEl?.value || NEW_PEER_VALUE);
 
 
     if (typeof got['udp1492_debug_enabled'] === 'boolean') setDebugEnabled(got['udp1492_debug_enabled']);
@@ -1078,6 +1363,7 @@ import { createStatusDashboard } from './status-dashboard.js';
   }
 
   function handlePeerSelection(value) {
+    if (getOperatingMode() !== OPERATING_MODES.DIRECT) return;
     if (value === NEW_PEER_VALUE) {
       openPeerModal(NEW_PEER_VALUE);
       return;
@@ -1090,6 +1376,7 @@ import { createStatusDashboard } from './status-dashboard.js';
     if (!activePeers.has(value)) activatePeer(peer);
   }
   function openPeerModal(initialKey = NEW_PEER_VALUE) {
+    if (getOperatingMode() !== OPERATING_MODES.DIRECT) return;
     refreshPeerSelects(peerListEl?.value || initialKey, initialKey);
     loadPeerIntoModal(initialKey);
     if (peerModalEl) peerModalEl.hidden = false;
@@ -1155,7 +1442,7 @@ import { createStatusDashboard } from './status-dashboard.js';
     if (!peer || isNew) {
       peer = { name, ip, port, sharedKey, gain };
       allPeers.push(peer);
-      activatePeer(peer);
+      if (getOperatingMode() === OPERATING_MODES.DIRECT) activatePeer(peer);
     } else {
       const otherLabels = new Set(Array.from(peerModalOtherFieldsEl?.querySelectorAll(".other-row span") || []).map(s => s.textContent));
       for (const attr of Object.keys(peer)) {
@@ -1178,7 +1465,13 @@ import { createStatusDashboard } from './status-dashboard.js';
       }
     }
 
-    await storage.set({ udp1492_peers: allPeers });
+    const peerPayload = { udp1492_peers: allPeers };
+    if (getOperatingMode() === OPERATING_MODES.DIRECT) {
+      rememberDirectPeerSelection();
+      peerPayload[APP_STATE_V2_STORAGE_KEY] = appState;
+      peerPayload.udp1492_last_peers = dedupePeerKeys(appState?.direct?.activePeerKeys);
+    }
+    await storage.set(peerPayload);
     refreshPeerSelects(nextKey, nextKey);
     if (peerListEl) peerListEl.value = nextKey;
     closePeerModal();
@@ -1191,16 +1484,26 @@ import { createStatusDashboard } from './status-dashboard.js';
     }
     if (activePeers.has(key)) deactivatePeer(key);
     allPeers = allPeers.filter(p => `${p.ip}:${p.port}` !== key);
-    storage.set({ ['udp1492_peers']: allPeers });
+    if (getOperatingMode() === OPERATING_MODES.DIRECT) {
+      rememberDirectPeerSelection();
+      storage.set({
+        udp1492_peers: allPeers,
+        [APP_STATE_V2_STORAGE_KEY]: appState,
+        udp1492_last_peers: dedupePeerKeys(appState?.direct?.activePeerKeys)
+      });
+    } else {
+      storage.set({ udp1492_peers: allPeers });
+    }
     refreshPeerSelects(NEW_PEER_VALUE, NEW_PEER_VALUE);
     closePeerModal(true);
   }
-  function activatePeer(peer) {
+  function activatePeer(peer, options = {}) {
     if (!peer) return;
     const table = document.querySelector("#networkTable tbody");
     if (!table) return;
     const peerKey = `${peer.ip}:${peer.port}`;
     if (activePeers.has(peerKey)) return;
+    const trackDirectState = options.trackDirectState ?? (getOperatingMode() === OPERATING_MODES.DIRECT);
     const { row, meterEl } = createPeerTableRow({
       document,
       peer,
@@ -1210,20 +1513,31 @@ import { createStatusDashboard } from './status-dashboard.js';
     table.appendChild(row);
     if (meterEl) peerMeters.set(peerKey, meterEl);
     activePeers.set(peerKey, peer);
-    saveActivePeers();
-    if (dashboardState.nativeHostConnected) {
-      const config = { type: 'configure', peers: [] };
-      config.peers.push(peer);
-      hostSend(config);
+    if (trackDirectState) {
+      rememberDirectPeerSelection();
     }
+    if (options.persistState !== false) {
+      saveActivePeers();
+    } else {
+      refreshPeerConnectionState();
+      updateStatusDashboard();
+    }
+    if ((options.sendHostUpdate ?? dashboardState.nativeHostConnected)) {
+      const payload = buildHostPeerDeltaPayload(peer);
+      if (payload) hostSend(payload);
+    }
+    if (options.refreshSelects !== false) refreshPeerSelects(peerListEl?.value || NEW_PEER_VALUE, peerModalSelectEl?.value || NEW_PEER_VALUE);
   }
   function saveActivePeers(){
-    const list = Array.from(activePeers.keys());
-    storage.set({ udp1492_last_peers: list });
+    rememberDirectPeerSelection();
+    storage.set({
+      udp1492_last_peers: dedupePeerKeys(appState?.direct?.activePeerKeys),
+      [APP_STATE_V2_STORAGE_KEY]: appState
+    });
     refreshPeerConnectionState();
     updateStatusDashboard();
   }
-  function deactivatePeer(key){
+  function deactivatePeer(key, options = {}){
     const row = document.getElementById(getPeerRowId(key));
     if (row) row.remove();
     peerMeters.delete(key);
@@ -1238,18 +1552,24 @@ import { createStatusDashboard } from './status-dashboard.js';
         decoders.delete(decKey);
       }
     }
-    if (dashboardState.nativeHostConnected) {
-      const config = {type: 'configure', peers: []};
+    if (options.sendHostUpdate ?? dashboardState.nativeHostConnected) {
       const peerCopy = structuredClone(allPeers.find(p => `${p.ip}:${p.port}` === key)) || { ip: key.split(':')[0], port: Number(key.split(':')[1]) };
-      peerCopy.remove = true;
-      config.peers.push(peerCopy);
-      hostSend(config);
+      const payload = buildHostPeerDeltaPayload(peerCopy, { remove: true });
+      if (payload) hostSend(payload);
     }
     activePeers.delete(key);
     peerRuntimeStats.remove(key);
-    saveActivePeers();
+    if (options.trackDirectState ?? (getOperatingMode() === OPERATING_MODES.DIRECT)) {
+      rememberDirectPeerSelection();
+    }
+    if (options.persistState !== false) {
+      saveActivePeers();
+    } else {
+      refreshPeerConnectionState();
+      updateStatusDashboard();
+    }
     refreshSelfStats();
-    refreshPeerSelects(peerListEl?.value || NEW_PEER_VALUE, peerModalSelectEl?.value || NEW_PEER_VALUE);
+    if (options.refreshSelects !== false) refreshPeerSelects(peerListEl?.value || NEW_PEER_VALUE, peerModalSelectEl?.value || NEW_PEER_VALUE);
   }
   function updateSelfStat(id, value) {
     const el = document.getElementById(id);

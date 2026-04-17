@@ -10,12 +10,59 @@
 <body class="theme-dark">
   <div class="app">
     <header class="header">
-      <h1>UDP 1492 Desktop</h1>
-      <div class="buttons">
+      <div class="header-title">
+        <h1>UDP 1492 Desktop</h1>
+        <p id="operatingModeSummary" class="header-summary">Direct mode uses the saved UDP peer list and current host bridge.</p>
+      </div>
+      <div class="header-actions">
+        <div class="mode-switch" role="group" aria-label="Operating mode">
+          <span class="mode-switch-label">Mode</span>
+          <div class="mode-switch-buttons">
+            <button id="operatingModeDirect" class="mode-switch-button is-active" type="button" aria-pressed="true">Direct</button>
+            <button id="operatingModeManaged" class="mode-switch-button" type="button" aria-pressed="false">Managed</button>
+          </div>
+        </div>
+        <div class="buttons">
         <button id="connectBtn" class="primary">Connect</button>
         <button id="disconnectBtn">Disconnect</button>
+        </div>
       </div>
     </header>
+
+    <section id="managedModeShell" class="managed-shell" hidden>
+      <div class="managed-shell-header">
+        <div>
+          <p class="managed-kicker">Phase 0 Managed Shell</p>
+          <h2>Managed Coordination</h2>
+          <p id="managedModeStatus" class="managed-copy">Managed shell is ready. Backend session, presence, and peer resolution remain Phase 1 work.</p>
+        </div>
+        <div class="managed-shell-badge">Group A First</div>
+      </div>
+      <div class="managed-grid">
+        <article class="managed-card">
+          <p class="managed-card-label">Identity</p>
+          <h3 id="managedIdentityName">Unconfigured operator</h3>
+          <p id="managedIdentityMeta" class="managed-card-copy">Managed identity scaffold only</p>
+          <p id="managedProfileStatus" class="managed-card-foot">Backend base URL not set yet</p>
+        </article>
+        <article class="managed-card">
+          <div class="managed-card-header">
+            <div>
+              <p class="managed-card-label">Channel Lobby</p>
+              <h3>Available Channels</h3>
+            </div>
+            <span id="managedLobbyStatus" class="managed-inline-status">No cached channels yet</span>
+          </div>
+          <ul id="managedChannelList" class="managed-list"></ul>
+        </article>
+        <article class="managed-card managed-card-feature">
+          <p class="managed-card-label">Active Group A</p>
+          <h3 id="managedActiveChannel">No managed channel joined yet</h3>
+          <p id="managedGroupAStatus" class="managed-card-copy">Group A shell only. Join, leave, and peer resolution arrive in Phase 1.</p>
+          <div class="managed-card-note">Direct UDP media remains the transport path. This shell only prepares the renderer for managed coordination.</div>
+        </article>
+      </div>
+    </section>
 
     <section class="status-dashboard">
       <h2>System Status</h2>
@@ -70,8 +117,8 @@
 
     <section class="network-stats">
       <div class="network-stats-header">
-        <h2>Active Peers</h2>
-        <div class="peer-controls">
+        <h2 id="transportPeersHeading">Active Peers</h2>
+        <div class="peer-controls direct-only">
           <button id="openPeerModalBtn" class="primary">Edit Peers</button>
           <label for="peerList">Select Peer</label>
           <select id="peerList"></select>

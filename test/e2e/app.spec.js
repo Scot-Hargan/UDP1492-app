@@ -34,6 +34,13 @@ test('launches with default persisted settings', async ({ appHarness }) => {
   const storage = await readStorage();
   expect(storage.udp1492_selected_codec).toBe('opus');
   expect(storage.udp1492_theme).toBe('dark');
+  expect(storage.udp1492_app_state_v2).toMatchObject({
+    version: 2,
+    operatingMode: 'direct',
+    direct: { activePeerKeys: [] }
+  });
+  expect(storage.udp1492_managed_profile).toMatchObject({ version: 1 });
+  expect(storage.udp1492_managed_cache).toMatchObject({ version: 1, channels: [] });
 });
 
 test('quits the app when the main window is closed', async ({ appHarness }) => {
@@ -121,6 +128,29 @@ test.describe('peer fixture', () => {
     await expect(page.locator('#gainValue')).toHaveText('1.33x');
     await expect(page.locator('#peerList')).toContainText('Alpha');
     await expect(page.locator('#networkTable tbody')).toContainText('Alpha');
+  });
+
+  test('persists AppStateV2 migration and managed mode selection', async ({ appHarness }) => {
+    const { page, readStorage } = appHarness;
+
+    const migratedStorage = await readStorage();
+    expect(migratedStorage.udp1492_app_state_v2).toMatchObject({
+      version: 2,
+      operatingMode: 'direct',
+      direct: { activePeerKeys: ['203.0.113.10:1492'] }
+    });
+
+    await page.locator('#operatingModeManaged').click();
+    await expect(page.locator('#managedModeShell')).toBeVisible();
+    await expect(page.locator('.peer-controls')).toBeHidden();
+    await expect(page.locator('#transportPeersHeading')).toHaveText('Transport Peers');
+
+    const updatedStorage = await readStorage();
+    expect(updatedStorage.udp1492_app_state_v2).toMatchObject({
+      version: 2,
+      operatingMode: 'managed',
+      direct: { activePeerKeys: ['203.0.113.10:1492'] }
+    });
   });
 
   test('connects against the mock host and handles injected host events', async ({ appHarness }) => {
