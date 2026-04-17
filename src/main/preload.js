@@ -4,6 +4,7 @@ const isTestMode = process.env.UDP1492_TEST_MODE === '1';
 contextBridge.exposeInMainWorld('udp1492', {
   storageGet: (keys) => ipcRenderer.invoke('udp1492:storage-get', keys),
   storageSet: (values) => ipcRenderer.invoke('udp1492:storage-set', values),
+  getRuntimeConfig: () => ipcRenderer.invoke('udp1492:runtime-config'),
   startHost: () => ipcRenderer.invoke('udp1492:host-start'),
   sendHostMessage: (message) => ipcRenderer.invoke('udp1492:host-send', message),
   stopHost: () => ipcRenderer.invoke('udp1492:host-stop'),

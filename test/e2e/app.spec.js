@@ -24,8 +24,26 @@ async function safeCloseElectronApp(electronApp) {
   }
 }
 
+function buildManagedApiUrl(baseUrl, pathname = '') {
+  const url = new URL(baseUrl);
+  const baseSegments = url.pathname.split('/').filter(Boolean);
+  const pathSegments = String(pathname || '').split('/').filter(Boolean);
+  let overlap = 0;
+  const maxOverlap = Math.min(baseSegments.length, pathSegments.length);
+  for (let size = maxOverlap; size > 0; size -= 1) {
+    if (baseSegments.slice(-size).join('/') === pathSegments.slice(0, size).join('/')) {
+      overlap = size;
+      break;
+    }
+  }
+  url.pathname = `/${[...baseSegments, ...pathSegments.slice(overlap)].join('/')}`;
+  url.search = '';
+  return url.toString().replace(/\/+$/, '');
+}
+
 async function installManagedApiRoutes(page, options = {}) {
   const baseUrl = options.baseUrl || 'https://managed.example.test';
+  const apiBaseUrl = buildManagedApiUrl(baseUrl, '/api');
   const openSessionResponse = options.openSessionResponse || {
     identity: {
       userId: 'usr_01',
@@ -104,7 +122,7 @@ async function installManagedApiRoutes(page, options = {}) {
     'access-control-allow-headers': '*'
   };
 
-  await page.route(`${baseUrl}/api/**`, async (route) => {
+  await page.route(`${apiBaseUrl}/**`, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     if (request.method() === 'OPTIONS') {
@@ -491,6 +509,64 @@ test.describe('peer fixture', () => {
       }
     });
   });
+
+  test('clears stale managed state when the backend expires the session during peer refresh', async ({ appHarness }) => {
+    const { page } = appHarness;
+    const { baseUrl } = await installManagedApiRoutes(page);
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+    await page.getByRole('button', { name: 'Join' }).click();
+
+    await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+
+    await page.route(/https:\/\/managed\.example\.test\/api\/channels\/chn_alpha\/peers\?sessionId=.*/, async (route) => {
+      await route.fulfill({
+        status: 401,
+        headers: {
+          'content-type': 'application/json',
+          'access-control-allow-origin': '*'
+        },
+        body: JSON.stringify({
+          code: 'session_expired',
+          message: 'Session expired. Open a new session.'
+        })
+      });
+    });
+
+    await page.locator('#managedRefreshPeersBtn').click();
+    await expect(page.locator('#managedErrorText')).toContainText('Session expired');
+    await expect(page.locator('#managedActiveChannel')).toHaveText('No managed channel joined yet');
+    await expect(page.locator('#managedIdentityMeta')).not.toContainText('Session ses_01');
+    await expect(page.locator('#networkTable tbody')).not.toContainText('Peer One');
+  });
+
+  test.describe('runtime configured backend target', () => {
+    test.use({
+      runtimeEnv: {
+        UDP1492_MANAGED_BACKEND_URL: 'https://managed.example.test/api',
+        UDP1492_MANAGED_REQUEST_TIMEOUT_MS: '4000'
+      }
+    });
+
+    test('uses the app-configured backend URL when no profile URL is stored', async ({ appHarness }) => {
+      const { page, readStorage } = appHarness;
+      const baseUrl = 'https://managed.example.test/api';
+      await installManagedApiRoutes(page, { baseUrl });
+
+      await page.locator('#operatingModeManaged').click();
+      await page.locator('#managedDisplayNameInput').fill('Scot');
+      await expect(page.locator('#managedProfileStatus')).toContainText('app config');
+      await page.locator('#managedOpenSessionBtn').click();
+
+      await expect(page.locator('#managedIdentityMeta')).toContainText('Session ses_01');
+      const savedStorage = await readStorage();
+      expect(savedStorage.udp1492_managed_profile.backendBaseUrl).toBe('');
+    });
+  });
 });
 
 test.describe('managed resume fixture', () => {
@@ -517,5 +593,55 @@ test.describe('managed resume fixture', () => {
     await expect(page.locator('#managedIdentityMeta')).toContainText('ses_new');
     await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
     await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+  });
+
+  test('shows a clear error when the backend returns an invalid session payload', async ({ appHarness }) => {
+    const { page } = appHarness;
+    const baseUrl = 'https://managed.example.test';
+    await page.route(`${baseUrl}/api/**`, async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      if (request.method() === 'OPTIONS') {
+        await route.fulfill({
+          status: 204,
+          headers: {
+            'access-control-allow-origin': '*',
+            'access-control-allow-methods': 'GET,POST,OPTIONS',
+            'access-control-allow-headers': '*'
+          },
+          body: ''
+        });
+        return;
+      }
+      if (url.pathname === '/api/session/open') {
+        await route.fulfill({
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+            'access-control-allow-origin': '*'
+          },
+          body: JSON.stringify({
+            identity: {
+              userId: 'usr_01',
+              displayName: 'Scot'
+            },
+            session: {
+              openedAt: '2026-04-16T19:20:00Z',
+              heartbeatIntervalMs: 15000
+            }
+          })
+        });
+        return;
+      }
+      throw new Error(`Unhandled managed API request: ${request.method()} ${request.url()}`);
+    });
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+
+    await expect(page.locator('#managedErrorText')).toContainText('invalid session response');
+    await expect(page.locator('#managedIdentityMeta')).not.toContainText('Session');
   });
 });

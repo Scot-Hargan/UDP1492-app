@@ -15,6 +15,31 @@ let quitRequested = false;
 let quitPromise = null;
 const defaultUserDataPath = app.getPath('userData');
 
+function sanitizeManagedBackendUrl(value) {
+  const raw = String(value || '').trim().replace(/\/+$/, '');
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+    return url.toString().replace(/\/+$/, '');
+  } catch {
+    return '';
+  }
+}
+
+function sanitizeManagedRequestTimeoutMs(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 10000;
+  return Math.max(1000, Math.min(60000, Math.trunc(parsed)));
+}
+
+function getRuntimeConfig() {
+  return {
+    managedBackendUrl: sanitizeManagedBackendUrl(process.env.UDP1492_MANAGED_BACKEND_URL),
+    managedRequestTimeoutMs: sanitizeManagedRequestTimeoutMs(process.env.UDP1492_MANAGED_REQUEST_TIMEOUT_MS)
+  };
+}
+
 app.setPath(
   'userData',
   customUserDataPath
@@ -419,6 +444,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('udp1492:storage-get', async (_event, keys) => storageGet(keys));
   ipcMain.handle('udp1492:storage-set', async (_event, values) => storageSet(values));
+  ipcMain.handle('udp1492:runtime-config', async () => getRuntimeConfig());
   ipcMain.handle('udp1492:host-start', async (event) => {
     hostBridge.start(event.sender);
     return { ok: true };

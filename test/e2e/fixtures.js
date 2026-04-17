@@ -50,7 +50,7 @@ async function readStorageJsonWithRetry(userDataDir, attempts = 10) {
   throw lastError;
 }
 
-async function launchElectronSession(userDataDir) {
+async function launchElectronSession(userDataDir, runtimeEnv = {}) {
   const electronApp = await electron.launch({
     args: [repoRoot],
     env: {
@@ -58,7 +58,8 @@ async function launchElectronSession(userDataDir) {
       UDP1492_TEST_MODE: '1',
       UDP1492_TEST_MOCK_HOST: '1',
       UDP1492_TEST_SKIP_AUDIO: '1',
-      UDP1492_USER_DATA_DIR: userDataDir
+      UDP1492_USER_DATA_DIR: userDataDir,
+      ...runtimeEnv
     }
   });
 
@@ -72,10 +73,11 @@ async function launchElectronSession(userDataDir) {
 
 const test = base.extend({
   storageFixture: [DEFAULT_STORAGE_FIXTURE, { option: true }],
-  appHarness: async ({ storageFixture }, use, testInfo) => {
+  runtimeEnv: [{}, { option: true }],
+  appHarness: async ({ storageFixture, runtimeEnv }, use, testInfo) => {
     const userDataDir = path.join(testInfo.outputDir, 'user-data');
     await seedStorage(userDataDir, storageFixture);
-    let session = await launchElectronSession(userDataDir);
+    let session = await launchElectronSession(userDataDir, runtimeEnv);
 
     const harness = {
       userDataDir,
@@ -90,7 +92,7 @@ const test = base.extend({
       getSentHostMessages: () => session.page.evaluate(() => window.udp1492Test.getSentHostMessages()),
       async relaunch() {
         await safeCloseElectronApp(session.electronApp);
-        session = await launchElectronSession(userDataDir);
+        session = await launchElectronSession(userDataDir, runtimeEnv);
         return session.page;
       },
       async readStorage() {
