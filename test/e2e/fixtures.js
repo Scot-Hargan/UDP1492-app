@@ -33,6 +33,22 @@ async function safeCloseElectronApp(electronApp) {
   }
 }
 
+async function readStorageJsonWithRetry(userDataDir, attempts = 10) {
+  const storagePath = path.join(userDataDir, 'storage.json');
+  let lastError;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const raw = await fs.readFile(storagePath, 'utf8');
+      return JSON.parse(raw);
+    } catch (error) {
+      lastError = error;
+      if (!(error instanceof SyntaxError) && error?.code !== 'ENOENT') throw error;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+  throw lastError;
+}
+
 async function launchElectronSession(userDataDir) {
   const electronApp = await electron.launch({
     args: [repoRoot],
@@ -77,8 +93,7 @@ const test = base.extend({
         return session.page;
       },
       async readStorage() {
-        const raw = await fs.readFile(path.join(userDataDir, 'storage.json'), 'utf8');
-        return JSON.parse(raw);
+        return readStorageJsonWithRetry(userDataDir);
       }
     };
 

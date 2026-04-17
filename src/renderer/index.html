@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob: data:; connect-src 'self'; worker-src 'self' blob:;" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob: data:; connect-src 'self' http: https:; worker-src 'self' blob:;" />
   <title>UDP 1492 Desktop</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -44,6 +44,20 @@
           <h3 id="managedIdentityName">Unconfigured operator</h3>
           <p id="managedIdentityMeta" class="managed-card-copy">Managed identity scaffold only</p>
           <p id="managedProfileStatus" class="managed-card-foot">Backend base URL not set yet</p>
+          <div class="managed-form">
+            <label class="managed-field">
+              <span>Display Name</span>
+              <input id="managedDisplayNameInput" type="text" placeholder="Operator name" maxlength="64" />
+            </label>
+            <label class="managed-field">
+              <span>Backend Base URL</span>
+              <input id="managedBackendBaseUrlInput" type="url" placeholder="https://managed.example.test" />
+            </label>
+          </div>
+          <div class="managed-actions">
+            <button id="managedOpenSessionBtn" class="primary" type="button">Open Session</button>
+            <button id="managedRefreshChannelsBtn" class="secondary" type="button">Refresh Channels</button>
+          </div>
         </article>
         <article class="managed-card">
           <div class="managed-card-header">
@@ -59,6 +73,12 @@
           <p class="managed-card-label">Active Group A</p>
           <h3 id="managedActiveChannel">No managed channel joined yet</h3>
           <p id="managedGroupAStatus" class="managed-card-copy">Group A shell only. Join, leave, and peer resolution arrive in Phase 1.</p>
+          <p id="managedPeerSyncMeta" class="managed-card-foot">No managed peer sync yet</p>
+          <p id="managedErrorText" class="managed-error" hidden></p>
+          <div class="managed-actions">
+            <button id="managedRefreshPeersBtn" class="secondary" type="button">Refresh Peers</button>
+            <button id="managedLeaveChannelBtn" class="danger" type="button">Leave Channel</button>
+          </div>
           <div class="managed-card-note">Direct UDP media remains the transport path. This shell only prepares the renderer for managed coordination.</div>
         </article>
       </div>

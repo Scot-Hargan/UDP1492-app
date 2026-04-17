@@ -188,4 +188,210 @@ test.describe('peer fixture', () => {
     await expect(page.locator('#connectBtn')).toBeEnabled();
     await expect(page.locator('#disconnectBtn')).toBeDisabled();
   });
+
+  test('opens a managed session, joins a channel, and adapts resolved peers into host config', async ({ appHarness }) => {
+    const { page, getSentHostMessages, readStorage } = appHarness;
+    const baseUrl = 'https://managed.example.test';
+    const jsonHeaders = {
+      'content-type': 'application/json',
+      'access-control-allow-origin': '*',
+      'access-control-allow-methods': 'GET,POST,OPTIONS',
+      'access-control-allow-headers': '*'
+    };
+
+    await page.route(`${baseUrl}/api/**`, async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      if (request.method() === 'OPTIONS') {
+        await route.fulfill({ status: 204, headers: jsonHeaders, body: '' });
+        return;
+      }
+      if (url.pathname === '/api/session/open') {
+        await route.fulfill({
+          status: 200,
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            identity: {
+              userId: 'usr_01',
+              sessionId: 'ses_01',
+              displayName: 'Scot'
+            },
+            session: {
+              openedAt: '2026-04-16T19:20:00Z',
+              expiresAt: '2026-04-16T21:20:00Z',
+              heartbeatIntervalMs: 15000
+            }
+          })
+        });
+        return;
+      }
+      if (url.pathname === '/api/channels') {
+        await route.fulfill({
+          status: 200,
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            channels: [
+              {
+                channelId: 'chn_alpha',
+                name: 'Alpha',
+                description: 'Primary coordination channel',
+                securityMode: 'open',
+                requiresPasscode: false,
+                concurrentAccessAllowed: true,
+                memberCount: 4
+              }
+            ],
+            syncedAt: '2026-04-16T19:21:00Z'
+          })
+        });
+        return;
+      }
+      if (url.pathname === '/api/channels/chn_alpha/join') {
+        await route.fulfill({
+          status: 200,
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            membership: {
+              channelId: 'chn_alpha',
+              slotId: 'A',
+              membershipState: 'joined',
+              joinedAt: '2026-04-16T19:22:00Z'
+            },
+            channel: {
+              channelId: 'chn_alpha',
+              name: 'Alpha',
+              description: 'Primary coordination channel',
+              securityMode: 'open',
+              requiresPasscode: false,
+              concurrentAccessAllowed: true,
+              memberCount: 5
+            }
+          })
+        });
+        return;
+      }
+      if (url.pathname === '/api/channels/chn_alpha/presence') {
+        await route.fulfill({
+          status: 200,
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            presence: {
+              channelId: 'chn_alpha',
+              sessionId: 'ses_01',
+              onlineState: 'online',
+              lastSeenAt: '2026-04-16T19:23:00Z'
+            },
+            registrations: [],
+            nextHeartbeatAt: '2026-04-16T19:23:15Z'
+          })
+        });
+        return;
+      }
+      if (url.pathname === '/api/channels/chn_alpha/peers') {
+        await route.fulfill({
+          status: 200,
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            channelId: 'chn_alpha',
+            peers: [
+              {
+                userId: 'usr_peer_01',
+                sessionId: 'ses_peer_01',
+                channelId: 'chn_alpha',
+                displayName: 'Peer One',
+                connectionState: 'idle',
+                endpoints: [
+                  {
+                    endpointId: 'end_01',
+                    kind: 'public',
+                    ip: '198.51.100.10',
+                    port: 1492,
+                    registrationState: 'ready',
+                    lastValidatedAt: '2026-04-16T19:25:00Z'
+                  }
+                ]
+              }
+            ],
+            resolvedAt: '2026-04-16T19:25:05Z'
+          })
+        });
+        return;
+      }
+      if (url.pathname === '/api/channels/chn_alpha/leave') {
+        await route.fulfill({
+          status: 200,
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            membership: {
+              channelId: 'chn_alpha',
+              slotId: 'A',
+              membershipState: 'none',
+              leftAt: '2026-04-16T19:26:00Z'
+            }
+          })
+        });
+        return;
+      }
+      throw new Error(`Unhandled managed API request: ${request.method()} ${request.url()}`);
+    });
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+
+    await expect(page.locator('#managedIdentityMeta')).toContainText('usr_01');
+    await expect(page.locator('#managedChannelList')).toContainText('Alpha');
+
+    await page.getByRole('button', { name: 'Join' }).click();
+    await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+    await expect(page.locator('#managedGroupAStatus')).toContainText('joined');
+    await expect(page.locator('#managedPeerSyncMeta')).toContainText('1 transport peer');
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+
+    await expect.poll(async () => {
+      const messages = await getSentHostMessages();
+      return messages
+        .filter((message) => message.type === 'configure')
+        .some((message) => Array.isArray(message.peers) && message.peers.some((peer) => peer.name === 'Peer One'));
+    }).toBe(true);
+
+    const storage = await readStorage();
+    expect(storage.udp1492_managed_profile).toMatchObject({
+      displayName: 'Scot',
+      backendBaseUrl: baseUrl,
+      userId: 'usr_01',
+      lastSessionId: 'ses_01',
+      preferredChannelId: 'chn_alpha'
+    });
+    expect(storage.udp1492_managed_cache).toMatchObject({
+      channels: [
+        expect.objectContaining({
+          channelId: 'chn_alpha',
+          name: 'Alpha'
+        })
+      ]
+    });
+    expect(storage.udp1492_app_state_v2).toMatchObject({
+      operatingMode: 'managed',
+      managed: {
+        session: {
+          sessionId: 'ses_01',
+          channelId: 'chn_alpha',
+          membershipState: 'joined'
+        },
+        transportPeers: [
+          expect.objectContaining({
+            name: 'Peer One',
+            ip: '198.51.100.10',
+            port: 1492
+          })
+        ]
+      }
+    });
+
+    await page.locator('#managedLeaveChannelBtn').click();
+    await expect(page.locator('#managedActiveChannel')).toHaveText('No managed channel joined yet');
+    await expect(page.locator('#networkTable tbody')).not.toContainText('Peer One');
+  });
 });

@@ -269,9 +269,80 @@ body[data-operating-mode="managed"] .direct-only {
   margin: 8px 0 0;
 }
 
+.managed-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.managed-field {
+  display: grid;
+  gap: 6px;
+}
+
+.managed-field span {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(232, 238, 248, 0.8);
+}
+
+.managed-field input {
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(143, 224, 188, 0.16);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+}
+
+.managed-field input::placeholder {
+  color: rgba(232, 238, 248, 0.38);
+}
+
+.managed-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.managed-actions button {
+  flex: 1 1 150px;
+}
+
 .managed-card-note {
   padding-top: 12px;
   border-top: 1px solid rgba(143, 224, 188, 0.12);
+}
+
+.managed-error {
+  margin: 10px 0 0;
+  color: #ffd4db;
+  font-size: 13px;
+}
+
+.managed-list-item-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.managed-list-item strong {
+  font-size: 14px;
+}
+
+.managed-list-item button {
+  min-width: 96px;
+}
+
+.managed-list-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: rgba(232, 238, 248, 0.6);
 }
 
 button {

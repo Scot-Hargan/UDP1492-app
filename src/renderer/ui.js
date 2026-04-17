@@ -39,11 +39,12 @@ import {
 } from './peer-ui.js';
 import { createPeerRuntimeTracker } from './peer-runtime-stats.js';
 import { createStatusDashboard } from './status-dashboard.js';
+import { ManagedApiError, createManagedApiClient, sanitizeManagedBaseUrl } from './managed-api.js';
 
-// ui.js v0.4.11
+// ui.js v0.4.12
 (() => {
   'use strict';
-  const VERSION = '0.4.11';
+  const VERSION = '0.4.12';
   const platform = window.udp1492;
   const testPlatform = window.udp1492Test || null;
 
@@ -82,6 +83,14 @@ import { createStatusDashboard } from './status-dashboard.js';
   const managedLobbyStatusEl = $('#managedLobbyStatus');
   const managedActiveChannelEl = $('#managedActiveChannel');
   const managedGroupAStatusEl = $('#managedGroupAStatus');
+  const managedDisplayNameInputEl = $('#managedDisplayNameInput');
+  const managedBackendBaseUrlInputEl = $('#managedBackendBaseUrlInput');
+  const managedOpenSessionBtn = $('#managedOpenSessionBtn');
+  const managedRefreshChannelsBtn = $('#managedRefreshChannelsBtn');
+  const managedRefreshPeersBtn = $('#managedRefreshPeersBtn');
+  const managedLeaveChannelBtn = $('#managedLeaveChannelBtn');
+  const managedPeerSyncMetaEl = $('#managedPeerSyncMeta');
+  const managedErrorTextEl = $('#managedErrorText');
 
   const nativeHostDot = $('#nativeHostDot');
   const nativeHostStatus = $('#nativeHostStatus');
@@ -145,6 +154,14 @@ import { createStatusDashboard } from './status-dashboard.js';
   disconnectBtn?.addEventListener('click', () => doDisconnect());
   directModeBtn?.addEventListener('click', () => setOperatingMode(OPERATING_MODES.DIRECT).catch(err => console.error('direct mode error', err)));
   managedModeBtn?.addEventListener('click', () => setOperatingMode(OPERATING_MODES.MANAGED).catch(err => console.error('managed mode error', err)));
+  managedOpenSessionBtn?.addEventListener('click', () => handleManagedSessionOpen().catch(err => console.error('managed session open error', err)));
+  managedRefreshChannelsBtn?.addEventListener('click', () => handleManagedRefreshChannels().catch(err => console.error('managed refresh channels error', err)));
+  managedRefreshPeersBtn?.addEventListener('click', () => handleManagedRefreshPeers().catch(err => console.error('managed refresh peers error', err)));
+  managedLeaveChannelBtn?.addEventListener('click', () => handleManagedLeaveChannel().catch(err => console.error('managed leave error', err)));
+  managedDisplayNameInputEl?.addEventListener('input', () => syncManagedInputButtonState());
+  managedBackendBaseUrlInputEl?.addEventListener('input', () => syncManagedInputButtonState());
+  managedDisplayNameInputEl?.addEventListener('change', () => updateManagedProfileFromInputs().catch(err => console.error('managed display name error', err)));
+  managedBackendBaseUrlInputEl?.addEventListener('change', () => updateManagedProfileFromInputs().catch(err => console.error('managed backend url error', err)));
 
   peerListEl?.addEventListener('change', () => handlePeerSelection(peerListEl.value));
   openPeerModalBtn?.addEventListener('click', () => openPeerModal(peerListEl?.value || NEW_PEER_VALUE));
@@ -196,7 +213,7 @@ import { createStatusDashboard } from './status-dashboard.js';
     newPeerValue: NEW_PEER_VALUE
   });
   const setMuteButtonVisual = (button, muted) => applyMuteButtonVisual(button, muted);
-  const refreshPeerConnectionState = () => statusDashboard.refreshPeerConnectionState(allPeers);
+  const refreshPeerConnectionState = () => statusDashboard.refreshPeerConnectionState(getTransportPeersForMode());
   const markAudioReceiveActivity = (message) => statusDashboard.markAudioReceiveActivity(message);
   const updateStatusDashboard = () => statusDashboard.render();
   let debugEnabled = false;
@@ -206,6 +223,8 @@ import { createStatusDashboard } from './status-dashboard.js';
   let appState = createDefaultAppStateV2();
   let managedProfile = createDefaultManagedProfile();
   let managedCache = createDefaultManagedCache();
+  let managedHeartbeatTimer = null;
+  let managedPeerRefreshTimer = null;
   let nativeHost = null;
   let connected = false;
   let encryptionKeyHex = null;
@@ -264,7 +283,9 @@ import { createStatusDashboard } from './status-dashboard.js';
       displayName: typeof seed.displayName === 'string' ? seed.displayName : '',
       callsign: typeof seed.callsign === 'string' ? seed.callsign : '',
       preferredChannelId: typeof seed.preferredChannelId === 'string' ? seed.preferredChannelId : '',
-      backendBaseUrl: typeof seed.backendBaseUrl === 'string' ? seed.backendBaseUrl : ''
+      backendBaseUrl: sanitizeManagedBaseUrl(seed.backendBaseUrl),
+      userId: typeof seed.userId === 'string' ? seed.userId : '',
+      lastSessionId: typeof seed.lastSessionId === 'string' ? seed.lastSessionId : ''
     };
   }
   function createDefaultManagedCache(seed = {}) {
@@ -288,9 +309,18 @@ import { createStatusDashboard } from './status-dashboard.js';
       managed: {
         session: {
           status: typeof managedSession.status === 'string' ? managedSession.status : 'idle',
+          displayName: typeof managedSession.displayName === 'string' ? managedSession.displayName : '',
           sessionId: typeof managedSession.sessionId === 'string' ? managedSession.sessionId : '',
           channelId: typeof managedSession.channelId === 'string' ? managedSession.channelId : '',
-          userId: typeof managedSession.userId === 'string' ? managedSession.userId : ''
+          channelName: typeof managedSession.channelName === 'string' ? managedSession.channelName : '',
+          userId: typeof managedSession.userId === 'string' ? managedSession.userId : '',
+          membershipState: typeof managedSession.membershipState === 'string' ? managedSession.membershipState : 'none',
+          presenceState: typeof managedSession.presenceState === 'string' ? managedSession.presenceState : 'offline',
+          heartbeatIntervalMs: Number.isFinite(Number(managedSession.heartbeatIntervalMs)) ? Number(managedSession.heartbeatIntervalMs) : 15000,
+          expiresAt: typeof managedSession.expiresAt === 'string' ? managedSession.expiresAt : '',
+          lastOpenedAt: typeof managedSession.lastOpenedAt === 'string' ? managedSession.lastOpenedAt : '',
+          lastPeerSyncAt: typeof managedSession.lastPeerSyncAt === 'string' ? managedSession.lastPeerSyncAt : '',
+          errorMessage: typeof managedSession.errorMessage === 'string' ? managedSession.errorMessage : ''
         },
         shell: {
           selectedChannelId: typeof managedShell.selectedChannelId === 'string' ? managedShell.selectedChannelId : '',
@@ -313,6 +343,27 @@ import { createStatusDashboard } from './status-dashboard.js';
       }
     });
   }
+  function getManagedSession() {
+    return appState?.managed?.session || createDefaultAppStateV2().managed.session;
+  }
+  function getManagedBaseUrl() {
+    return sanitizeManagedBaseUrl(managedProfile?.backendBaseUrl);
+  }
+  function setManagedError(message = '') {
+    appState.managed.session.errorMessage = typeof message === 'string' ? message : String(message || '');
+  }
+  function clearManagedError() {
+    appState.managed.session.errorMessage = '';
+  }
+  function formatManagedTimestamp(value) {
+    if (!value) return '';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return parsed.toLocaleString();
+  }
+  function findManagedChannel(channelId) {
+    return managedCache.channels.find((channel) => channel?.channelId === channelId) || null;
+  }
   function getOperatingMode() {
     return sanitizeOperatingMode(appState?.operatingMode);
   }
@@ -330,6 +381,31 @@ import { createStatusDashboard } from './status-dashboard.js';
   }
   function getManagedTransportPeers() {
     return sanitizeTransportPeers(appState?.managed?.transportPeers);
+  }
+  function createManagedApi() {
+    return createManagedApiClient({
+      baseUrl: getManagedBaseUrl(),
+      fetchImpl: window.fetch.bind(window)
+    });
+  }
+  function pickManagedEndpoint(peer) {
+    const endpoints = Array.isArray(peer?.endpoints) ? peer.endpoints : [];
+    const readyEndpoints = endpoints.filter((endpoint) => endpoint?.ip && Number.isFinite(Number(endpoint?.port)) && endpoint.registrationState !== 'invalid');
+    if (!readyEndpoints.length) return null;
+    return readyEndpoints.find((endpoint) => endpoint.kind === 'public')
+      || readyEndpoints.find((endpoint) => endpoint.kind === 'local')
+      || readyEndpoints[0];
+  }
+  function adaptResolvedPeerToTransportPeer(peer) {
+    const endpoint = pickManagedEndpoint(peer);
+    if (!endpoint) return null;
+    return {
+      name: peer?.displayName || endpoint.ip,
+      ip: endpoint.ip,
+      port: Number(endpoint.port),
+      sharedKey: '',
+      gain: 1.0
+    };
   }
   function getTransportPeersForMode(mode = getOperatingMode()) {
     return sanitizeOperatingMode(mode) === OPERATING_MODES.MANAGED ? getManagedTransportPeers() : getDirectTransportPeers();
@@ -386,8 +462,20 @@ import { createStatusDashboard } from './status-dashboard.js';
       managedModeBtn.setAttribute('aria-pressed', String(operatingMode === OPERATING_MODES.MANAGED));
     }
   }
+  function syncManagedInputButtonState() {
+    const operatingMode = getOperatingMode();
+    const pendingDisplayName = (managedDisplayNameInputEl?.value || managedProfile.displayName || '').trim();
+    const pendingBaseUrl = sanitizeManagedBaseUrl(managedBackendBaseUrlInputEl?.value || managedProfile.backendBaseUrl || '');
+    if (managedOpenSessionBtn) {
+      managedOpenSessionBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || !pendingDisplayName || !pendingBaseUrl;
+    }
+  }
   function renderManagedShell() {
     const operatingMode = getOperatingMode();
+    const managedSession = getManagedSession();
+    const selectedChannelId = appState?.managed?.shell?.selectedChannelId || managedProfile.preferredChannelId || '';
+    const joinedChannel = findManagedChannel(managedSession.channelId);
+    const resolvedCount = getManagedTransportPeers().length;
     document.body.dataset.operatingMode = operatingMode;
     updateOperatingModeButtons();
     if (transportPeersHeadingEl) {
@@ -395,60 +483,390 @@ import { createStatusDashboard } from './status-dashboard.js';
     }
     if (operatingModeSummaryEl) {
       operatingModeSummaryEl.textContent = operatingMode === OPERATING_MODES.MANAGED
-        ? 'Managed mode shell enabled. Direct peer controls are parked until Phase 1 session APIs arrive.'
+        ? 'Managed mode uses the documented session, channel, presence, and peer-resolution contract over HTTP.'
         : 'Direct mode uses the saved UDP peer list and current host bridge.';
     }
     if (managedModeShellEl) managedModeShellEl.hidden = operatingMode !== OPERATING_MODES.MANAGED;
     if (managedModeStatusEl) {
       managedModeStatusEl.textContent = operatingMode === OPERATING_MODES.MANAGED
-        ? 'Managed shell is ready. Backend session, presence, and peer resolution remain Phase 1 work.'
+        ? (managedSession.sessionId
+            ? `Session ${managedSession.status || 'open'}${managedSession.expiresAt ? ` until ${formatManagedTimestamp(managedSession.expiresAt)}` : ''}`
+            : 'Open a managed session, then join one channel into Group A.')
         : 'Managed shell is idle while direct mode is active.';
     }
     if (managedIdentityNameEl) {
-      managedIdentityNameEl.textContent = managedProfile.displayName || managedProfile.callsign || 'Unconfigured operator';
+      managedIdentityNameEl.textContent = managedProfile.displayName || managedSession.displayName || managedProfile.callsign || 'Unconfigured operator';
     }
     if (managedIdentityMetaEl) {
-      managedIdentityMetaEl.textContent = managedProfile.callsign
-        ? `Callsign ${managedProfile.callsign}`
-        : 'Managed identity scaffold only';
+      managedIdentityMetaEl.textContent = managedSession.userId
+        ? `User ${managedSession.userId}${managedSession.sessionId ? ` • Session ${managedSession.sessionId}` : ''}`
+        : (managedProfile.callsign ? `Callsign ${managedProfile.callsign}` : 'Managed identity scaffold only');
     }
     if (managedProfileStatusEl) {
       managedProfileStatusEl.textContent = managedProfile.backendBaseUrl
-        ? `Backend placeholder: ${managedProfile.backendBaseUrl}`
+        ? `Backend ${managedProfile.backendBaseUrl}`
         : 'Backend base URL not set yet';
     }
+    if (managedDisplayNameInputEl) managedDisplayNameInputEl.value = managedProfile.displayName || '';
+    if (managedBackendBaseUrlInputEl) managedBackendBaseUrlInputEl.value = managedProfile.backendBaseUrl || '';
     if (managedLobbyStatusEl) {
       managedLobbyStatusEl.textContent = managedCache.channels.length
-        ? `${managedCache.channels.length} cached channel stub(s)`
-        : 'No cached channels yet';
+        ? `${managedCache.channels.length} channel(s) cached${managedCache.lastUpdatedAt ? ` • synced ${formatManagedTimestamp(managedCache.lastUpdatedAt)}` : ''}`
+        : 'No channels loaded yet';
     }
     if (managedActiveChannelEl) {
-      const activeChannelId = appState?.managed?.session?.channelId || appState?.managed?.shell?.selectedChannelId || '';
-      managedActiveChannelEl.textContent = activeChannelId || 'No managed channel joined yet';
+      managedActiveChannelEl.textContent = managedSession.channelId
+        ? (joinedChannel?.name || managedSession.channelName || managedSession.channelId)
+        : 'No managed channel joined yet';
     }
     if (managedGroupAStatusEl) {
-      managedGroupAStatusEl.textContent = appState?.managed?.session?.status === 'active'
-        ? 'Group A transport is active.'
-        : 'Group A shell only. Join, leave, and peer resolution arrive in Phase 1.';
+      managedGroupAStatusEl.textContent = managedSession.channelId
+        ? `${managedSession.membershipState || 'joined'} • presence ${managedSession.presenceState || 'offline'}`
+        : 'No active managed membership';
+    }
+    if (managedPeerSyncMetaEl) {
+      managedPeerSyncMetaEl.textContent = managedSession.lastPeerSyncAt
+        ? `${resolvedCount} transport peer(s) resolved • ${formatManagedTimestamp(managedSession.lastPeerSyncAt)}`
+        : `${resolvedCount} transport peer(s) resolved`;
+    }
+    if (managedErrorTextEl) {
+      const errorMessage = managedSession.errorMessage || '';
+      managedErrorTextEl.hidden = !errorMessage;
+      managedErrorTextEl.textContent = errorMessage;
+    }
+    syncManagedInputButtonState();
+    if (managedRefreshChannelsBtn) {
+      managedRefreshChannelsBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || !managedSession.sessionId;
+    }
+    if (managedRefreshPeersBtn) {
+      managedRefreshPeersBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || !managedSession.channelId;
+    }
+    if (managedLeaveChannelBtn) {
+      managedLeaveChannelBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || !managedSession.channelId;
     }
     if (managedChannelListEl) {
       managedChannelListEl.innerHTML = '';
-      const channels = managedCache.channels.length
-        ? managedCache.channels
-        : [
-            { id: 'placeholder-alpha', name: 'Alpha channel', note: 'Channel discovery not implemented yet' },
-            { id: 'placeholder-bravo', name: 'Bravo channel', note: 'Lobby shell placeholder' }
-          ];
-      for (const channel of channels) {
+      const channels = managedCache.channels.length ? managedCache.channels : [];
+      if (!channels.length) {
         const item = document.createElement('li');
         item.className = 'managed-list-item';
         const title = document.createElement('strong');
-        title.textContent = channel.name || channel.id || 'Unnamed channel';
+        title.textContent = managedSession.sessionId ? 'No visible channels' : 'Session not opened';
         const detail = document.createElement('span');
-        detail.textContent = channel.note || channel.id || 'Managed channel placeholder';
+        detail.textContent = managedSession.sessionId
+          ? 'Refresh channels or verify the backend returned lobby data.'
+          : 'Open a managed session to load the channel lobby.';
         item.append(title, detail);
         managedChannelListEl.appendChild(item);
       }
+      for (const channel of channels) {
+        const item = document.createElement('li');
+        item.className = 'managed-list-item';
+        const header = document.createElement('div');
+        header.className = 'managed-list-item-header';
+        const summary = document.createElement('div');
+        const title = document.createElement('strong');
+        title.textContent = channel.name || channel.channelId || 'Unnamed channel';
+        const detail = document.createElement('span');
+        detail.textContent = channel.description || channel.note || channel.channelId || 'Managed channel';
+        const meta = document.createElement('div');
+        meta.className = 'managed-list-meta';
+        const security = document.createElement('span');
+        security.textContent = channel.securityMode || 'open';
+        const members = document.createElement('span');
+        members.textContent = `${Number(channel.memberCount) || 0} member(s)`;
+        meta.append(security, members);
+        summary.append(title, detail, meta);
+        const action = document.createElement('button');
+        const isActive = managedSession.channelId === channel.channelId;
+        const isSelected = !isActive && selectedChannelId === channel.channelId;
+        action.type = 'button';
+        action.className = isActive ? 'secondary' : 'primary';
+        action.textContent = isActive ? 'Joined' : (isSelected ? 'Join Selected' : 'Join');
+        action.disabled = !managedSession.sessionId || isActive;
+        action.addEventListener('click', () => {
+          joinManagedChannel(channel.channelId).catch((err) => {
+            setManagedError(err?.message || 'Failed to join the managed channel.');
+            renderManagedShell();
+            console.error('managed join error', err);
+          });
+        });
+        header.append(summary, action);
+        item.append(header);
+        managedChannelListEl.appendChild(item);
+      }
+    }
+  }
+  async function updateManagedProfileFromInputs() {
+    managedProfile.displayName = (managedDisplayNameInputEl?.value || '').trim();
+    managedProfile.backendBaseUrl = sanitizeManagedBaseUrl(managedBackendBaseUrlInputEl?.value || '');
+    managedProfile.preferredChannelId = appState?.managed?.shell?.selectedChannelId || managedProfile.preferredChannelId || '';
+    renderManagedShell();
+    await persistAppState({
+      includeLegacyLastPeers: true,
+      includeManagedProfile: true,
+      includeManagedCache: true
+    });
+  }
+  function buildManagedPresenceEndpoints() {
+    return [];
+  }
+  function stopManagedTimers() {
+    if (managedHeartbeatTimer) {
+      clearInterval(managedHeartbeatTimer);
+      managedHeartbeatTimer = null;
+    }
+    if (managedPeerRefreshTimer) {
+      clearInterval(managedPeerRefreshTimer);
+      managedPeerRefreshTimer = null;
+    }
+  }
+  function startManagedTimers() {
+    stopManagedTimers();
+    const managedSession = getManagedSession();
+    if (!managedSession.channelId || !managedSession.sessionId) return;
+    const heartbeatIntervalMs = Math.max(5000, Number(managedSession.heartbeatIntervalMs) || 15000);
+    managedHeartbeatTimer = setInterval(() => {
+      sendManagedPresence().catch((err) => console.error('managed heartbeat error', err));
+    }, heartbeatIntervalMs);
+    managedPeerRefreshTimer = setInterval(() => {
+      refreshManagedPeers({ ensureTransport: true }).catch((err) => console.error('managed peer refresh error', err));
+    }, 15000);
+  }
+  async function ensureManagedSession(options = {}) {
+    const { force = false } = options;
+    const currentSession = getManagedSession();
+    if (!force && currentSession.sessionId) return currentSession;
+    if (!managedProfile.displayName.trim()) {
+      throw new ManagedApiError('Display name is required before opening a managed session.', {
+        code: 'managed_display_name_required'
+      });
+    }
+    const api = createManagedApi();
+    clearManagedError();
+    appState.managed.session.status = 'opening';
+    renderManagedShell();
+    const response = await api.openSession({
+      displayName: managedProfile.displayName.trim(),
+      clientVersion: VERSION,
+      mode: 'managed',
+      requestedUserId: managedProfile.userId || null,
+      resumeSessionId: managedProfile.lastSessionId || null
+    });
+    const identity = response?.identity || {};
+    const session = response?.session || {};
+    appState.managed.session.status = 'open';
+    appState.managed.session.displayName = identity.displayName || managedProfile.displayName.trim();
+    appState.managed.session.userId = identity.userId || '';
+    appState.managed.session.sessionId = identity.sessionId || '';
+    appState.managed.session.heartbeatIntervalMs = Number(session.heartbeatIntervalMs) || 15000;
+    appState.managed.session.expiresAt = session.expiresAt || '';
+    appState.managed.session.lastOpenedAt = session.openedAt || '';
+    appState.managed.session.errorMessage = '';
+    managedProfile.displayName = identity.displayName || managedProfile.displayName.trim();
+    managedProfile.userId = identity.userId || managedProfile.userId || '';
+    managedProfile.lastSessionId = identity.sessionId || managedProfile.lastSessionId || '';
+    renderManagedShell();
+    await persistAppState({
+      includeLegacyLastPeers: true,
+      includeManagedProfile: true,
+      includeManagedCache: true
+    });
+    return getManagedSession();
+  }
+  async function refreshManagedChannels(options = {}) {
+    const managedSession = await ensureManagedSession({ force: !!options.forceSession });
+    const api = createManagedApi();
+    clearManagedError();
+    const response = await api.listChannels(managedSession.sessionId);
+    managedCache.channels = Array.isArray(response?.channels) ? response.channels.map((channel) => ({ ...channel })) : [];
+    managedCache.lastUpdatedAt = response?.syncedAt || new Date().toISOString();
+    if (!appState.managed.shell.selectedChannelId && managedProfile.preferredChannelId) {
+      appState.managed.shell.selectedChannelId = managedProfile.preferredChannelId;
+    }
+    if (!appState.managed.shell.selectedChannelId && managedCache.channels[0]?.channelId) {
+      appState.managed.shell.selectedChannelId = managedCache.channels[0].channelId;
+    }
+    renderManagedShell();
+    await persistAppState({
+      includeLegacyLastPeers: true,
+      includeManagedProfile: true,
+      includeManagedCache: true
+    });
+    return managedCache.channels;
+  }
+  async function sendManagedPresence() {
+    const managedSession = getManagedSession();
+    if (!managedSession.sessionId || !managedSession.channelId) return null;
+    const api = createManagedApi();
+    const response = await api.sendPresence(managedSession.channelId, {
+      sessionId: managedSession.sessionId,
+      userId: managedSession.userId || managedProfile.userId || null,
+      slotId: 'A',
+      onlineState: 'online',
+      clientVersion: VERSION,
+      endpoints: buildManagedPresenceEndpoints()
+    });
+    appState.managed.session.presenceState = response?.presence?.onlineState || 'online';
+    renderManagedShell();
+    await persistAppState({
+      includeLegacyLastPeers: true,
+      includeManagedProfile: true,
+      includeManagedCache: true
+    });
+    return response;
+  }
+  async function ensureManagedTransportConnected() {
+    await startNativeHost();
+    if (!dashboardState.nativeHostConnected) return;
+    await hostSend(buildHostConfigurePayload(OPERATING_MODES.MANAGED));
+    if (!connected) {
+      await startAudioCapture();
+      connected = true;
+    }
+    dashboardState.localEncryptionEnabled = !!settings.encrypt;
+    updateStatusDashboard();
+    updateUIbuttons(true);
+  }
+  async function refreshManagedPeers(options = {}) {
+    const managedSession = getManagedSession();
+    if (!managedSession.sessionId || !managedSession.channelId) return [];
+    const api = createManagedApi();
+    clearManagedError();
+    const response = await api.listPeers(managedSession.channelId, managedSession.sessionId);
+    const resolvedPeers = Array.isArray(response?.peers) ? response.peers.map((peer) => ({ ...peer })) : [];
+    appState.managed.transportPeers = resolvedPeers.map(adaptResolvedPeerToTransportPeer).filter(Boolean);
+    appState.managed.session.lastPeerSyncAt = response?.resolvedAt || new Date().toISOString();
+    appState.managed.session.status = 'active';
+    await syncTransportPeerRows({
+      mode: OPERATING_MODES.MANAGED,
+      sendHostUpdate: dashboardState.nativeHostConnected
+    });
+    if (options.ensureTransport) {
+      await ensureManagedTransportConnected();
+    }
+    renderManagedShell();
+    await persistAppState({
+      includeLegacyLastPeers: true,
+      includeManagedProfile: true,
+      includeManagedCache: true
+    });
+    return appState.managed.transportPeers;
+  }
+  async function joinManagedChannel(channelId) {
+    const managedSession = await ensureManagedSession();
+    if (managedSession.channelId && managedSession.channelId !== channelId) {
+      await leaveManagedChannel({ preserveSession: true });
+    }
+    const api = createManagedApi();
+    const selectedChannelId = channelId || appState?.managed?.shell?.selectedChannelId || managedProfile.preferredChannelId || '';
+    if (!selectedChannelId) {
+      throw new ManagedApiError('Select a channel before joining managed mode.', {
+        code: 'managed_channel_required'
+      });
+    }
+    clearManagedError();
+    appState.managed.session.status = 'joining';
+    appState.managed.shell.selectedChannelId = selectedChannelId;
+    managedProfile.preferredChannelId = selectedChannelId;
+    renderManagedShell();
+    const response = await api.joinChannel(selectedChannelId, {
+      sessionId: managedSession.sessionId,
+      slotId: 'A',
+      passcode: null
+    });
+    const membership = response?.membership || {};
+    const channel = response?.channel || findManagedChannel(selectedChannelId) || {};
+    appState.managed.session.status = 'joined';
+    appState.managed.session.channelId = membership.channelId || selectedChannelId;
+    appState.managed.session.channelName = channel.name || '';
+    appState.managed.session.membershipState = membership.membershipState || 'joined';
+    appState.managed.session.presenceState = 'offline';
+    appState.managed.session.errorMessage = '';
+    await sendManagedPresence();
+    await refreshManagedPeers({ ensureTransport: true });
+    startManagedTimers();
+    renderManagedShell();
+    await persistAppState({
+      includeLegacyLastPeers: true,
+      includeManagedProfile: true,
+      includeManagedCache: true
+    });
+  }
+  async function leaveManagedChannel(options = {}) {
+    const { preserveSession = true } = options;
+    const managedSession = getManagedSession();
+    const activeChannelId = managedSession.channelId;
+    const activeSessionId = managedSession.sessionId;
+    stopManagedTimers();
+    if (activeChannelId && activeSessionId) {
+      try {
+        const api = createManagedApi();
+        await api.leaveChannel(activeChannelId, {
+          sessionId: activeSessionId,
+          slotId: 'A'
+        });
+      } catch (error) {
+        setManagedError(error?.message || 'Failed to leave the managed channel cleanly.');
+      }
+    }
+    appState.managed.transportPeers = [];
+    appState.managed.session.channelId = '';
+    appState.managed.session.channelName = '';
+    appState.managed.session.membershipState = 'none';
+    appState.managed.session.presenceState = 'offline';
+    appState.managed.session.lastPeerSyncAt = '';
+    appState.managed.session.status = preserveSession && activeSessionId ? 'open' : 'idle';
+    await syncTransportPeerRows({
+      mode: OPERATING_MODES.MANAGED,
+      sendHostUpdate: dashboardState.nativeHostConnected
+    });
+    if (connected) doDisconnect();
+    renderManagedShell();
+    await persistAppState({
+      includeLegacyLastPeers: true,
+      includeManagedProfile: true,
+      includeManagedCache: true
+    });
+  }
+  async function handleManagedSessionOpen() {
+    try {
+      await updateManagedProfileFromInputs();
+      await ensureManagedSession({ force: false });
+      await refreshManagedChannels();
+    } catch (error) {
+      setManagedError(error?.message || 'Failed to open managed session.');
+      renderManagedShell();
+      await persistAppState({
+        includeLegacyLastPeers: true,
+        includeManagedProfile: true,
+        includeManagedCache: true
+      });
+    }
+  }
+  async function handleManagedRefreshChannels() {
+    try {
+      await updateManagedProfileFromInputs();
+      await refreshManagedChannels();
+    } catch (error) {
+      setManagedError(error?.message || 'Failed to refresh channels.');
+      renderManagedShell();
+    }
+  }
+  async function handleManagedRefreshPeers() {
+    try {
+      await refreshManagedPeers({ ensureTransport: true });
+    } catch (error) {
+      setManagedError(error?.message || 'Failed to refresh managed peers.');
+      renderManagedShell();
+    }
+  }
+  async function handleManagedLeaveChannel() {
+    try {
+      await leaveManagedChannel();
+    } catch (error) {
+      setManagedError(error?.message || 'Failed to leave the managed channel.');
+      renderManagedShell();
     }
   }
   async function syncTransportPeerRows(options = {}) {
@@ -482,8 +900,15 @@ import { createStatusDashboard } from './status-dashboard.js';
     }
   }
   async function setOperatingMode(nextMode, options = {}) {
+    const previousMode = getOperatingMode();
     const mode = sanitizeOperatingMode(nextMode);
-    const changed = mode !== getOperatingMode();
+    const changed = mode !== previousMode;
+    if (changed && previousMode === OPERATING_MODES.MANAGED) {
+      await leaveManagedChannel({ preserveSession: true });
+    }
+    if (changed && previousMode === OPERATING_MODES.DIRECT && connected) {
+      doDisconnect();
+    }
     appState.operatingMode = mode;
     renderManagedShell();
     if (mode === OPERATING_MODES.MANAGED) closePeerModal(true);
@@ -491,8 +916,15 @@ import { createStatusDashboard } from './status-dashboard.js';
       mode,
       sendHostUpdate: changed && dashboardState.nativeHostConnected
     });
+    if (changed && mode === OPERATING_MODES.MANAGED && managedProfile.preferredChannelId && !appState.managed.shell.selectedChannelId) {
+      appState.managed.shell.selectedChannelId = managedProfile.preferredChannelId;
+    }
     if (options.persist !== false) {
-      await persistAppState({ includeLegacyLastPeers: true });
+      await persistAppState({
+        includeLegacyLastPeers: true,
+        includeManagedProfile: true,
+        includeManagedCache: true
+      });
     }
   }
   function setCodecWarning(msg) {
@@ -817,11 +1249,14 @@ import { createStatusDashboard } from './status-dashboard.js';
       dashboardState.nativeHostVersion = msg.version
     } else if (msg.type === 'peerUpdate') {
       let peer = allPeers.find(p => `${p.ip}:${p.port}` === msg.key);
+      if (!peer && getOperatingMode() === OPERATING_MODES.MANAGED) {
+        peer = appState.managed.transportPeers.find((entry) => `${entry.ip}:${entry.port}` === msg.key) || null;
+      }
       if (!peer || !msg.field) {
         if (msgText) log(`peerUpdate ignored: ${msgText}`);
       } else {
         peer[msg.field] = msg[msg.field];
-        storage.set({ udp1492_peers: allPeers });
+        if (allPeers.includes(peer)) storage.set({ udp1492_peers: allPeers });
       }
       if (msg.field == 'connected' && peer){
         if (msg[msg.field]){
@@ -1202,6 +1637,9 @@ import { createStatusDashboard } from './status-dashboard.js';
   }
 
   async function connect() {
+    if (getOperatingMode() === OPERATING_MODES.MANAGED) {
+      return;
+    }
     await startNativeHost();
     if (!dashboardState.nativeHostConnected) {
       log('native host unavailable; connect aborted');
@@ -1215,6 +1653,7 @@ import { createStatusDashboard } from './status-dashboard.js';
     updateUIbuttons(true);
   }
   function doDisconnect() {
+    if (getOperatingMode() === OPERATING_MODES.MANAGED) stopManagedTimers();
     stopAudioCapture();
     connected = false;
     dashboardState.nativeHostConnected = false;
@@ -1234,8 +1673,9 @@ import { createStatusDashboard } from './status-dashboard.js';
     return hex;
   }
   function updateUIbuttons(isConnected) {
-    if (connectBtn) connectBtn.disabled = isConnected;
-    if (disconnectBtn) disconnectBtn.disabled = !isConnected;
+    const managedMode = getOperatingMode() === OPERATING_MODES.MANAGED;
+    if (connectBtn) connectBtn.disabled = managedMode || isConnected;
+    if (disconnectBtn) disconnectBtn.disabled = managedMode || !isConnected;
     if (encryptBtn) encryptBtn.disabled = isConnected;
   }
   async function startNativeHost() {
