@@ -155,9 +155,11 @@ The next concrete target is implementing the Phase 6 admin-surface slice.
 The first coding targets should be:
 
 1. Define the Electron window lifecycle for a dedicated admin/operator surface.
-2. Add a minimal read-only admin shell for channels, presence, endpoint state, and limited stats.
-3. Keep admin refresh/error states explicit and non-destructive to the main control window.
-4. Add focused Playwright Electron coverage for the extra window and its read-only data views.
+2. Decide the first admin data-source mix:
+   current renderer/session/cache state first, current managed HTTP surfaces where sufficient, no forced dependency on new backend admin endpoints.
+3. Add a minimal read-only admin shell for channels, presence, endpoint state, and limited stats.
+4. Keep admin refresh/error states explicit and non-destructive to the main control window.
+5. Add focused Playwright Electron coverage for the extra window and its read-only data views.
 
 ## Important Constraints
 
@@ -189,6 +191,7 @@ Validated implementation updates after that baseline:
 Planning-only updates after that validated slice:
 
 - `PHASE6_ADMIN_SURFACE_CHECKLIST.md` created
+- `PHASE6_ADMIN_SURFACE_CHECKLIST.md` expanded with concrete Electron windowing, staged data-source assumptions, and read-only validation order
 - `MANAGED_MODE_ADAPTATION_PLAN.md` updated for the Phase 6 planning target
 - `DEVELOPMENT_NOTES.md` updated to include the new active planning artifact
 - `NEXT_CHAT_HANDOFF.md` updated to point the next chat at the Phase 6 admin-surface slice

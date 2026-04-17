@@ -323,6 +323,7 @@ That work is now captured in `PHASE6_ADMIN_SURFACE_CHECKLIST.md` with:
 - finish-line criteria
 - locked decisions
 - Electron window/shell assumptions for a separate admin surface
+- staged data-source assumptions that do not block the first slice on brand-new backend admin endpoints
 - a validation strategy centered on read-only windowed inspection rather than mutation workflows
 
 NAT work should remain out of scope until the first admin/observability milestone is closed.

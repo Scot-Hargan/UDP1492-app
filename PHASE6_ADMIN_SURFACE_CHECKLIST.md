@@ -26,6 +26,10 @@ For this phase, the desktop app should treat admin work as a **read-first observ
   - mutation workflows later only if justified
 - Keep the managed voice path and host contract unchanged. The admin surface must not redesign `src/host/udp_audio1492_host.js`.
 - Reuse the existing managed identity/session model instead of inventing a separate admin auth path in the desktop client.
+- Stage data sources pragmatically for the first slice:
+  - reuse existing renderer/session/cache data when it already exists
+  - reuse current managed HTTP surfaces where they are sufficient
+  - do not block the admin surface on brand-new backend admin endpoints unless a concrete blocker appears
 - Keep the initial view set bounded to:
   - channels
   - memberships/presence
@@ -52,6 +56,7 @@ The relevant baseline inherited from Phase 5 is:
 
 - managed session, slot state, dual-ear receive routing, and Commander transmit groundwork are already renderer-owned
 - the current app has no dedicated admin surface, window, or read-only inspection panels
+- the current managed API client only exposes session open, channel list, join, presence, peer list, and leave flows
 - the current Playwright harness already supports Electron multi-window launch patterns if needed
 
 That means the next work is primarily Electron windowing, admin data presentation, and validation work.
@@ -75,6 +80,7 @@ That means the next work is primarily Electron windowing, admin data presentatio
 ### C. Data access and refresh
 
 - [ ] Define the renderer/main/preload seam needed to fetch or relay admin data for the surface.
+- [ ] Decide which first-slice admin views can be powered from existing managed session/cache state versus which require additional fetch surfaces.
 - [ ] Keep refresh actions explicit and non-destructive.
 - [ ] Handle missing backend/admin data gracefully without destabilizing the main session.
 
@@ -99,16 +105,106 @@ That means the next work is primarily Electron windowing, admin data presentatio
 
 - the app already manages the main window and preload bridge
 - there is no dedicated admin window or lifecycle yet
+- current shutdown logic assumes one main window and host lifecycle owned from that shell
 
 ### `src/renderer/`
 
 - the main shell focuses on direct mode, managed slots, receive routing, and Commander transmit controls
 - there is no separate admin UI surface yet
+- current managed state already includes useful read-only facts for an initial inspection window:
+  - channel lobby cache
+  - slot membership state
+  - peer resolution / endpoint selection data
+  - runtime stats already shown in the main shell
+
+### `src/renderer/managed-api.js`
+
+- current managed HTTP support is limited to:
+  - session open
+  - channel list
+  - join
+  - presence
+  - peer list
+  - leave
+- there are no current dedicated admin endpoints in this repo
+
+### `src/main/preload.js`
+
+- the preload bridge already exposes storage, runtime-config, and host lifecycle APIs
+- there is no current bridge API for opening or coordinating a second admin window
 
 ### `test/e2e/`
 
 - Playwright already drives the Electron app and managed flows
 - the next phase can extend that harness to validate a dedicated admin window and its read-only data states
+
+## Concrete Implementation Plan
+
+### 1. Start with a separate admin window, not an in-shell dashboard
+
+The main voice-control shell is already dense.
+The first admin slice should open a second `BrowserWindow` rather than widening `src/renderer/index.html` into a mixed operator/admin interface.
+
+Recommended first rule:
+
+- main window stays focused on voice/session control
+- admin window stays focused on inspection and refresh
+- closing the admin window must not affect transport, session state, or the main renderer lifecycle
+
+### 2. Use staged data sources instead of blocking on new backend admin APIs
+
+The repo does not currently expose dedicated admin HTTP endpoints.
+That means the first slice should explicitly allow a staged view model:
+
+- view data already present in the main renderer/runtime model
+- view data already obtainable from current managed endpoints
+- reserve richer admin-only datasets for a later follow-on if they require backend changes
+
+Recommended first-view priority:
+
+1. managed channels from lobby cache / refresh
+2. current slot memberships and presence state
+3. resolved peers and endpoint registration state already normalized through peer resolution
+4. limited stats already available locally
+
+### 3. Keep the first admin surface read-only and bounded
+
+Do not build editing workflows yet.
+
+The first useful admin window should answer:
+
+- what channels exist
+- which slots/channels are active right now
+- which peers/endpoints are resolved
+- whether presence and peer resolution look healthy
+- what limited local stats are visible
+
+That is enough to reduce operator dependence on debug logs without turning the slice into backend administration.
+
+### 4. Define the Electron seam before UI work
+
+Before building the window UI, define:
+
+- how the main window opens the admin window
+- whether the admin surface reuses `index.html` with a mode flag or uses a dedicated renderer entrypoint
+- what preload APIs are needed for:
+  - window open/close
+  - admin data snapshot
+  - refresh requests
+
+This decision should be locked early because it shapes the test strategy and file layout.
+
+### 5. Validation strategy that matches the repo
+
+The first admin slice should validate window behavior and displayed state, not backend mutation flows.
+
+Recommended validation order:
+
+1. open admin window from the main shell
+2. assert the main window remains usable
+3. assert the admin window shows the first bounded views
+4. assert empty/error states render cleanly when admin data is unavailable
+5. assert refresh updates the admin surface without disturbing the main window
 
 ## Explicit Non-Goals For This Slice
 
