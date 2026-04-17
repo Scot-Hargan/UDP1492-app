@@ -11,22 +11,25 @@ Use this file if work continues in a fresh chat.
 - Phase 1 is closed
 - Phase 2 protected-channel client work is closed
 - Phase 3 Group B desktop-client work is closed
+- Phase 4 dual-ear routing planning is now active
 
 ## Start Here
 
 Read these in order:
 
-1. [PHASE3_GROUPB_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE3_GROUPB_CHECKLIST.md)
+1. [PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md)
 2. [DEVELOPMENT_NOTES.md](C:/NodeProjects/1492-app/DEVELOPMENT_NOTES.md)
 3. [MANAGED_MODE_ADAPTATION_PLAN.md](C:/NodeProjects/1492-app/MANAGED_MODE_ADAPTATION_PLAN.md)
-4. [PHASE2_CLIENT_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE2_CLIENT_CHECKLIST.md)
-5. [PHASE1_REVISED_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE1_REVISED_CHECKLIST.md)
-6. [src/renderer/managed-controller.js](C:/NodeProjects/1492-app/src/renderer/managed-controller.js)
-7. [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js)
-8. [src/renderer/index.html](C:/NodeProjects/1492-app/src/renderer/index.html)
-9. [src/renderer/style.css](C:/NodeProjects/1492-app/src/renderer/style.css)
-10. [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
-11. [test/e2e/fixtures.js](C:/NodeProjects/1492-app/test/e2e/fixtures.js)
+4. [PHASE3_GROUPB_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE3_GROUPB_CHECKLIST.md)
+5. [PHASE2_CLIENT_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE2_CLIENT_CHECKLIST.md)
+6. [PHASE1_REVISED_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE1_REVISED_CHECKLIST.md)
+7. [src/renderer/managed-controller.js](C:/NodeProjects/1492-app/src/renderer/managed-controller.js)
+8. [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js)
+9. [src/renderer/index.html](C:/NodeProjects/1492-app/src/renderer/index.html)
+10. [src/renderer/style.css](C:/NodeProjects/1492-app/src/renderer/style.css)
+11. [src/main/preload.js](C:/NodeProjects/1492-app/src/main/preload.js)
+12. [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
+13. [test/e2e/fixtures.js](C:/NodeProjects/1492-app/test/e2e/fixtures.js)
 
 ## What Is Already Complete
 
@@ -92,7 +95,7 @@ Closed items in this slice include:
 
 ## Active Planning Artifact
 
-[PHASE3_GROUPB_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE3_GROUPB_CHECKLIST.md) is now the controlling checklist for the next implementation slice.
+[PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md) is now the controlling checklist for the next implementation slice.
 
 It also contains:
 
@@ -100,19 +103,20 @@ It also contains:
 - locked decisions
 - immediate coding order
 - current codebase baseline
-- concrete file-level implementation notes for `ui.js`, `managed-controller.js`, shell updates, and Playwright expansion
+- concrete file-level implementation notes for `ui.js`, `preload.js`, shell updates, and Playwright expansion
 
 ## Immediate Next Slice
 
 Do not reopen the Phase 3 Group B client checklist unless a regression appears.
 
-The next concrete target is planning the next post-Phase-3 slice.
+The next concrete target is implementing Phase 4 dual-ear routing from the new checklist.
 
-Reasonable next candidates, in order:
+The first coding targets should be:
 
-1. Decide whether the next client milestone is dual-ear routing semantics, Commander Mode groundwork, or backend/admin integration follow-through.
-2. Create or update the active checklist for that next milestone before code changes begin.
-3. Keep `PHASE3_GROUPB_CHECKLIST.md` as a closed decision record rather than continuing to edit it for unrelated work.
+1. Add deterministic renderer-side routing helpers derived from slot ownership by `ip:port`.
+2. Refactor playback so managed peers can route left, right, or center/both without changing the host contract.
+3. Add a minimal test-only routing snapshot so Playwright can validate route computation directly.
+4. Add focused e2e coverage for `A`-only, `B`-only, dual-slot, overlap, and slot-isolation route updates.
 
 ## Important Constraints
 
@@ -131,6 +135,13 @@ Last clean validation before this handoff:
 - `node --check src\\renderer\\managed-controller.js`
 - `npm run test:e2e`
 - result: `26/26` passing
+
+Planning-only updates after that validation:
+
+- `PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md` created
+- `MANAGED_MODE_ADAPTATION_PLAN.md` updated for the Phase 4 planning target
+- `DEVELOPMENT_NOTES.md` updated to include the new active planning artifact
+- `NEXT_CHAT_HANDOFF.md` updated to point the next chat at Phase 4 instead of Phase 3 closeout
 
 Safe validation commands for the next chat:
 
@@ -160,4 +171,5 @@ Do not re-open the Phase 1 question.
 Treat Phase 1 as closed.
 Treat Phase 2 as closed.
 Treat Phase 3 Group B desktop-client activation as closed.
-If work continues immediately, start by defining the next active checklist rather than reworking the closed Group B slice.
+Treat Phase 4 dual-ear routing as the active next slice.
+If work continues immediately, start from the Phase 4 checklist and implement renderer-side routing plus testable route-state validation.

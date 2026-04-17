@@ -84,6 +84,7 @@ Check this file before making further code changes.
   - `PHASE1_REVISED_CHECKLIST.md`
   - `PHASE2_CLIENT_CHECKLIST.md`
   - `PHASE3_GROUPB_CHECKLIST.md`
+  - `PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md`
   - `PHASE0_HANDOFF.md` when historical context needs redirect notes
   - `NEXT_CHAT_HANDOFF.md` when the active slice, validation baseline, or continuation target changes
 - Treat documentation updates as part of the decision record so future implementation work can recover the rationale from Git history.

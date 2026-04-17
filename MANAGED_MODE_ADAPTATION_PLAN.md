@@ -287,6 +287,19 @@ The Group B client slice is now complete on the desktop side and includes:
 
 The Phase 3 desktop-client milestone is therefore closed. Follow-on work should move to the next product phase rather than reopening Group B slot activation unless a regression appears.
 
+### Current Phase 4 planning target
+
+The next active desktop-client planning target is dual-ear routing.
+
+That work is now captured in `PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md` with:
+
+- finish-line criteria
+- locked decisions
+- renderer/host boundary assumptions
+- validation strategy built around a testable routing snapshot rather than speaker-output assertions
+
+Commander Mode, admin surface, and NAT work should stay out of scope until the dual-ear playback milestone is closed.
+
 ## Renderer State Model Adaptation
 
 The same `AppStateV2` model should be used in the Electron renderer, with one project-specific note:
