@@ -183,6 +183,49 @@ The same phase order applies.
 - Add session open / channel list / join / leave / presence / peer resolution flow
 - Adapt resolved peers into host `configure` payloads
 
+## Revised Phase 1 Interpretation For The Desktop App
+
+The original extension roadmap remains the baseline, but the desktop app should treat Phase 1 as a client milestone, not a backend deployment milestone.
+
+### Current status
+
+As of the current implementation:
+
+- Phase 0 is complete
+- most of the desktop Phase 1 client surface already exists
+- the remaining work is concentrated in correctness gaps and desktop-specific runtime integration
+
+### Revised Phase 1 finish line
+
+For `1492-app`, Phase 1 should be considered complete when the desktop client:
+
+1. opens or reopens managed sessions cleanly
+2. joins and leaves a single managed channel without destructive switching behavior
+3. publishes a usable transport endpoint through managed presence
+4. resolves peers and adapts them into the existing UDP host `configure.peers` path
+5. has Playwright Electron coverage for those behaviors
+
+### Explicit non-goal for closing desktop Phase 1
+
+Do not require a live Cloudflare deployment to declare the desktop client slice complete.
+
+The backend workspace and deployment remain important, but they are parallel work and should not block the client milestone.
+
+### Planning artifact
+
+The concrete closeout checklist now lives in:
+
+- `C:\NodeProjects\1492-app\PHASE1_REVISED_CHECKLIST.md`
+
+### Standalone-first decisions
+
+The Electron app should now prefer the following when they improve correctness:
+
+- app/runtime config over renderer-only backend URL entry
+- desktop-native endpoint publication over browser-era placeholder behavior
+- Electron IPC seams over extension-native-messaging assumptions
+- preserving the current host protocol shape unless a concrete blocker appears
+
 ### Phase 2+
 
 - Same as the extension roadmap:

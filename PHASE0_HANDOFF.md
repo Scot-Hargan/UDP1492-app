@@ -3,12 +3,22 @@
 ## Read First
 
 1. `C:\NodeProjects\1492-app\MANAGED_MODE_ADAPTATION_PLAN.md`
-2. `C:\NodeProjects\1492-app\DEVELOPMENT_NOTES.md`
-3. `C:\NodeProjects\1492-app\src\renderer\ui.js`
-4. `C:\NodeProjects\1492-app\src\renderer\index.html`
-5. `C:\NodeProjects\1492-app\src\renderer\style.css`
-6. `C:\NodeProjects\1492-app\src\main\main.js`
-7. `C:\NodeProjects\1492-app\src\main\preload.js`
+2. `C:\NodeProjects\1492-app\PHASE1_REVISED_CHECKLIST.md`
+3. `C:\NodeProjects\1492-app\DEVELOPMENT_NOTES.md`
+4. `C:\NodeProjects\1492-app\src\renderer\ui.js`
+5. `C:\NodeProjects\1492-app\src\renderer\index.html`
+6. `C:\NodeProjects\1492-app\src\renderer\style.css`
+7. `C:\NodeProjects\1492-app\src\main\main.js`
+8. `C:\NodeProjects\1492-app\src\main\preload.js`
+
+## Status Note
+
+Phase 0 is complete.
+
+This handoff remains useful for historical context, but current planning for the next managed-mode slice should be driven by:
+
+- `C:\NodeProjects\1492-app\PHASE1_REVISED_CHECKLIST.md`
+- `C:\NodeProjects\1492-app\MANAGED_MODE_ADAPTATION_PLAN.md`
 
 ## What Is Already Decided
 
