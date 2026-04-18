@@ -60,6 +60,18 @@ async function clearNatMockDiscoveryResult(page) {
   return page.evaluate(() => window.udp1492NatDebug?.clearMockDiscoveryResult?.());
 }
 
+async function setNatMockProbeResults(page, result) {
+  return page.evaluate((value) => window.udp1492NatDebug?.setMockProbeResults?.(value), result);
+}
+
+async function clearNatMockProbeResults(page) {
+  return page.evaluate(() => window.udp1492NatDebug?.clearMockProbeResults?.());
+}
+
+async function runNatProbes(page, options) {
+  return page.evaluate((value) => window.udp1492NatDebug?.runProbes?.(value), options);
+}
+
 async function sendCommanderTestFrame(page) {
   return page.evaluate(() => window.udp1492CommanderDebug?.sendTestFrame?.());
 }
@@ -615,6 +627,7 @@ test.describe('peer fixture', () => {
       const { page } = appHarness;
       const presenceRequests = [];
       const { baseUrl } = await installManagedApiRoutes(page, { presenceRequests });
+      const probeKey = 'A:198.51.100.10:1492';
 
       await setNatMockDiscoveryResult(page, {
         publicCandidates: [
@@ -627,6 +640,11 @@ test.describe('peer fixture', () => {
           }
         ]
       });
+      await setNatMockProbeResults(page, {
+        [probeKey]: {
+          outcome: 'succeeded'
+        }
+      });
 
       await page.locator('#operatingModeManaged').click();
       await page.locator('#managedDisplayNameInput').fill('Scot');
@@ -638,6 +656,7 @@ test.describe('peer fixture', () => {
       await page.getByRole('button', { name: 'Join Selected' }).click();
       await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
       await expect(page.locator('#managedGroupAStatus')).toContainText('joined');
+      await expect(page.locator('#managedNatStatus')).toContainText('1 peer probe(s) succeeded');
 
       expect(presenceRequests).toHaveLength(1);
       expect(presenceRequests[0].payload.endpoints).toEqual([
@@ -647,11 +666,14 @@ test.describe('peer fixture', () => {
 
       const adminPage = await openAdminWindow(appHarness);
       await expect(adminPage.locator('#adminNatStatus')).toHaveText('Ready');
-      await expect(adminPage.locator('#adminNatSummary')).toContainText('1 local and 1 mapped public');
+      await expect(adminPage.locator('#adminNatSummary')).toContainText('1 peer probe(s) succeeded');
       await expect(adminPage.locator('#adminNatCandidateList')).toContainText('10.0.0.25:1492');
       await expect(adminPage.locator('#adminNatCandidateList')).toContainText('198.51.100.77:62000');
+      await expect(adminPage.locator('#adminNatProbeList')).toContainText('Peer One');
+      await expect(adminPage.locator('#adminNatProbeList')).toContainText('Succeeded');
 
       await clearNatMockDiscoveryResult(page);
+      await clearNatMockProbeResults(page);
     });
 
     test('keeps the managed session healthy when mapped public NAT discovery fails', async ({ appHarness }) => {
@@ -687,6 +709,51 @@ test.describe('peer fixture', () => {
       await expect(adminPage.locator('#adminNatCandidateList')).not.toContainText('198.51.100.77:62000');
 
       await clearNatMockDiscoveryResult(page);
+      await clearNatMockProbeResults(page);
+    });
+
+    test('keeps the managed session healthy when a NAT peer probe times out', async ({ appHarness }) => {
+      const { page } = appHarness;
+      const { baseUrl } = await installManagedApiRoutes(page);
+      const probeKey = 'A:198.51.100.10:1492';
+
+      await setNatMockDiscoveryResult(page, {
+        publicCandidates: [
+          {
+            kind: 'public',
+            ip: '198.51.100.77',
+            port: 62000,
+            protocol: 'udp',
+            source: 'stun'
+          }
+        ]
+      });
+      await setNatMockProbeResults(page, {
+        [probeKey]: {
+          outcome: 'timed_out',
+          errorMessage: 'Advisory NAT probe timed out.'
+        }
+      });
+
+      await page.locator('#operatingModeManaged').click();
+      await page.locator('#managedDisplayNameInput').fill('Scot');
+      await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+      await page.locator('#managedOpenSessionBtn').click();
+      await page.getByRole('button', { name: 'Join Selected' }).click();
+
+      await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+      await expect(page.locator('#managedGroupAStatus')).toContainText('joined');
+      await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+      await expect(page.locator('#managedNatStatus')).toContainText('1 peer probe(s) timed out');
+
+      const adminPage = await openAdminWindow(appHarness);
+      await expect(adminPage.locator('#adminNatSummary')).toContainText('peer probe(s) timed out');
+      await expect(adminPage.locator('#adminNatProbeList')).toContainText('Peer One');
+      await expect(adminPage.locator('#adminNatProbeList')).toContainText('Timed Out');
+      await expect(adminPage.locator('#adminNatProbeList')).toContainText('Advisory NAT probe timed out.');
+
+      await clearNatMockDiscoveryResult(page);
+      await clearNatMockProbeResults(page);
     });
   });
 

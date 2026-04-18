@@ -1,4 +1,4 @@
-// admin.js v0.1.1
+// admin.js v0.1.2
 (() => {
   'use strict';
 
@@ -24,6 +24,7 @@
   const adminNatSummaryEl = $('#adminNatSummary');
   const adminNatErrorEl = $('#adminNatError');
   const adminNatCandidateListEl = $('#adminNatCandidateList');
+  const adminNatProbeListEl = $('#adminNatProbeList');
   const adminStatsMetaEl = $('#adminStatsMeta');
   const adminStatsGridEl = $('#adminStatsGrid');
   const adminRefreshAllBtn = $('#adminRefreshAllBtn');
@@ -64,6 +65,14 @@
         ...candidate
       }));
     });
+  }
+
+  function buildNatProbeRows(nextSnapshot) {
+    return Object.entries(nextSnapshot?.managed?.nat?.probes || {})
+      .map(([probeKey, probe]) => ({
+        probeKey,
+        ...(probe || {})
+      }));
   }
 
   function setButtonBusyState(nextSnapshot) {
@@ -122,6 +131,13 @@
       item.className = 'admin-candidate-item';
       item.innerHTML = '<strong>No candidates</strong><span class="admin-candidate-meta">Open managed mode and refresh NAT readiness to populate this view.</span>';
       adminNatCandidateListEl.appendChild(item);
+    }
+    if (adminNatProbeListEl) {
+      adminNatProbeListEl.innerHTML = '';
+      const item = document.createElement('div');
+      item.className = 'admin-candidate-item';
+      item.innerHTML = '<strong>No probe state</strong><span class="admin-candidate-meta">Peer probe status will appear here after managed peers are refreshed.</span>';
+      adminNatProbeListEl.appendChild(item);
     }
     if (adminStatsMetaEl) adminStatsMetaEl.textContent = 'No stats yet';
     if (adminStatsGridEl) {
@@ -292,8 +308,14 @@
     const gatherer = nat.gatherer || {};
     const slotStates = nat.slots || {};
     const candidateRows = buildNatCandidateRows(nextSnapshot);
+    const probeRows = buildNatProbeRows(nextSnapshot);
     const localCount = candidateRows.filter((candidate) => candidate.kind === 'local').length;
     const publicCount = candidateRows.filter((candidate) => candidate.kind === 'public').length;
+    const readyProbeCount = probeRows.filter((probe) => probe.status === 'ready').length;
+    const probingProbeCount = probeRows.filter((probe) => probe.status === 'probing').length;
+    const succeededProbeCount = probeRows.filter((probe) => probe.status === 'succeeded').length;
+    const timedOutProbeCount = probeRows.filter((probe) => probe.status === 'timed_out').length;
+    const failedProbeCount = probeRows.filter((probe) => probe.status === 'failed').length;
     const activeSlotId = nextSnapshot?.managed?.activeSlotId || 'A';
     const activeSlotState = slotStates?.[activeSlotId] || {};
     const activeLocalCount = Array.isArray(activeSlotState.localCandidates) ? activeSlotState.localCandidates.length : 0;
@@ -301,7 +323,7 @@
 
     if (adminNatMetaEl) {
       adminNatMetaEl.textContent = candidateRows.length
-        ? `${localCount} local | ${publicCount} public${gatherer.lastCompletedAt ? ` | updated ${formatTimestamp(gatherer.lastCompletedAt)}` : ''}`
+        ? `${localCount} local | ${publicCount} public${probeRows.length ? ` | ${probeRows.length} probe(s)` : ''}${gatherer.lastCompletedAt ? ` | updated ${formatTimestamp(gatherer.lastCompletedAt)}` : ''}`
         : 'No candidate data';
     }
     if (adminNatStatusEl) {
@@ -310,6 +332,16 @@
     if (adminNatSummaryEl) {
       if (gatherer.status === 'gathering') {
         adminNatSummaryEl.textContent = `Gathering local and mapped public candidates for Group ${activeSlotId}.`;
+      } else if (probingProbeCount) {
+        adminNatSummaryEl.textContent = `Group ${activeSlotId} currently has ${probingProbeCount} peer probe(s) in progress.`;
+      } else if (timedOutProbeCount) {
+        adminNatSummaryEl.textContent = `Group ${activeSlotId} currently has ${timedOutProbeCount} peer probe(s) timed out while session and peer state remain healthy.`;
+      } else if (failedProbeCount) {
+        adminNatSummaryEl.textContent = `Group ${activeSlotId} currently has ${failedProbeCount} peer probe(s) failed while session and peer state remain healthy.`;
+      } else if (succeededProbeCount) {
+        adminNatSummaryEl.textContent = `Group ${activeSlotId} currently has ${succeededProbeCount} peer probe(s) succeeded.`;
+      } else if (readyProbeCount) {
+        adminNatSummaryEl.textContent = `Group ${activeSlotId} currently has ${readyProbeCount} peer probe(s) ready for future transport-authoritative probing.`;
       } else if (gatherer.status === 'failed') {
         adminNatSummaryEl.textContent = `Group ${activeSlotId} retained ${activeLocalCount} local candidate(s), but mapped public candidate discovery failed.`;
       } else if (activePublicCount) {
@@ -325,31 +357,56 @@
       adminNatErrorEl.hidden = !errorMessage;
       adminNatErrorEl.textContent = errorMessage;
     }
-    if (!adminNatCandidateListEl) return;
-    adminNatCandidateListEl.innerHTML = '';
-    if (!candidateRows.length) {
+    if (adminNatCandidateListEl) adminNatCandidateListEl.innerHTML = '';
+    if (!candidateRows.length && adminNatCandidateListEl) {
       const item = document.createElement('div');
       item.className = 'admin-candidate-item';
       item.innerHTML = '<strong>No candidates</strong><span class="admin-candidate-meta">No local or mapped public candidates are available in the current snapshot.</span>';
       adminNatCandidateListEl.appendChild(item);
+    }
+    if (adminNatCandidateListEl) {
+      for (const candidate of candidateRows.sort((left, right) => {
+        return `${left.slotId}:${left.kind}:${left.ip}:${left.port}`.localeCompare(`${right.slotId}:${right.kind}:${right.ip}:${right.port}`);
+      })) {
+        const item = document.createElement('div');
+        item.className = 'admin-candidate-item';
+        const title = document.createElement('strong');
+        title.textContent = `Group ${candidate.slotId} | ${formatNatStatusLabel(candidate.kind || 'unknown')}`;
+        const meta = document.createElement('span');
+        meta.className = 'admin-candidate-meta';
+        const endpoint = candidate.ip && candidate.port ? `${candidate.ip}:${candidate.port}` : 'Unknown endpoint';
+        const protocol = candidate.protocol ? String(candidate.protocol).toUpperCase() : 'UDP';
+        const source = candidate.source ? ` | ${candidate.source}` : '';
+        const discoveredAt = candidate.discoveredAt ? ` | ${formatTimestamp(candidate.discoveredAt)}` : '';
+        meta.textContent = `${endpoint} | ${protocol}${source}${discoveredAt}`;
+        item.append(title, meta);
+        adminNatCandidateListEl.appendChild(item);
+      }
+    }
+    if (!adminNatProbeListEl) return;
+    adminNatProbeListEl.innerHTML = '';
+    if (!probeRows.length) {
+      const item = document.createElement('div');
+      item.className = 'admin-candidate-item';
+      item.innerHTML = '<strong>No probe state</strong><span class="admin-candidate-meta">Refresh peers after NAT discovery to populate probe visibility.</span>';
+      adminNatProbeListEl.appendChild(item);
       return;
     }
-    for (const candidate of candidateRows.sort((left, right) => {
-      return `${left.slotId}:${left.kind}:${left.ip}:${left.port}`.localeCompare(`${right.slotId}:${right.kind}:${right.ip}:${right.port}`);
-    })) {
+    for (const probe of probeRows.sort((left, right) => `${left.slotId}:${left.displayName || left.peerKey}:${left.peerKey}`.localeCompare(`${right.slotId}:${right.displayName || right.peerKey}:${right.peerKey}`))) {
       const item = document.createElement('div');
       item.className = 'admin-candidate-item';
       const title = document.createElement('strong');
-      title.textContent = `Group ${candidate.slotId} | ${formatNatStatusLabel(candidate.kind || 'unknown')}`;
+      title.textContent = `Group ${probe.slotId || 'A'} | ${probe.displayName || probe.peerKey || 'Unknown peer'} | ${formatNatStatusLabel(probe.status || 'idle')}`;
       const meta = document.createElement('span');
       meta.className = 'admin-candidate-meta';
-      const endpoint = candidate.ip && candidate.port ? `${candidate.ip}:${candidate.port}` : 'Unknown endpoint';
-      const protocol = candidate.protocol ? String(candidate.protocol).toUpperCase() : 'UDP';
-      const source = candidate.source ? ` | ${candidate.source}` : '';
-      const discoveredAt = candidate.discoveredAt ? ` | ${formatTimestamp(candidate.discoveredAt)}` : '';
-      meta.textContent = `${endpoint} | ${protocol}${source}${discoveredAt}`;
+      const endpoint = probe.ip && probe.port ? `${probe.ip}:${probe.port}` : (probe.peerKey || 'Unknown endpoint');
+      const detailParts = [endpoint];
+      if (probe.endpointKind) detailParts.push(formatNatStatusLabel(probe.endpointKind));
+      if (probe.lastCompletedAt) detailParts.push(formatTimestamp(probe.lastCompletedAt));
+      if (probe.lastError) detailParts.push(probe.lastError);
+      meta.textContent = detailParts.filter(Boolean).join(' | ');
       item.append(title, meta);
-      adminNatCandidateListEl.appendChild(item);
+      adminNatProbeListEl.appendChild(item);
     }
   }
 

@@ -514,6 +514,9 @@ export function createManagedController(deps) {
     if (options.ensureTransport) {
       await deps.ensureManagedTransportConnected();
     }
+    if (typeof deps.onManagedPeersRefreshed === 'function') {
+      await deps.onManagedPeersRefreshed(targetSlotId, resolvedPeers, options);
+    }
     deps.renderManagedShell();
     await persistManagedState();
     return deps.getManagedSlotTransportPeers(targetSlotId);
@@ -591,7 +594,7 @@ export function createManagedController(deps) {
     }
     await deps.ensureManagedTransportConnected();
     await sendManagedPresence(slotId);
-    await refreshManagedPeers(slotId, { ensureTransport: false });
+    await refreshManagedPeers(slotId, { ensureTransport: false, runNatProbes: true });
     startManagedTimers(slotId);
     deps.renderManagedShell();
     await persistManagedState();
@@ -672,7 +675,7 @@ export function createManagedController(deps) {
 
   async function handleManagedRefreshPeers() {
     try {
-      await refreshManagedPeers(getActiveSlotId(), { ensureTransport: true });
+      await refreshManagedPeers(getActiveSlotId(), { ensureTransport: true, runNatProbes: true });
     } catch (error) {
       deps.setManagedError(error?.message || 'Failed to refresh managed peers.');
       deps.renderManagedShell();

@@ -111,24 +111,25 @@ Phase 7 NAT integration work is complete when all of the following are true:
 
 Phase 7 is now in progress.
 
-The first bounded NAT-readiness slice is complete and validated.
+Two bounded desktop-client NAT-readiness slices are now complete and validated.
 
-That slice added:
+Those validated slices added:
 
-- a renderer-owned runtime NAT model with explicit candidate and gather-state vocabulary
+- a renderer-owned runtime NAT model with explicit candidate and gather/probe-state vocabulary
 - runtime-configured local candidate normalization
 - STUN-style mapped public candidate gathering through renderer-side WebRTC ICE discovery
 - managed presence publication that can include both local and mapped public candidates
 - bounded NAT-readiness visibility in the main managed shell
-- read-only NAT candidate/gather visibility in the admin surface
-- deterministic renderer-side Playwright hooks for mocked NAT gather success/failure cases
-- Playwright coverage proving mapped-public success rendering and non-destructive failure handling
+- read-only NAT candidate, gather, and per-peer probe visibility in the admin surface
+- renderer-owned per-peer probe state keyed by slot ownership plus remote `ip:port`
+- deterministic renderer-side Playwright hooks for mocked NAT gather and probe outcomes
+- Playwright coverage proving mapped-public success rendering, probe success rendering, timeout visibility, and non-destructive failure handling
 
 The current remaining Phase 7 follow-on work is still larger than this first slice and includes:
 
 - deciding whether transport-authoritative host participation is needed for later NAT claims
 - defining any real probe or hole-punch workflow beyond advisory candidate discovery
-- adding timeout-specific NAT validation if probe/time-based behavior becomes explicit
+- deciding whether the current advisory probe state is sufficient to close the desktop-client Phase 7 interpretation or whether a host-backed slice is still required
 
 The relevant baseline inherited from Phase 6 is:
 
@@ -331,7 +332,7 @@ Do not turn the admin surface into the primary place to start or manage NAT prob
 
 - [x] Add Playwright coverage for NAT-state rendering.
 - [x] Add Playwright coverage for probe success-path state transitions if they can be mocked cleanly.
-- [ ] Add Playwright coverage for timeout/error states.
+- [x] Add Playwright coverage for timeout/error states.
 - [x] Add Playwright coverage proving healthy managed session behavior is preserved when NAT work fails.
 
 ## Immediate Coding Order

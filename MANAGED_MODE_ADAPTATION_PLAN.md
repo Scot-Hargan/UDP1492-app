@@ -334,16 +334,17 @@ The next product phase should therefore move past the first admin observability 
 
 ### Current Phase 7 status
 
-Phase 7 NAT integration is now active and the first bounded desktop-client slice is complete.
+Phase 7 NAT integration is now active and two bounded desktop-client slices are complete.
 
-That validated first slice delivered:
+Those validated slices delivered:
 
-- renderer-owned NAT runtime state and gather-status tracking
+- renderer-owned NAT runtime state and gather/probe-status tracking
 - local candidate normalization from configured managed addresses
 - STUN-style mapped public candidate discovery through renderer-side WebRTC ICE gathering
 - managed presence publication that can include mapped public candidates alongside local candidates
 - main-shell and admin-surface NAT-readiness visibility
-- Playwright coverage for mapped-public success and non-destructive failure behavior
+- renderer-owned per-peer probe state with bounded admin/main visibility
+- Playwright coverage for mapped-public success, probe timeout visibility, and non-destructive NAT failure behavior
 
 The controlling artifact remains `PHASE7_NAT_INTEGRATION_CHECKLIST.md`.
 
@@ -557,7 +558,7 @@ The next coding target for this repo should stay inside `PHASE7_NAT_INTEGRATION_
 The most likely next bounded follow-on slice is:
 
 - decide whether later NAT claims require transport-authoritative host participation instead of renderer-advisory discovery
-- add an explicit probe/timeout path only if the product needs it
-- extend validation to cover timeout-specific NAT behavior if that path is introduced
+- decide whether the current advisory probe model is sufficient to close the desktop-client Phase 7 milestone
+- if escalation is needed, narrow the additive IPC/host surface to a transport-authoritative probe path only
 
 Do not reopen the closed Phase 3 through Phase 6 checklists as active implementation plans, and do not jump to admin mutations unless the NAT checklist is explicitly superseded.
