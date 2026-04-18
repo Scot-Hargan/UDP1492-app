@@ -11,7 +11,7 @@ The product direction does not change:
 - Keep cloud services focused on coordination, discovery, status, metadata, administration, and limited observability.
 - Do not redesign the product around a cloud media relay.
 
-NAT workflow details remain deferred. The adapted plan leaves the state, schema, and API surfaces ready for that later work.
+Initial NAT-readiness work is now in progress on the desktop client. The adapted plan keeps later transport-authoritative probing and any host/backend escalation explicitly bounded.
 
 ## Project-Specific Adaptation Summary
 
@@ -332,19 +332,22 @@ That work is captured in `PHASE6_ADMIN_SURFACE_CHECKLIST.md` and now includes:
 
 The next product phase should therefore move past the first admin observability milestone. NAT planning or a follow-on admin mutation slice should be captured in a new checklist before more code is started.
 
-### Current Phase 7 planning target
+### Current Phase 7 status
 
-The next active desktop-client planning target is now NAT integration.
+Phase 7 NAT integration is now active and the first bounded desktop-client slice is complete.
 
-That work is captured in `PHASE7_NAT_INTEGRATION_CHECKLIST.md` with:
+That validated first slice delivered:
 
-- a bounded NAT-readiness scope
-- explicit preference for local-candidate plus STUN-style mapped public candidate discovery
-- a candidate/publication/probe-state checklist
-- explicit constraints around keeping the host mostly intact
-- a validation strategy that emphasizes failure tolerance as much as happy-path progress
+- renderer-owned NAT runtime state and gather-status tracking
+- local candidate normalization from configured managed addresses
+- STUN-style mapped public candidate discovery through renderer-side WebRTC ICE gathering
+- managed presence publication that can include mapped public candidates alongside local candidates
+- main-shell and admin-surface NAT-readiness visibility
+- Playwright coverage for mapped-public success and non-destructive failure behavior
 
-Admin mutation follow-on work should remain deferred unless NAT planning uncovers a stronger reason to reorder the roadmap.
+The controlling artifact remains `PHASE7_NAT_INTEGRATION_CHECKLIST.md`.
+
+Admin mutation follow-on work should remain deferred unless a later NAT slice uncovers a stronger reason to reorder the roadmap.
 
 ## Renderer State Model Adaptation
 
@@ -549,12 +552,12 @@ This adaptation is complete when the desktop project is understood as:
 
 ## Immediate Next Implementation Target For 1492-app
 
-The next coding target for this repo has not been locked into a new checklist yet.
+The next coding target for this repo should stay inside `PHASE7_NAT_INTEGRATION_CHECKLIST.md`.
 
-Before more implementation work starts, create the next controlling planning artifact and choose between:
+The most likely next bounded follow-on slice is:
 
-- NAT integration planning
-- a follow-on admin slice for mutation workflows or richer observability
-- another bounded desktop-client closeout driven by a concrete checklist
+- decide whether later NAT claims require transport-authoritative host participation instead of renderer-advisory discovery
+- add an explicit probe/timeout path only if the product needs it
+- extend validation to cover timeout-specific NAT behavior if that path is introduced
 
-Do not reuse the closed Phase 3 through Phase 6 checklists as if they were still active implementation plans.
+Do not reopen the closed Phase 3 through Phase 6 checklists as active implementation plans, and do not jump to admin mutations unless the NAT checklist is explicitly superseded.

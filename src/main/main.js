@@ -48,6 +48,19 @@ function sanitizeManagedLocalAddresses(values) {
   return ordered;
 }
 
+function sanitizeManagedStunServerUrls(values) {
+  const ordered = [];
+  const seen = new Set();
+  for (const value of Array.isArray(values) ? values : []) {
+    const url = String(value || '').trim();
+    if (!url || seen.has(url)) continue;
+    if (!/^stuns?:/i.test(url)) continue;
+    seen.add(url);
+    ordered.push(url);
+  }
+  return ordered;
+}
+
 function getManagedLocalAddresses() {
   const envValue = process.env.UDP1492_MANAGED_LOCAL_ADDRESSES;
   if (typeof envValue === 'string' && envValue.trim()) {
@@ -72,11 +85,20 @@ function getManagedLocalAddresses() {
   return sanitizeManagedLocalAddresses(preferred.length ? preferred : fallback);
 }
 
+function getManagedStunServerUrls() {
+  const envValue = process.env.UDP1492_MANAGED_STUN_SERVERS;
+  if (typeof envValue === 'string' && envValue.trim()) {
+    return sanitizeManagedStunServerUrls(envValue.split(','));
+  }
+  return [];
+}
+
 function getRuntimeConfig() {
   return {
     managedBackendUrl: sanitizeManagedBackendUrl(process.env.UDP1492_MANAGED_BACKEND_URL),
     managedRequestTimeoutMs: sanitizeManagedRequestTimeoutMs(process.env.UDP1492_MANAGED_REQUEST_TIMEOUT_MS),
-    managedLocalAddresses: getManagedLocalAddresses()
+    managedLocalAddresses: getManagedLocalAddresses(),
+    managedStunServerUrls: getManagedStunServerUrls()
   };
 }
 

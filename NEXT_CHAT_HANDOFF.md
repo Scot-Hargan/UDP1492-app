@@ -6,15 +6,15 @@ Use this file if work continues in a fresh chat.
 
 - Repo: `C:\NodeProjects\1492-app`
 - Branch: `main`
-- Package/app version: `0.1.20`
-- Renderer version marker in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js): `0.4.19`
+- Package/app version: `0.1.21`
+- Renderer version marker in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js): `0.4.20`
 - Phase 1 is closed
 - Phase 2 protected-channel client work is closed
 - Phase 3 Group B desktop-client work is closed
 - Phase 4 dual-ear routing desktop-client work is closed
 - Phase 5 Commander Mode desktop-client work is closed
 - Phase 6 admin-surface work is closed and validated
-- Phase 7 NAT-integration planning is now active
+- Phase 7 NAT integration is active and the first NAT-readiness slice is validated
 
 ## Start Here
 
@@ -153,6 +153,20 @@ Closed items in this slice include:
   - populated admin data views
   - refresh failure while the main control window remains stable
 
+### Phase 7 first slice
+
+The first bounded NAT-readiness slice is now implemented and validated.
+
+Closed items in this slice include:
+
+- renderer-owned NAT runtime state with explicit candidate and gather-status vocabulary
+- local candidate normalization from configured managed addresses
+- renderer-side STUN-style mapped public candidate discovery using WebRTC ICE gathering
+- managed presence publication that can include both local and mapped public candidates
+- bounded NAT-readiness visibility in the main managed shell
+- read-only NAT candidate/gather visibility in the admin surface
+- deterministic Playwright NAT mocks plus coverage for success rendering and non-destructive failure handling
+
 ## Active Planning Artifact
 
 [PHASE7_NAT_INTEGRATION_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE7_NAT_INTEGRATION_CHECKLIST.md) is now the controlling checklist for the next implementation slice.
@@ -169,6 +183,7 @@ It contains:
 - a file-ownership map for renderer/main/preload/host responsibilities
 - a step-by-step implementation sequence by file
 - concrete implementation notes and non-goals for the first NAT slice
+- the updated completion state for the first validated NAT-readiness milestone
 
 ## Immediate Next Slice
 
@@ -177,15 +192,14 @@ Do not reopen the Phase 4 dual-ear routing checklist unless a regression appears
 Do not reopen the Phase 5 Commander checklist unless a regression appears.
 Do not reopen the Phase 6 admin checklist unless a regression appears.
 
-The next concrete target is implementing the first bounded NAT-integration slice.
+The next concrete target is the next bounded follow-on inside Phase 7, not a new phase.
 
-The first coding targets should be:
+The most likely coding targets are:
 
-1. Define the NAT candidate/probe state model in the renderer and document any required managed-backend contract assumptions.
-2. Add the renderer/main/preload seam for NAT probe orchestration.
-3. Extend the main/admin surfaces with explicit NAT-state visibility.
-4. Add focused Playwright coverage for candidate/probe state and failure handling.
-5. Run `npm run test:e2e`.
+1. Decide whether later NAT claims need transport-authoritative host participation instead of renderer-advisory discovery.
+2. Add an explicit NAT probe/timeout path only if the product actually needs it.
+3. Extend validation to cover timeout-specific NAT behavior if that path is introduced.
+4. Keep the host boundary and admin surface bounded unless the checklist is explicitly revised.
 
 ## Important Constraints
 
@@ -207,7 +221,7 @@ Last clean validation before this handoff:
 - `node --check src\\renderer\\admin.js`
 - `node --check test\\e2e\\app.spec.js`
 - `npm run test:e2e`
-- result: `30/30` passing
+- result: `32/32` passing
 
 Validated implementation updates after that baseline:
 
@@ -216,16 +230,14 @@ Validated implementation updates after that baseline:
 - main renderer admin snapshot/refresh wiring plus runtime-only resolved-peer detail added in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js) and [src/renderer/managed-controller.js](C:/NodeProjects/1492-app/src/renderer/managed-controller.js)
 - admin entry control and shared styling added in [src/renderer/index.html](C:/NodeProjects/1492-app/src/renderer/index.html) and [src/renderer/style.css](C:/NodeProjects/1492-app/src/renderer/style.css)
 - Playwright admin multi-window coverage added in [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
-- package/app version bumped to `0.1.20`
-- renderer version bumped to `0.4.19`
-- `PHASE6_ADMIN_SURFACE_CHECKLIST.md`, `MANAGED_MODE_ADAPTATION_PLAN.md`, `DEVELOPMENT_NOTES.md`, and `NEXT_CHAT_HANDOFF.md` updated for the Phase 6 closeout
-
-Planning-only updates after that validated slice:
-
-- `PHASE7_NAT_INTEGRATION_CHECKLIST.md` created
-- `MANAGED_MODE_ADAPTATION_PLAN.md` updated to mark NAT integration planning as the active target
-- `DEVELOPMENT_NOTES.md` updated to include the new planning artifact
-- `NEXT_CHAT_HANDOFF.md` updated to point the next chat at the NAT planning slice
+- NAT candidate/runtime state, WebRTC gather flow, and mapped-public endpoint publication added in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js), [src/renderer/managed-controller.js](C:/NodeProjects/1492-app/src/renderer/managed-controller.js), and [src/renderer/managed-runtime.js](C:/NodeProjects/1492-app/src/renderer/managed-runtime.js)
+- managed runtime config support for STUN server URLs added in [src/main/main.js](C:/NodeProjects/1492-app/src/main/main.js)
+- main-shell NAT status and refresh control added in [src/renderer/index.html](C:/NodeProjects/1492-app/src/renderer/index.html)
+- admin NAT inspection surface added in [src/renderer/admin.html](C:/NodeProjects/1492-app/src/renderer/admin.html), [src/renderer/admin.js](C:/NodeProjects/1492-app/src/renderer/admin.js), and [src/renderer/style.css](C:/NodeProjects/1492-app/src/renderer/style.css)
+- Playwright NAT coverage and renderer NAT test hooks added in [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
+- package/app version bumped to `0.1.21`
+- renderer version bumped to `0.4.20`
+- `PHASE7_NAT_INTEGRATION_CHECKLIST.md`, `MANAGED_MODE_ADAPTATION_PLAN.md`, and `NEXT_CHAT_HANDOFF.md` updated for the Phase 7 first-slice closeout
 
 Safe validation commands for the next chat:
 
@@ -250,7 +262,7 @@ Safe validation commands for the next chat:
 - Workflow file: [.github/workflows/windows-release.yml](C:/NodeProjects/1492-app/.github/workflows/windows-release.yml)
 - Release publishing was fixed earlier by building with `--publish never` in the build step
 - Latest published release from the prior chat context was `v0.1.13`
-- Current code version is `0.1.20`
+- Current code version is `0.1.21`
 - After a complete validated slice, update the online GitHub repo before stopping
 
 ## If Continuing Immediately
@@ -262,5 +274,5 @@ Treat Phase 3 Group B desktop-client activation as closed.
 Treat Phase 4 dual-ear routing as closed.
 Treat Phase 5 Commander groundwork as closed.
 Treat Phase 6 admin surface as closed.
-Treat Phase 7 NAT integration planning as active.
-If work continues immediately, start from the Phase 7 checklist and implement the first bounded NAT-readiness slice.
+Treat Phase 7 NAT integration as active.
+If work continues immediately, stay inside the Phase 7 checklist and start from the next bounded follow-on slice rather than reopening planning or Phase 6 work.

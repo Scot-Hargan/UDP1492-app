@@ -97,6 +97,28 @@
     <section class="admin-card">
       <div class="managed-card-header">
         <div>
+          <p class="managed-card-label">NAT Readiness</p>
+          <h2>Candidate Discovery</h2>
+        </div>
+        <span id="adminNatMeta" class="managed-inline-status">No candidate data</span>
+      </div>
+      <div class="admin-nat-grid">
+        <section class="managed-slot-summary">
+          <p class="managed-card-label">Status</p>
+          <h4 id="adminNatStatus">Idle</h4>
+          <p id="adminNatSummary" class="managed-card-copy">No NAT discovery has been attempted yet.</p>
+          <p id="adminNatError" class="managed-error" hidden></p>
+        </section>
+        <section class="managed-slot-summary">
+          <p class="managed-card-label">Candidates</p>
+          <div id="adminNatCandidateList" class="admin-candidate-list"></div>
+        </section>
+      </div>
+    </section>
+
+    <section class="admin-card">
+      <div class="managed-card-header">
+        <div>
           <p class="managed-card-label">Limited Stats</p>
           <h2>Local Summary</h2>
         </div>

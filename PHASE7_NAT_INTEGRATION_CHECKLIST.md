@@ -109,7 +109,26 @@ Phase 7 NAT integration work is complete when all of the following are true:
 
 ## Current Phase 7 Status
 
-Phase 7 has not started yet.
+Phase 7 is now in progress.
+
+The first bounded NAT-readiness slice is complete and validated.
+
+That slice added:
+
+- a renderer-owned runtime NAT model with explicit candidate and gather-state vocabulary
+- runtime-configured local candidate normalization
+- STUN-style mapped public candidate gathering through renderer-side WebRTC ICE discovery
+- managed presence publication that can include both local and mapped public candidates
+- bounded NAT-readiness visibility in the main managed shell
+- read-only NAT candidate/gather visibility in the admin surface
+- deterministic renderer-side Playwright hooks for mocked NAT gather success/failure cases
+- Playwright coverage proving mapped-public success rendering and non-destructive failure handling
+
+The current remaining Phase 7 follow-on work is still larger than this first slice and includes:
+
+- deciding whether transport-authoritative host participation is needed for later NAT claims
+- defining any real probe or hole-punch workflow beyond advisory candidate discovery
+- adding timeout-specific NAT validation if probe/time-based behavior becomes explicit
 
 The relevant baseline inherited from Phase 6 is:
 
@@ -280,40 +299,40 @@ Do not turn the admin surface into the primary place to start or manage NAT prob
 
 ### A. Candidate model / publication
 
-- [ ] Define the first NAT candidate model for the desktop app.
-- [ ] Add explicit support for:
+- [x] Define the first NAT candidate model for the desktop app.
+- [x] Add explicit support for:
   - local candidates
   - STUN-style mapped public candidates
-- [ ] Decide what additional endpoint data must be published or consumed beyond current local endpoints.
-- [ ] Keep the first candidate model compatible with the existing managed presence/session shape where possible.
-- [ ] Ensure transient connectivity facts remain runtime-only unless there is a clear durable need.
-- [ ] Keep generic HTTP public-IP discovery out of the primary candidate path.
+- [x] Decide what additional endpoint data must be published or consumed beyond current local endpoints.
+- [x] Keep the first candidate model compatible with the existing managed presence/session shape where possible.
+- [x] Ensure transient connectivity facts remain runtime-only unless there is a clear durable need.
+- [x] Keep generic HTTP public-IP discovery out of the primary candidate path.
 
 ### B. Probe orchestration
 
-- [ ] Define the renderer/main/host seam for NAT probe or hole-punch orchestration.
-- [ ] Keep the first probe lifecycle explicit:
+- [x] Define the renderer/main/host seam for NAT probe or hole-punch orchestration.
+- [x] Keep the first probe lifecycle explicit:
   - idle
   - gathering
   - probing
   - ready
   - failed / timed out
-- [ ] Avoid destabilizing healthy managed memberships when NAT work fails.
-- [ ] Preserve the channel-agnostic host boundary unless a concrete blocker requires expansion.
+- [x] Avoid destabilizing healthy managed memberships when NAT work fails.
+- [x] Preserve the channel-agnostic host boundary unless a concrete blocker requires expansion.
 
 ### C. UI / admin visibility
 
-- [ ] Add bounded NAT-state visibility to the main managed shell where it helps recovery.
-- [ ] Extend the admin surface just enough to inspect candidate and probe state.
-- [ ] Keep loading/timeout/error states explicit.
-- [ ] Avoid turning this slice into a full network-diagnostics suite.
+- [x] Add bounded NAT-state visibility to the main managed shell where it helps recovery.
+- [x] Extend the admin surface just enough to inspect candidate and probe state.
+- [x] Keep loading/timeout/error states explicit.
+- [x] Avoid turning this slice into a full network-diagnostics suite.
 
 ### D. Validation
 
-- [ ] Add Playwright coverage for NAT-state rendering.
-- [ ] Add Playwright coverage for probe success-path state transitions if they can be mocked cleanly.
+- [x] Add Playwright coverage for NAT-state rendering.
+- [x] Add Playwright coverage for probe success-path state transitions if they can be mocked cleanly.
 - [ ] Add Playwright coverage for timeout/error states.
-- [ ] Add Playwright coverage proving healthy managed session behavior is preserved when NAT work fails.
+- [x] Add Playwright coverage proving healthy managed session behavior is preserved when NAT work fails.
 
 ## Immediate Coding Order
 

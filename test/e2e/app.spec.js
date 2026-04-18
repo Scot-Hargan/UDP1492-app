@@ -52,6 +52,14 @@ async function getCommanderSnapshot(page) {
   return page.evaluate(() => window.udp1492CommanderDebug?.getSnapshot?.() || null);
 }
 
+async function setNatMockDiscoveryResult(page, result) {
+  return page.evaluate((value) => window.udp1492NatDebug?.setMockDiscoveryResult?.(value), result);
+}
+
+async function clearNatMockDiscoveryResult(page) {
+  return page.evaluate(() => window.udp1492NatDebug?.clearMockDiscoveryResult?.());
+}
+
 async function sendCommanderTestFrame(page) {
   return page.evaluate(() => window.udp1492CommanderDebug?.sendTestFrame?.());
 }
@@ -593,6 +601,93 @@ test.describe('peer fixture', () => {
     await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
     await expect(page.locator('#managedGroupAStatus')).toContainText('joined');
     await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+  });
+
+  test.describe('managed NAT readiness', () => {
+    test.use({
+      runtimeEnv: {
+        UDP1492_MANAGED_LOCAL_ADDRESSES: '10.0.0.25',
+        UDP1492_MANAGED_STUN_SERVERS: 'stun:stun.example.test:3478'
+      }
+    });
+
+    test('publishes mapped public NAT candidates to presence and exposes them in the admin surface', async ({ appHarness }) => {
+      const { page } = appHarness;
+      const presenceRequests = [];
+      const { baseUrl } = await installManagedApiRoutes(page, { presenceRequests });
+
+      await setNatMockDiscoveryResult(page, {
+        publicCandidates: [
+          {
+            kind: 'public',
+            ip: '198.51.100.77',
+            port: 62000,
+            protocol: 'udp',
+            source: 'stun'
+          }
+        ]
+      });
+
+      await page.locator('#operatingModeManaged').click();
+      await page.locator('#managedDisplayNameInput').fill('Scot');
+      await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+      await page.locator('#managedOpenSessionBtn').click();
+
+      await expect(page.locator('#managedNatStatus')).toContainText('1 local | 1 mapped public candidate');
+
+      await page.getByRole('button', { name: 'Join Selected' }).click();
+      await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+      await expect(page.locator('#managedGroupAStatus')).toContainText('joined');
+
+      expect(presenceRequests).toHaveLength(1);
+      expect(presenceRequests[0].payload.endpoints).toEqual([
+        { kind: 'local', ip: '10.0.0.25', port: 1492 },
+        { kind: 'public', ip: '198.51.100.77', port: 62000 }
+      ]);
+
+      const adminPage = await openAdminWindow(appHarness);
+      await expect(adminPage.locator('#adminNatStatus')).toHaveText('Ready');
+      await expect(adminPage.locator('#adminNatSummary')).toContainText('1 local and 1 mapped public');
+      await expect(adminPage.locator('#adminNatCandidateList')).toContainText('10.0.0.25:1492');
+      await expect(adminPage.locator('#adminNatCandidateList')).toContainText('198.51.100.77:62000');
+
+      await clearNatMockDiscoveryResult(page);
+    });
+
+    test('keeps the managed session healthy when mapped public NAT discovery fails', async ({ appHarness }) => {
+      const { page } = appHarness;
+      const presenceRequests = [];
+      const { baseUrl } = await installManagedApiRoutes(page, { presenceRequests });
+
+      await setNatMockDiscoveryResult(page, {
+        errorMessage: 'STUN discovery failed.'
+      });
+
+      await page.locator('#operatingModeManaged').click();
+      await page.locator('#managedDisplayNameInput').fill('Scot');
+      await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+      await page.locator('#managedOpenSessionBtn').click();
+
+      await expect(page.locator('#managedNatStatus')).toContainText('mapped public candidate discovery failed');
+
+      await page.getByRole('button', { name: 'Join Selected' }).click();
+      await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+      await expect(page.locator('#managedGroupAStatus')).toContainText('joined');
+      await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+
+      expect(presenceRequests).toHaveLength(1);
+      expect(presenceRequests[0].payload.endpoints).toEqual([
+        { kind: 'local', ip: '10.0.0.25', port: 1492 }
+      ]);
+
+      const adminPage = await openAdminWindow(appHarness);
+      await expect(adminPage.locator('#adminNatStatus')).toHaveText('Failed');
+      await expect(adminPage.locator('#adminNatError')).toContainText('STUN discovery failed.');
+      await expect(adminPage.locator('#adminNatCandidateList')).toContainText('10.0.0.25:1492');
+      await expect(adminPage.locator('#adminNatCandidateList')).not.toContainText('198.51.100.77:62000');
+
+      await clearNatMockDiscoveryResult(page);
+    });
   });
 
   test('requires a passcode for protected managed channels and sends it on join', async ({ appHarness }) => {

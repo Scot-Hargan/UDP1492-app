@@ -41,11 +41,16 @@ import { createPeerRuntimeTracker } from './peer-runtime-stats.js';
 import { createStatusDashboard } from './status-dashboard.js';
 import { sanitizeManagedBaseUrl } from './managed-api.js';
 import { createManagedController } from './managed-controller.js';
+import {
+  buildManagedLocalCandidates,
+  buildManagedPresenceEndpoints,
+  DEFAULT_MANAGED_STUN_SERVER_URLS
+} from './managed-runtime.js';
 
-// ui.js v0.4.19
+// ui.js v0.4.20
 (() => {
   'use strict';
-  const VERSION = '0.4.19';
+  const VERSION = '0.4.20';
   const platform = window.udp1492;
   const testPlatform = window.udp1492Test || null;
 
@@ -93,6 +98,27 @@ import { createManagedController } from './managed-controller.js';
     CHANNELS: 'channels',
     PEERS: 'peers'
   });
+  const NAT_DISCOVERY_STATES = Object.freeze({
+    IDLE: 'idle',
+    GATHERING: 'gathering',
+    READY: 'ready',
+    FAILED: 'failed'
+  });
+  const NAT_PROBE_STATES = Object.freeze({
+    IDLE: 'idle',
+    GATHERING: 'gathering',
+    READY: 'ready',
+    PROBING: 'probing',
+    SUCCEEDED: 'succeeded',
+    TIMED_OUT: 'timed_out',
+    FAILED: 'failed'
+  });
+  const NAT_CANDIDATE_KINDS = Object.freeze({
+    LOCAL: 'local',
+    PUBLIC: 'public',
+    PEER: 'peer',
+    UNKNOWN: 'unknown'
+  });
 
   const openAdminWindowBtn = $('#openAdminWindowBtn');
   const connectBtn = $('#connectBtn');
@@ -126,9 +152,11 @@ import { createManagedController } from './managed-controller.js';
   const managedBackendBaseUrlInputEl = $('#managedBackendBaseUrlInput');
   const managedOpenSessionBtn = $('#managedOpenSessionBtn');
   const managedRefreshChannelsBtn = $('#managedRefreshChannelsBtn');
+  const managedRefreshNatBtn = $('#managedRefreshNatBtn');
   const managedRefreshPeersBtn = $('#managedRefreshPeersBtn');
   const managedLeaveChannelBtn = $('#managedLeaveChannelBtn');
   const managedPeerSyncMetaEl = $('#managedPeerSyncMeta');
+  const managedNatStatusEl = $('#managedNatStatus');
   const managedRoutingStatusEl = $('#managedRoutingStatus');
   const managedCommanderStatusEl = $('#managedCommanderStatus');
   const managedMicModeSingleBtn = $('#managedMicModeSingle');
@@ -207,6 +235,7 @@ import { createManagedController } from './managed-controller.js';
   managedModeBtn?.addEventListener('click', () => setOperatingMode(OPERATING_MODES.MANAGED).catch(err => console.error('managed mode error', err)));
   managedOpenSessionBtn?.addEventListener('click', () => handleManagedSessionOpen().catch(err => console.error('managed session open error', err)));
   managedRefreshChannelsBtn?.addEventListener('click', () => handleManagedRefreshChannels().catch(err => console.error('managed refresh channels error', err)));
+  managedRefreshNatBtn?.addEventListener('click', () => refreshManagedNatDiscovery().catch(err => console.error('managed refresh nat error', err)));
   managedRefreshPeersBtn?.addEventListener('click', () => handleManagedRefreshPeers().catch(err => console.error('managed refresh peers error', err)));
   managedLeaveChannelBtn?.addEventListener('click', () => handleManagedLeaveChannel().catch(err => console.error('managed leave error', err)));
   managedSelectGroupABtn?.addEventListener('click', () => setActiveManagedSlot(GROUP_SLOT_IDS.A).catch(err => console.error('managed slot A error', err)));
@@ -293,6 +322,7 @@ import { createManagedController } from './managed-controller.js';
   let managedCache = createDefaultManagedCache();
   let managedJoinPasscodes = createDefaultManagedJoinPasscodes();
   let managedResolvedPeers = createDefaultManagedResolvedPeers();
+  let natRuntime = createDefaultNatRuntimeState();
   let adminSurfaceState = createDefaultAdminSurfaceState();
   let nativeHost = null;
   let connected = false;
@@ -319,6 +349,8 @@ import { createManagedController } from './managed-controller.js';
   const peerRuntimeStats = createPeerRuntimeTracker();
   const codecSupportCache = new Map();
   let adminSnapshotPublishTimer = null;
+  let natDiscoveryPromise = null;
+  let natMockDiscoveryResult = null;
 
   function sanitizeOperatingMode(mode) {
     return mode === OPERATING_MODES.MANAGED ? OPERATING_MODES.MANAGED : OPERATING_MODES.DIRECT;
@@ -469,6 +501,79 @@ import { createManagedController } from './managed-controller.js';
       errorMessage: typeof seed?.errorMessage === 'string' ? seed.errorMessage : '',
       lastRequestedAt: typeof seed?.lastRequestedAt === 'string' ? seed.lastRequestedAt : '',
       lastCompletedAt: typeof seed?.lastCompletedAt === 'string' ? seed.lastCompletedAt : ''
+    };
+  }
+  function sanitizeNatCandidateKind(value) {
+    if (value === NAT_CANDIDATE_KINDS.PUBLIC) return NAT_CANDIDATE_KINDS.PUBLIC;
+    if (value === NAT_CANDIDATE_KINDS.PEER) return NAT_CANDIDATE_KINDS.PEER;
+    if (value === NAT_CANDIDATE_KINDS.UNKNOWN) return NAT_CANDIDATE_KINDS.UNKNOWN;
+    return NAT_CANDIDATE_KINDS.LOCAL;
+  }
+  function sanitizeNatCandidate(candidate = {}, fallbackKind = NAT_CANDIDATE_KINDS.UNKNOWN) {
+    const ip = String(candidate?.ip || '').trim();
+    const port = Number(candidate?.port);
+    if (!ip || !Number.isFinite(port) || port <= 0) return null;
+    return {
+      kind: sanitizeNatCandidateKind(candidate?.kind || fallbackKind),
+      ip,
+      port,
+      protocol: String(candidate?.protocol || 'udp').trim().toLowerCase() || 'udp',
+      source: String(candidate?.source || '').trim() || 'unknown',
+      discoveredAt: typeof candidate?.discoveredAt === 'string' ? candidate.discoveredAt : new Date().toISOString()
+    };
+  }
+  function dedupeNatCandidates(candidates = []) {
+    const normalized = [];
+    const seen = new Set();
+    for (const entry of Array.isArray(candidates) ? candidates : []) {
+      const candidate = sanitizeNatCandidate(entry, entry?.kind || NAT_CANDIDATE_KINDS.UNKNOWN);
+      if (!candidate) continue;
+      const key = `${candidate.kind}:${candidate.protocol}:${candidate.ip}:${candidate.port}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      normalized.push(candidate);
+    }
+    return normalized;
+  }
+  function createDefaultNatProbeState(seed = {}) {
+    return {
+      status: Object.values(NAT_PROBE_STATES).includes(seed?.status) ? seed.status : NAT_PROBE_STATES.IDLE,
+      lastStartedAt: typeof seed?.lastStartedAt === 'string' ? seed.lastStartedAt : '',
+      lastCompletedAt: typeof seed?.lastCompletedAt === 'string' ? seed.lastCompletedAt : '',
+      lastSuccessAt: typeof seed?.lastSuccessAt === 'string' ? seed.lastSuccessAt : '',
+      lastFailureAt: typeof seed?.lastFailureAt === 'string' ? seed.lastFailureAt : '',
+      lastError: typeof seed?.lastError === 'string' ? seed.lastError : ''
+    };
+  }
+  function createDefaultNatSlotState(seed = {}) {
+    return {
+      localCandidates: dedupeNatCandidates(seed?.localCandidates),
+      publicCandidates: dedupeNatCandidates(seed?.publicCandidates),
+      lastGatheredAt: typeof seed?.lastGatheredAt === 'string' ? seed.lastGatheredAt : '',
+      summaryStatus: typeof seed?.summaryStatus === 'string' ? seed.summaryStatus : NAT_DISCOVERY_STATES.IDLE
+    };
+  }
+  function createDefaultNatRuntimeState(seed = {}) {
+    const probes = {};
+    if (seed?.probes && typeof seed.probes === 'object') {
+      for (const [key, value] of Object.entries(seed.probes)) {
+        probes[key] = createDefaultNatProbeState(value);
+      }
+    }
+    return {
+      status: Object.values(NAT_DISCOVERY_STATES).includes(seed?.status) ? seed.status : NAT_DISCOVERY_STATES.IDLE,
+      gatherer: {
+        status: Object.values(NAT_DISCOVERY_STATES).includes(seed?.gatherer?.status) ? seed.gatherer.status : NAT_DISCOVERY_STATES.IDLE,
+        source: typeof seed?.gatherer?.source === 'string' ? seed.gatherer.source : 'none',
+        lastStartedAt: typeof seed?.gatherer?.lastStartedAt === 'string' ? seed.gatherer.lastStartedAt : '',
+        lastCompletedAt: typeof seed?.gatherer?.lastCompletedAt === 'string' ? seed.gatherer.lastCompletedAt : '',
+        lastError: typeof seed?.gatherer?.lastError === 'string' ? seed.gatherer.lastError : ''
+      },
+      slots: {
+        A: createDefaultNatSlotState(seed?.slots?.A),
+        B: createDefaultNatSlotState(seed?.slots?.B)
+      },
+      probes
     };
   }
   function createDefaultAppStateV2(seed = {}) {
@@ -634,6 +739,40 @@ import { createManagedController } from './managed-controller.js';
   }
   function clearAllManagedSlotResolvedPeers() {
     for (const slotId of getManagedSlotIds()) clearManagedSlotResolvedPeers(slotId);
+  }
+  function getNatSlotState(slotId = DEFAULT_MANAGED_SLOT_ID) {
+    const managedSlotId = sanitizeManagedSlotId(slotId);
+    return natRuntime?.slots?.[managedSlotId] || createDefaultNatRuntimeState().slots[managedSlotId];
+  }
+  function setNatSlotCandidates(slotId, patch = {}) {
+    const managedSlotId = sanitizeManagedSlotId(slotId);
+    natRuntime.slots[managedSlotId] = createDefaultNatSlotState({
+      ...getNatSlotState(managedSlotId),
+      ...patch,
+      localCandidates: patch.localCandidates ?? getNatSlotState(managedSlotId).localCandidates,
+      publicCandidates: patch.publicCandidates ?? getNatSlotState(managedSlotId).publicCandidates
+    });
+    return getNatSlotState(managedSlotId);
+  }
+  function setNatCandidatesForAllSlots(patch = {}) {
+    for (const slotId of getManagedSlotIds()) setNatSlotCandidates(slotId, patch);
+  }
+  function getNatPublicCandidates(slotId = getActiveManagedSlotId()) {
+    return dedupeNatCandidates(getNatSlotState(slotId).publicCandidates);
+  }
+  function getNatLocalCandidates(slotId = getActiveManagedSlotId()) {
+    return dedupeNatCandidates(getNatSlotState(slotId).localCandidates);
+  }
+  function getManagedPresenceEndpoints() {
+    return buildManagedPresenceEndpoints({
+      localPort: settings.localPort,
+      runtimeConfig: getManagedRuntimeConfig(),
+      additionalEndpoints: getNatPublicCandidates(getActiveManagedSlotId()).map((candidate) => ({
+        kind: candidate.kind,
+        ip: candidate.ip,
+        port: candidate.port
+      }))
+    });
   }
   function getManagedJoinPasscode(slotId = getActiveManagedSlotId()) {
     const managedSlotId = sanitizeManagedSlotId(slotId);
@@ -974,6 +1113,8 @@ import { createManagedController } from './managed-controller.js';
     renderManagedShell,
     persistAppState,
     syncTransportPeerRows,
+    getManagedPresenceEndpoints,
+    ensureManagedNatDiscovery,
     ensureManagedTransportConnected,
     isTransportConnected: () => connected,
     disconnectTransport: () => doDisconnect(),
@@ -1009,8 +1150,8 @@ import { createManagedController } from './managed-controller.js';
   async function refreshManagedChannels(options = {}) {
     return managedController.refreshManagedChannels(options);
   }
-  async function sendManagedPresence() {
-    return managedController.sendManagedPresence();
+  async function sendManagedPresence(slotId) {
+    return managedController.sendManagedPresence(slotId);
   }
   async function refreshManagedPeers(options = {}) {
     return managedController.refreshManagedPeers(options);
@@ -1022,10 +1163,18 @@ import { createManagedController } from './managed-controller.js';
     return managedController.leaveManagedChannel(options);
   }
   async function handleManagedSessionOpen() {
-    return managedController.handleManagedSessionOpen();
+    const result = await managedController.handleManagedSessionOpen();
+    if (getOperatingMode() === OPERATING_MODES.MANAGED) {
+      await refreshManagedNatDiscovery({ silent: true });
+    }
+    return result;
   }
   async function handleManagedRefreshChannels() {
-    return managedController.handleManagedRefreshChannels();
+    const result = await managedController.handleManagedRefreshChannels();
+    if (getOperatingMode() === OPERATING_MODES.MANAGED) {
+      await refreshManagedNatDiscovery({ silent: true });
+    }
+    return result;
   }
   async function handleManagedRefreshPeers() {
     return managedController.handleManagedRefreshPeers();
@@ -1207,6 +1356,236 @@ import { createManagedController } from './managed-controller.js';
     }
     return rows.sort((left, right) => `${left.slotId}:${left.displayName}:${left.ip}:${left.port}`.localeCompare(`${right.slotId}:${right.displayName}:${right.ip}:${right.port}`));
   }
+  function parseIceCandidateString(candidateString) {
+    const parts = String(candidateString || '').trim().split(/\s+/);
+    if (parts[0]?.indexOf('candidate:') !== 0 || parts.length < 8) return null;
+    let type = '';
+    for (let index = 6; index < parts.length; index += 1) {
+      if (parts[index] === 'typ' && parts[index + 1]) {
+        type = parts[index + 1];
+        break;
+      }
+    }
+    return {
+      protocol: String(parts[2] || '').toLowerCase(),
+      ip: String(parts[4] || '').trim(),
+      port: Number(parts[5]),
+      type
+    };
+  }
+  function buildLocalNatCandidatesFromRuntime() {
+    return dedupeNatCandidates(buildManagedLocalCandidates({
+      localPort: settings.localPort,
+      runtimeConfig: getManagedRuntimeConfig()
+    }).map((candidate) => ({
+      ...candidate,
+      protocol: 'udp',
+      source: 'runtime-config',
+      discoveredAt: new Date().toISOString()
+    })));
+  }
+  function getNatGatherSourceLabel() {
+    const urls = getManagedRuntimeConfig()?.managedStunServerUrls || [];
+    return urls.length ? 'stun' : 'none';
+  }
+  function buildIceServersForNatDiscovery() {
+    const urls = Array.isArray(getManagedRuntimeConfig()?.managedStunServerUrls) && getManagedRuntimeConfig().managedStunServerUrls.length
+      ? getManagedRuntimeConfig().managedStunServerUrls
+      : DEFAULT_MANAGED_STUN_SERVER_URLS;
+    return urls.map((url) => ({ urls: url }));
+  }
+  function applyNatGatherResult(result = {}, options = {}) {
+    const discoveredAt = new Date().toISOString();
+    const localCandidates = dedupeNatCandidates([
+      ...buildLocalNatCandidatesFromRuntime(),
+      ...((Array.isArray(result?.localCandidates) ? result.localCandidates : []).map((candidate) => ({
+        ...candidate,
+        kind: NAT_CANDIDATE_KINDS.LOCAL,
+        source: candidate?.source || 'stun'
+      })))
+    ]);
+    const publicCandidates = dedupeNatCandidates(
+      (Array.isArray(result?.publicCandidates) ? result.publicCandidates : []).map((candidate) => ({
+        ...candidate,
+        kind: NAT_CANDIDATE_KINDS.PUBLIC,
+        source: candidate?.source || 'stun'
+      }))
+    );
+    natRuntime.gatherer.status = NAT_DISCOVERY_STATES.READY;
+    natRuntime.gatherer.source = getNatGatherSourceLabel();
+    natRuntime.gatherer.lastCompletedAt = discoveredAt;
+    natRuntime.gatherer.lastError = '';
+    natRuntime.status = NAT_DISCOVERY_STATES.READY;
+    setNatCandidatesForAllSlots({
+      localCandidates,
+      publicCandidates,
+      lastGatheredAt: discoveredAt,
+      summaryStatus: publicCandidates.length ? NAT_DISCOVERY_STATES.READY : NAT_DISCOVERY_STATES.IDLE
+    });
+    if (options.publishPresence && getManagedSession().sessionId) {
+      for (const slotId of getManagedSlotIds().filter((entry) => !!getManagedSlot(entry).channelId)) {
+        sendManagedPresence(slotId).catch((error) => {
+          console.error('managed nat presence refresh error', error);
+        });
+      }
+    }
+  }
+  function applyNatGatherFailure(error) {
+    const localCandidates = buildLocalNatCandidatesFromRuntime();
+    const completedAt = new Date().toISOString();
+    natRuntime.gatherer.status = NAT_DISCOVERY_STATES.FAILED;
+    natRuntime.gatherer.source = getNatGatherSourceLabel();
+    natRuntime.gatherer.lastCompletedAt = completedAt;
+    natRuntime.gatherer.lastError = error?.message || 'Failed to gather NAT candidates.';
+    natRuntime.status = NAT_DISCOVERY_STATES.FAILED;
+    setNatCandidatesForAllSlots({
+      localCandidates,
+      publicCandidates: [],
+      lastGatheredAt: completedAt,
+      summaryStatus: localCandidates.length ? NAT_DISCOVERY_STATES.READY : NAT_DISCOVERY_STATES.FAILED
+    });
+  }
+  function getNatStatusText(slotId = getActiveManagedSlotId()) {
+    const slotState = getNatSlotState(slotId);
+    const localCount = slotState.localCandidates.length;
+    const publicCount = slotState.publicCandidates.length;
+    if (natRuntime.gatherer.status === NAT_DISCOVERY_STATES.GATHERING) {
+      return 'NAT readiness: gathering local and mapped public candidates.';
+    }
+    if (natRuntime.gatherer.status === NAT_DISCOVERY_STATES.FAILED) {
+      return `NAT readiness: ${localCount} local candidate(s) | mapped public candidate discovery failed.`;
+    }
+    if (publicCount) {
+      return `NAT readiness: ${localCount} local | ${publicCount} mapped public candidate(s) | advisory until transport-authoritative probing exists.`;
+    }
+    if (slotState.lastGatheredAt) {
+      return `NAT readiness: ${localCount} local candidate(s) | no mapped public candidate discovered.`;
+    }
+    if (localCount) {
+      return `NAT readiness: ${localCount} local candidate(s) ready | mapped public candidate not gathered yet.`;
+    }
+    return 'NAT readiness not evaluated yet.';
+  }
+  async function gatherNatCandidatesWithWebRtc() {
+    if (testPlatform) {
+      if (natMockDiscoveryResult?.errorMessage) {
+        throw new Error(natMockDiscoveryResult.errorMessage);
+      }
+      if (natMockDiscoveryResult) {
+        return {
+          localCandidates: natMockDiscoveryResult.localCandidates || [],
+          publicCandidates: natMockDiscoveryResult.publicCandidates || []
+        };
+      }
+      return {
+        localCandidates: [],
+        publicCandidates: []
+      };
+    }
+    if (typeof RTCPeerConnection !== 'function') {
+      throw new Error('RTCPeerConnection is unavailable for NAT discovery.');
+    }
+    return new Promise((resolve, reject) => {
+      const peerConnection = new RTCPeerConnection({
+        iceServers: buildIceServersForNatDiscovery()
+      });
+      const publicCandidates = [];
+      const localCandidates = [];
+      let settled = false;
+      const complete = () => {
+        if (settled) return;
+        settled = true;
+        try { peerConnection.close(); } catch {}
+        resolve({ localCandidates, publicCandidates });
+      };
+      const fail = (error) => {
+        if (settled) return;
+        settled = true;
+        try { peerConnection.close(); } catch {}
+        reject(error);
+      };
+      const timeout = window.setTimeout(() => complete(), 4000);
+      peerConnection.createDataChannel('udp1492-nat');
+      peerConnection.onicecandidate = (event) => {
+        if (!event.candidate) {
+          window.clearTimeout(timeout);
+          complete();
+          return;
+        }
+        const parsed = parseIceCandidateString(event.candidate.candidate);
+        if (!parsed || parsed.protocol !== 'udp') return;
+        if (parsed.type === 'srflx') {
+          publicCandidates.push({
+            kind: NAT_CANDIDATE_KINDS.PUBLIC,
+            ip: parsed.ip,
+            port: parsed.port,
+            protocol: parsed.protocol,
+            source: 'stun'
+          });
+        } else if (parsed.type === 'host') {
+          localCandidates.push({
+            kind: NAT_CANDIDATE_KINDS.LOCAL,
+            ip: parsed.ip,
+            port: parsed.port,
+            protocol: parsed.protocol,
+            source: 'stun'
+          });
+        }
+      };
+      peerConnection.createOffer()
+        .then((offer) => peerConnection.setLocalDescription(offer))
+        .catch((error) => {
+          window.clearTimeout(timeout);
+          fail(error);
+        });
+    });
+  }
+  async function ensureManagedNatDiscovery(options = {}) {
+    if (!options.force && !natDiscoveryPromise) {
+      const activeSlotState = getNatSlotState(getActiveManagedSlotId());
+      if (
+        natRuntime.gatherer.status === NAT_DISCOVERY_STATES.READY
+        || activeSlotState.lastGatheredAt
+        || natRuntime.gatherer.status === NAT_DISCOVERY_STATES.FAILED
+      ) {
+        return {
+          localCandidates: getNatLocalCandidates(),
+          publicCandidates: getNatPublicCandidates()
+        };
+      }
+    }
+    if (natDiscoveryPromise) return natDiscoveryPromise;
+    natRuntime.gatherer.status = NAT_DISCOVERY_STATES.GATHERING;
+    natRuntime.gatherer.source = getNatGatherSourceLabel();
+    natRuntime.gatherer.lastStartedAt = new Date().toISOString();
+    natRuntime.gatherer.lastError = '';
+    natRuntime.status = NAT_DISCOVERY_STATES.GATHERING;
+    renderManagedShell();
+    queueAdminSnapshotPublish();
+    natDiscoveryPromise = gatherNatCandidatesWithWebRtc()
+      .then((result) => {
+        applyNatGatherResult(result, options);
+        return result;
+      })
+      .catch((error) => {
+        applyNatGatherFailure(error);
+        if (!options.silent) throw error;
+        return { localCandidates: getNatLocalCandidates(), publicCandidates: [] };
+      })
+      .finally(() => {
+        natDiscoveryPromise = null;
+        renderManagedShell();
+        queueAdminSnapshotPublish();
+      });
+    return natDiscoveryPromise;
+  }
+  async function refreshManagedNatDiscovery(options = {}) {
+    return ensureManagedNatDiscovery({
+      ...options,
+      force: true,
+      publishPresence: !!options.publishPresence
+    });
+  }
   function buildAdminSnapshot() {
     return {
       generatedAt: new Date().toISOString(),
@@ -1230,7 +1609,8 @@ import { createManagedController } from './managed-controller.js';
         channels: buildAdminChannelSnapshot(),
         slots: buildAdminSlotSnapshot(),
         joinedSlotCount: getManagedJoinedSlotCount(),
-        resolvedEndpoints: buildAdminResolvedEndpointSnapshot()
+        resolvedEndpoints: buildAdminResolvedEndpointSnapshot(),
+        nat: structuredClone(natRuntime)
       },
       stats: {
         activeTransportPeerCount: activePeers.size,
@@ -1298,6 +1678,9 @@ import { createManagedController } from './managed-controller.js';
           throw new Error('Open a managed session before refreshing admin data.');
         }
         await refreshManagedChannels({ slotId: getActiveManagedSlotId() });
+      }
+      if (normalizedAction === ADMIN_REFRESH_ACTIONS.ALL) {
+        await refreshManagedNatDiscovery({ silent: true, publishPresence: true });
       }
       if (normalizedAction === ADMIN_REFRESH_ACTIONS.PEERS) {
         await refreshAllManagedPeersForAdmin();
@@ -1447,6 +1830,9 @@ import { createManagedController } from './managed-controller.js';
     if (managedPeerSyncMetaEl) {
       managedPeerSyncMetaEl.textContent = activeSlotView.peerSyncText;
     }
+    if (managedNatStatusEl) {
+      managedNatStatusEl.textContent = getNatStatusText(activeSlotId);
+    }
     if (managedRoutingStatusEl) {
       managedRoutingStatusEl.hidden = operatingMode !== OPERATING_MODES.MANAGED;
       managedRoutingStatusEl.textContent = getManagedRoutingSummary();
@@ -1528,6 +1914,9 @@ import { createManagedController } from './managed-controller.js';
     syncManagedInputButtonState();
     if (managedRefreshChannelsBtn) {
       managedRefreshChannelsBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || !managedSession.sessionId;
+    }
+    if (managedRefreshNatBtn) {
+      managedRefreshNatBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || natRuntime.gatherer.status === NAT_DISCOVERY_STATES.GATHERING;
     }
     if (managedRefreshPeersBtn) {
       managedRefreshPeersBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || !activeSlotView.slotState.channelId;
@@ -3002,6 +3391,16 @@ import { createManagedController } from './managed-controller.js';
     };
     window.udp1492AdminDebug = {
       getSnapshot: () => structuredClone(buildAdminSnapshot())
+    };
+    window.udp1492NatDebug = {
+      getSnapshot: () => structuredClone(natRuntime),
+      setMockDiscoveryResult: (value) => {
+        natMockDiscoveryResult = value ? structuredClone(value) : null;
+      },
+      clearMockDiscoveryResult: () => {
+        natMockDiscoveryResult = null;
+      },
+      refresh: (options = {}) => refreshManagedNatDiscovery(options)
     };
   }
 

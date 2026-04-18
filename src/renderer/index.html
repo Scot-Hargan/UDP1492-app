@@ -87,6 +87,7 @@
           </div>
           <p id="managedIntentStatus" class="managed-intent-status" hidden></p>
           <p id="managedPeerSyncMeta" class="managed-card-foot">No managed peer sync yet</p>
+          <p id="managedNatStatus" class="managed-slot-copy">NAT readiness not evaluated yet.</p>
           <p id="managedRoutingStatus" class="managed-slot-copy">Managed routing: Group A left | Group B right | shared peers centered.</p>
           <section class="managed-commander-panel" aria-label="Commander controls">
             <div class="managed-commander-row">
@@ -145,6 +146,7 @@
           </label>
           <p id="managedErrorText" class="managed-error" hidden></p>
           <div class="managed-actions">
+            <button id="managedRefreshNatBtn" class="secondary" type="button">Refresh NAT</button>
             <button id="managedRefreshPeersBtn" class="secondary" type="button">Refresh Peers</button>
             <button id="managedLeaveChannelBtn" class="danger" type="button">Leave Channel</button>
           </div>

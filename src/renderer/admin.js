@@ -1,4 +1,4 @@
-// admin.js v0.1.0
+// admin.js v0.1.1
 (() => {
   'use strict';
 
@@ -19,6 +19,11 @@
   const adminSlotsGridEl = $('#adminSlotsGrid');
   const adminEndpointsMetaEl = $('#adminEndpointsMeta');
   const adminEndpointTableBodyEl = $('#adminEndpointTable tbody');
+  const adminNatMetaEl = $('#adminNatMeta');
+  const adminNatStatusEl = $('#adminNatStatus');
+  const adminNatSummaryEl = $('#adminNatSummary');
+  const adminNatErrorEl = $('#adminNatError');
+  const adminNatCandidateListEl = $('#adminNatCandidateList');
   const adminStatsMetaEl = $('#adminStatsMeta');
   const adminStatsGridEl = $('#adminStatsGrid');
   const adminRefreshAllBtn = $('#adminRefreshAllBtn');
@@ -36,6 +41,29 @@
 
   function formatMetricValue(value, suffix = '') {
     return Number.isFinite(value) ? `${value}${suffix}` : '--';
+  }
+
+  function formatNatStatusLabel(status) {
+    const normalized = String(status || 'idle').trim();
+    if (!normalized) return 'Idle';
+    return normalized
+      .split('_')
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  }
+
+  function buildNatCandidateRows(nextSnapshot) {
+    const slotStates = nextSnapshot?.managed?.nat?.slots || {};
+    return ['A', 'B'].flatMap((slotId) => {
+      const slotState = slotStates?.[slotId] || {};
+      const localCandidates = Array.isArray(slotState.localCandidates) ? slotState.localCandidates : [];
+      const publicCandidates = Array.isArray(slotState.publicCandidates) ? slotState.publicCandidates : [];
+      return [...localCandidates, ...publicCandidates].map((candidate) => ({
+        slotId,
+        ...candidate
+      }));
+    });
   }
 
   function setButtonBusyState(nextSnapshot) {
@@ -80,6 +108,20 @@
       const row = document.createElement('tr');
       row.innerHTML = '<td colspan="8">No resolved endpoints have been published yet.</td>';
       adminEndpointTableBodyEl.appendChild(row);
+    }
+    if (adminNatMetaEl) adminNatMetaEl.textContent = 'No candidate data';
+    if (adminNatStatusEl) adminNatStatusEl.textContent = 'Idle';
+    if (adminNatSummaryEl) adminNatSummaryEl.textContent = 'No NAT discovery has been attempted yet.';
+    if (adminNatErrorEl) {
+      adminNatErrorEl.hidden = true;
+      adminNatErrorEl.textContent = '';
+    }
+    if (adminNatCandidateListEl) {
+      adminNatCandidateListEl.innerHTML = '';
+      const item = document.createElement('div');
+      item.className = 'admin-candidate-item';
+      item.innerHTML = '<strong>No candidates</strong><span class="admin-candidate-meta">Open managed mode and refresh NAT readiness to populate this view.</span>';
+      adminNatCandidateListEl.appendChild(item);
     }
     if (adminStatsMetaEl) adminStatsMetaEl.textContent = 'No stats yet';
     if (adminStatsGridEl) {
@@ -245,6 +287,72 @@
     }
   }
 
+  function renderNat(nextSnapshot) {
+    const nat = nextSnapshot?.managed?.nat || {};
+    const gatherer = nat.gatherer || {};
+    const slotStates = nat.slots || {};
+    const candidateRows = buildNatCandidateRows(nextSnapshot);
+    const localCount = candidateRows.filter((candidate) => candidate.kind === 'local').length;
+    const publicCount = candidateRows.filter((candidate) => candidate.kind === 'public').length;
+    const activeSlotId = nextSnapshot?.managed?.activeSlotId || 'A';
+    const activeSlotState = slotStates?.[activeSlotId] || {};
+    const activeLocalCount = Array.isArray(activeSlotState.localCandidates) ? activeSlotState.localCandidates.length : 0;
+    const activePublicCount = Array.isArray(activeSlotState.publicCandidates) ? activeSlotState.publicCandidates.length : 0;
+
+    if (adminNatMetaEl) {
+      adminNatMetaEl.textContent = candidateRows.length
+        ? `${localCount} local | ${publicCount} public${gatherer.lastCompletedAt ? ` | updated ${formatTimestamp(gatherer.lastCompletedAt)}` : ''}`
+        : 'No candidate data';
+    }
+    if (adminNatStatusEl) {
+      adminNatStatusEl.textContent = formatNatStatusLabel(gatherer.status || nat.status || 'idle');
+    }
+    if (adminNatSummaryEl) {
+      if (gatherer.status === 'gathering') {
+        adminNatSummaryEl.textContent = `Gathering local and mapped public candidates for Group ${activeSlotId}.`;
+      } else if (gatherer.status === 'failed') {
+        adminNatSummaryEl.textContent = `Group ${activeSlotId} retained ${activeLocalCount} local candidate(s), but mapped public candidate discovery failed.`;
+      } else if (activePublicCount) {
+        adminNatSummaryEl.textContent = `Group ${activeSlotId} currently has ${activeLocalCount} local and ${activePublicCount} mapped public candidate(s). Public mappings remain advisory until transport-authoritative probing exists.`;
+      } else if (activeLocalCount) {
+        adminNatSummaryEl.textContent = `Group ${activeSlotId} currently has ${activeLocalCount} local candidate(s) and no mapped public candidate.`;
+      } else {
+        adminNatSummaryEl.textContent = 'No NAT discovery has been attempted yet.';
+      }
+    }
+    if (adminNatErrorEl) {
+      const errorMessage = String(gatherer.lastError || '');
+      adminNatErrorEl.hidden = !errorMessage;
+      adminNatErrorEl.textContent = errorMessage;
+    }
+    if (!adminNatCandidateListEl) return;
+    adminNatCandidateListEl.innerHTML = '';
+    if (!candidateRows.length) {
+      const item = document.createElement('div');
+      item.className = 'admin-candidate-item';
+      item.innerHTML = '<strong>No candidates</strong><span class="admin-candidate-meta">No local or mapped public candidates are available in the current snapshot.</span>';
+      adminNatCandidateListEl.appendChild(item);
+      return;
+    }
+    for (const candidate of candidateRows.sort((left, right) => {
+      return `${left.slotId}:${left.kind}:${left.ip}:${left.port}`.localeCompare(`${right.slotId}:${right.kind}:${right.ip}:${right.port}`);
+    })) {
+      const item = document.createElement('div');
+      item.className = 'admin-candidate-item';
+      const title = document.createElement('strong');
+      title.textContent = `Group ${candidate.slotId} | ${formatNatStatusLabel(candidate.kind || 'unknown')}`;
+      const meta = document.createElement('span');
+      meta.className = 'admin-candidate-meta';
+      const endpoint = candidate.ip && candidate.port ? `${candidate.ip}:${candidate.port}` : 'Unknown endpoint';
+      const protocol = candidate.protocol ? String(candidate.protocol).toUpperCase() : 'UDP';
+      const source = candidate.source ? ` | ${candidate.source}` : '';
+      const discoveredAt = candidate.discoveredAt ? ` | ${formatTimestamp(candidate.discoveredAt)}` : '';
+      meta.textContent = `${endpoint} | ${protocol}${source}${discoveredAt}`;
+      item.append(title, meta);
+      adminNatCandidateListEl.appendChild(item);
+    }
+  }
+
   function render(nextSnapshot) {
     snapshot = nextSnapshot;
     if (!snapshot) {
@@ -294,6 +402,7 @@
     renderChannels(snapshot);
     renderSlots(snapshot);
     renderEndpoints(snapshot);
+    renderNat(snapshot);
     renderStats(snapshot);
     setButtonBusyState(snapshot);
   }

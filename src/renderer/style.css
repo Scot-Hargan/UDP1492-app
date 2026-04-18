@@ -138,6 +138,34 @@ body[data-operating-mode="managed"] .direct-only {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.admin-nat-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.admin-candidate-list {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-candidate-item {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+}
+
+.admin-candidate-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 .admin-stat-card {
   display: grid;
   gap: 6px;
@@ -1325,6 +1353,7 @@ button.danger:hover {
   .admin-header,
   .admin-overview-grid,
   .admin-grid,
+  .admin-nat-grid,
   .admin-stats-grid {
     grid-template-columns: 1fr;
   }

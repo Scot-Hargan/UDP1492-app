@@ -1,7 +1,6 @@
 import { ManagedApiError, createManagedApiClient } from './managed-api.js';
 import {
   DEFAULT_RUNTIME_CONFIG,
-  buildManagedPresenceEndpoints,
   createRuntimeConfig,
   getConfiguredManagedBaseUrl,
   getEffectiveManagedBaseUrl,
@@ -464,10 +463,9 @@ export function createManagedController(deps) {
         slotId: targetSlotId,
         onlineState: 'online',
         clientVersion: deps.version,
-        endpoints: buildManagedPresenceEndpoints({
-          localPort: deps.getSettings().localPort,
-          runtimeConfig
-        })
+        endpoints: typeof deps.getManagedPresenceEndpoints === 'function'
+          ? deps.getManagedPresenceEndpoints(targetSlotId)
+          : []
       });
     } catch (error) {
       if (await recoverManagedApiError(error, 'Managed presence update failed.', targetSlotId)) return null;
@@ -588,6 +586,9 @@ export function createManagedController(deps) {
     clearSlotError(slotId);
     updateManagedSessionStatus('joined');
     deps.setManagedJoinPasscode(slotId, '');
+    if (typeof deps.ensureManagedNatDiscovery === 'function') {
+      await deps.ensureManagedNatDiscovery({ silent: true });
+    }
     await deps.ensureManagedTransportConnected();
     await sendManagedPresence(slotId);
     await refreshManagedPeers(slotId, { ensureTransport: false });
