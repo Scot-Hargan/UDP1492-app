@@ -1,4 +1,4 @@
-// admin.js v0.1.2
+// admin.js v0.1.3
 (() => {
   'use strict';
 
@@ -314,6 +314,8 @@
     const readyProbeCount = probeRows.filter((probe) => probe.status === 'ready').length;
     const probingProbeCount = probeRows.filter((probe) => probe.status === 'probing').length;
     const succeededProbeCount = probeRows.filter((probe) => probe.status === 'succeeded').length;
+    const transportSucceededProbeCount = probeRows.filter((probe) => probe.status === 'succeeded' && probe.authority === 'transport').length;
+    const advisorySucceededProbeCount = probeRows.filter((probe) => probe.status === 'succeeded' && probe.authority !== 'transport').length;
     const timedOutProbeCount = probeRows.filter((probe) => probe.status === 'timed_out').length;
     const failedProbeCount = probeRows.filter((probe) => probe.status === 'failed').length;
     const activeSlotId = nextSnapshot?.managed?.activeSlotId || 'A';
@@ -338,6 +340,10 @@
         adminNatSummaryEl.textContent = `Group ${activeSlotId} currently has ${timedOutProbeCount} peer probe(s) timed out while session and peer state remain healthy.`;
       } else if (failedProbeCount) {
         adminNatSummaryEl.textContent = `Group ${activeSlotId} currently has ${failedProbeCount} peer probe(s) failed while session and peer state remain healthy.`;
+      } else if (transportSucceededProbeCount) {
+        adminNatSummaryEl.textContent = `Group ${activeSlotId} currently has ${transportSucceededProbeCount} transport-authoritative peer probe(s) succeeded.`;
+      } else if (advisorySucceededProbeCount) {
+        adminNatSummaryEl.textContent = `Group ${activeSlotId} currently has ${advisorySucceededProbeCount} advisory peer probe(s) succeeded.`;
       } else if (succeededProbeCount) {
         adminNatSummaryEl.textContent = `Group ${activeSlotId} currently has ${succeededProbeCount} peer probe(s) succeeded.`;
       } else if (readyProbeCount) {
@@ -402,6 +408,8 @@
       const endpoint = probe.ip && probe.port ? `${probe.ip}:${probe.port}` : (probe.peerKey || 'Unknown endpoint');
       const detailParts = [endpoint];
       if (probe.endpointKind) detailParts.push(formatNatStatusLabel(probe.endpointKind));
+      if (probe.authority) detailParts.push(probe.authority === 'transport' ? 'Transport evidence' : 'Advisory');
+      if (Number.isFinite(Number(probe.lastRttMs))) detailParts.push(`${Math.round(Number(probe.lastRttMs))} ms`);
       if (probe.lastCompletedAt) detailParts.push(formatTimestamp(probe.lastCompletedAt));
       if (probe.lastError) detailParts.push(probe.lastError);
       meta.textContent = detailParts.filter(Boolean).join(' | ');

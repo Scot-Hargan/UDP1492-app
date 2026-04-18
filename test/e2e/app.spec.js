@@ -656,7 +656,7 @@ test.describe('peer fixture', () => {
       await page.getByRole('button', { name: 'Join Selected' }).click();
       await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
       await expect(page.locator('#managedGroupAStatus')).toContainText('joined');
-      await expect(page.locator('#managedNatStatus')).toContainText('1 peer probe(s) succeeded');
+      await expect(page.locator('#managedNatStatus')).toContainText('1 advisory probe(s) succeeded');
 
       expect(presenceRequests).toHaveLength(1);
       expect(presenceRequests[0].payload.endpoints).toEqual([
@@ -666,11 +666,56 @@ test.describe('peer fixture', () => {
 
       const adminPage = await openAdminWindow(appHarness);
       await expect(adminPage.locator('#adminNatStatus')).toHaveText('Ready');
-      await expect(adminPage.locator('#adminNatSummary')).toContainText('1 peer probe(s) succeeded');
+      await expect(adminPage.locator('#adminNatSummary')).toContainText('1 advisory peer probe(s) succeeded');
       await expect(adminPage.locator('#adminNatCandidateList')).toContainText('10.0.0.25:1492');
       await expect(adminPage.locator('#adminNatCandidateList')).toContainText('198.51.100.77:62000');
       await expect(adminPage.locator('#adminNatProbeList')).toContainText('Peer One');
       await expect(adminPage.locator('#adminNatProbeList')).toContainText('Succeeded');
+      await expect(adminPage.locator('#adminNatProbeList')).toContainText('Advisory');
+
+      await clearNatMockDiscoveryResult(page);
+      await clearNatMockProbeResults(page);
+    });
+
+    test('upgrades NAT probe state when host transport evidence arrives from the real UDP peer path', async ({ appHarness }) => {
+      const { page, emitHostMessage } = appHarness;
+      const { baseUrl } = await installManagedApiRoutes(page);
+
+      await setNatMockDiscoveryResult(page, {
+        publicCandidates: [
+          {
+            kind: 'public',
+            ip: '198.51.100.77',
+            port: 62000,
+            protocol: 'udp',
+            source: 'stun'
+          }
+        ]
+      });
+
+      await page.locator('#operatingModeManaged').click();
+      await page.locator('#managedDisplayNameInput').fill('Scot');
+      await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+      await page.locator('#managedOpenSessionBtn').click();
+      await page.getByRole('button', { name: 'Join Selected' }).click();
+
+      await expect(page.locator('#managedNatStatus')).toContainText('peer probe(s) in progress');
+
+      await emitHostMessage({
+        type: 'pingHistory',
+        peerKey: '198.51.100.10:1492',
+        pingHistory: [
+          { sent: 1000000, received: 1012000, rtt: 12000 }
+        ]
+      });
+
+      await expect(page.locator('#managedNatStatus')).toContainText('1 transport-authoritative probe(s) succeeded');
+
+      const adminPage = await openAdminWindow(appHarness);
+      await expect(adminPage.locator('#adminNatSummary')).toContainText('transport-authoritative peer probe(s) succeeded');
+      await expect(adminPage.locator('#adminNatProbeList')).toContainText('Peer One');
+      await expect(adminPage.locator('#adminNatProbeList')).toContainText('Transport evidence');
+      await expect(adminPage.locator('#adminNatProbeList')).toContainText('12 ms');
 
       await clearNatMockDiscoveryResult(page);
       await clearNatMockProbeResults(page);

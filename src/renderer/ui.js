@@ -47,10 +47,10 @@ import {
   DEFAULT_MANAGED_STUN_SERVER_URLS
 } from './managed-runtime.js';
 
-// ui.js v0.4.21
+// ui.js v0.4.22
 (() => {
   'use strict';
-  const VERSION = '0.4.21';
+  const VERSION = '0.4.22';
   const platform = window.udp1492;
   const testPlatform = window.udp1492Test || null;
 
@@ -355,6 +355,7 @@ import {
   let natDiscoveryPromise = null;
   let natMockDiscoveryResult = null;
   let natMockProbeResults = {};
+  const natProbeTimeouts = new Map();
 
   function sanitizeOperatingMode(mode) {
     return mode === OPERATING_MODES.MANAGED ? OPERATING_MODES.MANAGED : OPERATING_MODES.DIRECT;
@@ -546,8 +547,10 @@ import {
       peerKey: typeof seed?.peerKey === 'string' ? seed.peerKey : '',
       displayName: typeof seed?.displayName === 'string' ? seed.displayName : '',
       endpointKind: sanitizeNatCandidateKind(seed?.endpointKind || NAT_CANDIDATE_KINDS.UNKNOWN),
+      authority: seed?.authority === 'transport' ? 'transport' : 'advisory',
       ip: typeof seed?.ip === 'string' ? seed.ip : '',
       port: Number.isFinite(Number(seed?.port)) ? Number(seed.port) : 0,
+      lastRttMs: Number.isFinite(Number(seed?.lastRttMs)) ? Number(seed.lastRttMs) : null,
       lastStartedAt: typeof seed?.lastStartedAt === 'string' ? seed.lastStartedAt : '',
       lastCompletedAt: typeof seed?.lastCompletedAt === 'string' ? seed.lastCompletedAt : '',
       lastSuccessAt: typeof seed?.lastSuccessAt === 'string' ? seed.lastSuccessAt : '',
@@ -599,6 +602,11 @@ import {
   }
   function removeNatProbeState(probeKey) {
     if (!probeKey || !natRuntime.probes?.[probeKey]) return;
+    const timeoutId = natProbeTimeouts.get(probeKey);
+    if (timeoutId) {
+      window.clearTimeout(timeoutId);
+      natProbeTimeouts.delete(probeKey);
+    }
     delete natRuntime.probes[probeKey];
   }
   function getNatProbeState(probeKey) {
@@ -620,6 +628,8 @@ import {
       ready: 0,
       probing: 0,
       succeeded: 0,
+      transportSucceeded: 0,
+      advisorySucceeded: 0,
       timedOut: 0,
       failed: 0
     };
@@ -627,7 +637,14 @@ import {
       summary.total += 1;
       if (probe.status === NAT_PROBE_STATES.READY) summary.ready += 1;
       if (probe.status === NAT_PROBE_STATES.PROBING) summary.probing += 1;
-      if (probe.status === NAT_PROBE_STATES.SUCCEEDED) summary.succeeded += 1;
+      if (probe.status === NAT_PROBE_STATES.SUCCEEDED) {
+        summary.succeeded += 1;
+        if (probe.authority === 'transport') {
+          summary.transportSucceeded += 1;
+        } else {
+          summary.advisorySucceeded += 1;
+        }
+      }
       if (probe.status === NAT_PROBE_STATES.TIMED_OUT) summary.timedOut += 1;
       if (probe.status === NAT_PROBE_STATES.FAILED) summary.failed += 1;
     }
@@ -685,13 +702,71 @@ import {
     if (summary.probing) return ` | ${summary.probing} peer probe(s) in progress`;
     if (summary.timedOut) return ` | ${summary.timedOut} peer probe(s) timed out`;
     if (summary.failed) return ` | ${summary.failed} peer probe(s) failed`;
-    if (summary.succeeded) return ` | ${summary.succeeded} peer probe(s) succeeded`;
+    if (summary.transportSucceeded) return ` | ${summary.transportSucceeded} transport-authoritative probe(s) succeeded`;
+    if (summary.advisorySucceeded) return ` | ${summary.advisorySucceeded} advisory probe(s) succeeded`;
     if (summary.ready) return ` | ${summary.ready} peer probe(s) ready`;
     return '';
   }
   function getMockNatProbeResult(probeKey) {
     if (!natMockProbeResults || typeof natMockProbeResults !== 'object') return null;
     return natMockProbeResults[probeKey] || natMockProbeResults.default || null;
+  }
+  function clearNatProbeTimeout(probeKey) {
+    const timeoutId = natProbeTimeouts.get(probeKey);
+    if (!timeoutId) return;
+    window.clearTimeout(timeoutId);
+    natProbeTimeouts.delete(probeKey);
+  }
+  function completeNatProbeSuccess(probeKey, patch = {}) {
+    const currentProbe = getNatProbeState(probeKey);
+    if (!currentProbe.peerKey) return currentProbe;
+    clearNatProbeTimeout(probeKey);
+    const completedAt = new Date().toISOString();
+    const nextProbe = setNatProbeState(probeKey, {
+      status: NAT_PROBE_STATES.SUCCEEDED,
+      authority: patch.authority === 'transport' ? 'transport' : currentProbe.authority,
+      lastCompletedAt: completedAt,
+      lastSuccessAt: completedAt,
+      lastError: '',
+      ...patch
+    });
+    renderManagedShell();
+    queueAdminSnapshotPublish();
+    return nextProbe;
+  }
+  function completeNatProbeTimeout(probeKey, message = 'Transport-authoritative NAT probe timed out.') {
+    const currentProbe = getNatProbeState(probeKey);
+    if (currentProbe.status !== NAT_PROBE_STATES.PROBING) return currentProbe;
+    clearNatProbeTimeout(probeKey);
+    const completedAt = new Date().toISOString();
+    const nextProbe = setNatProbeState(probeKey, {
+      status: NAT_PROBE_STATES.TIMED_OUT,
+      authority: 'transport',
+      lastCompletedAt: completedAt,
+      lastFailureAt: completedAt,
+      lastError: message
+    });
+    renderManagedShell();
+    queueAdminSnapshotPublish();
+    return nextProbe;
+  }
+  function scheduleNatProbeTimeout(probeKey, timeoutMs = 5000) {
+    clearNatProbeTimeout(probeKey);
+    natProbeTimeouts.set(probeKey, window.setTimeout(() => {
+      natProbeTimeouts.delete(probeKey);
+      completeNatProbeTimeout(probeKey);
+    }, Math.max(1000, Number(timeoutMs) || 5000)));
+  }
+  function handleTransportNatProbeEvidence(peerKey, patch = {}) {
+    for (const probe of Object.entries(natRuntime.probes || {}).map(([probeKey, value]) => ({
+      probeKey,
+      ...createDefaultNatProbeState(value)
+    })).filter((probe) => probe.peerKey === peerKey)) {
+      completeNatProbeSuccess(probe.probeKey, {
+        authority: 'transport',
+        ...patch
+      });
+    }
   }
   async function runManagedNatPeerProbes(options = {}) {
     const slotIds = Array.isArray(options.slotIds) && options.slotIds.length
@@ -714,10 +789,7 @@ import {
         queueAdminSnapshotPublish();
         const mockResult = getMockNatProbeResult(probeKey);
         if (!testPlatform || !mockResult) {
-          setNatProbeState(probeKey, {
-            status: NAT_PROBE_STATES.READY,
-            lastStartedAt: startedAt
-          });
+          scheduleNatProbeTimeout(probeKey, options.timeoutMs || 5000);
           completedStates.push(getNatProbeState(probeKey));
           renderManagedShell();
           queueAdminSnapshotPublish();
@@ -728,6 +800,7 @@ import {
         const completedAt = new Date().toISOString();
         const outcome = String(mockResult.outcome || '').trim().toLowerCase();
         if (outcome === NAT_PROBE_STATES.SUCCEEDED) {
+          clearNatProbeTimeout(probeKey);
           setNatProbeState(probeKey, {
             status: NAT_PROBE_STATES.SUCCEEDED,
             lastCompletedAt: completedAt,
@@ -735,6 +808,7 @@ import {
             lastError: ''
           });
         } else if (outcome === NAT_PROBE_STATES.FAILED) {
+          clearNatProbeTimeout(probeKey);
           setNatProbeState(probeKey, {
             status: NAT_PROBE_STATES.FAILED,
             lastCompletedAt: completedAt,
@@ -742,6 +816,7 @@ import {
             lastError: String(mockResult.errorMessage || 'NAT probe failed.')
           });
         } else if (outcome === NAT_PROBE_STATES.TIMED_OUT) {
+          clearNatProbeTimeout(probeKey);
           setNatProbeState(probeKey, {
             status: NAT_PROBE_STATES.TIMED_OUT,
             lastCompletedAt: completedAt,
@@ -2604,6 +2679,9 @@ import {
       const row = document.getElementById(id);
       if (row) row.querySelector("td.rtt").textContent = Math.round(avg);
       updatePeerRuntimeStats(msg.peerKey, { rtt: Number.isFinite(avg) ? Math.round(avg) : null });
+      if (Number.isFinite(avg)) {
+        handleTransportNatProbeEvidence(msg.peerKey, { lastRttMs: Math.round(avg) });
+      }
     } else if (msg.type === 'stats') {
       if (msg.stats) {
         const id = getPeerRowId(msg.peerKey);
@@ -2647,6 +2725,7 @@ import {
       }
       if (msg.field == 'connected' && peer){
         if (msg[msg.field]){
+          handleTransportNatProbeEvidence(msg.key);
           playSound("enter")
         } else {
           playSound("exit")

@@ -109,9 +109,9 @@ Phase 7 NAT integration work is complete when all of the following are true:
 
 ## Current Phase 7 Status
 
-Phase 7 is now in progress.
+Phase 7 is now complete for the bounded desktop-client interpretation defined by this checklist.
 
-Two bounded desktop-client NAT-readiness slices are now complete and validated.
+Three bounded desktop-client NAT-readiness slices were required to close it.
 
 Those validated slices added:
 
@@ -122,14 +122,15 @@ Those validated slices added:
 - bounded NAT-readiness visibility in the main managed shell
 - read-only NAT candidate, gather, and per-peer probe visibility in the admin surface
 - renderer-owned per-peer probe state keyed by slot ownership plus remote `ip:port`
+- transport-authoritative probe upgrades driven by existing host ping/handshake evidence from the actual UDP socket
 - deterministic renderer-side Playwright hooks for mocked NAT gather and probe outcomes
-- Playwright coverage proving mapped-public success rendering, probe success rendering, timeout visibility, and non-destructive failure handling
+- Playwright coverage proving mapped-public success rendering, host-evidence probe success, timeout visibility, and non-destructive failure handling
 
-The current remaining Phase 7 follow-on work is still larger than this first slice and includes:
+The key closing decision for this checklist is now explicit:
 
-- deciding whether transport-authoritative host participation is needed for later NAT claims
-- defining any real probe or hole-punch workflow beyond advisory candidate discovery
-- deciding whether the current advisory probe state is sufficient to close the desktop-client Phase 7 interpretation or whether a host-backed slice is still required
+- the desktop client does not need a new host IPC command to close Phase 7
+- the existing host `peerUpdate` and `pingHistory` messages are sufficient to upgrade probe state from advisory to transport-authoritative evidence
+- hole-punch or broader traversal redesign remains out of scope for this bounded milestone
 
 The relevant baseline inherited from Phase 6 is:
 

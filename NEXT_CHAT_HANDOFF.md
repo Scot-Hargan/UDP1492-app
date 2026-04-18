@@ -6,15 +6,15 @@ Use this file if work continues in a fresh chat.
 
 - Repo: `C:\NodeProjects\1492-app`
 - Branch: `main`
-- Package/app version: `0.1.22`
-- Renderer version marker in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js): `0.4.21`
+- Package/app version: `0.1.23`
+- Renderer version marker in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js): `0.4.22`
 - Phase 1 is closed
 - Phase 2 protected-channel client work is closed
 - Phase 3 Group B desktop-client work is closed
 - Phase 4 dual-ear routing desktop-client work is closed
 - Phase 5 Commander Mode desktop-client work is closed
 - Phase 6 admin-surface work is closed and validated
-- Phase 7 NAT integration is active and two bounded NAT-readiness slices are validated
+- Phase 7 NAT integration is closed and validated for the bounded desktop-client milestone
 
 ## Start Here
 
@@ -153,11 +153,11 @@ Closed items in this slice include:
   - populated admin data views
   - refresh failure while the main control window remains stable
 
-### Phase 7 validated slices
+### Phase 7
 
-Two bounded NAT-readiness slices are now implemented and validated.
+The bounded desktop-client NAT milestone is now complete and validated.
 
-Closed items in these slices include:
+Closed items in this milestone include:
 
 - renderer-owned NAT runtime state with explicit candidate and gather-status vocabulary
 - local candidate normalization from configured managed addresses
@@ -166,11 +166,12 @@ Closed items in these slices include:
 - bounded NAT-readiness visibility in the main managed shell
 - read-only NAT candidate/gather visibility in the admin surface
 - renderer-owned per-peer NAT probe state with bounded admin/main visibility
-- deterministic Playwright NAT mocks plus coverage for success rendering, timeout visibility, and non-destructive failure handling
+- transport-authoritative probe upgrades derived from existing host ping/handshake evidence
+- deterministic Playwright NAT mocks plus coverage for advisory success, transport-authoritative success, timeout visibility, and non-destructive failure handling
 
 ## Active Planning Artifact
 
-[PHASE7_NAT_INTEGRATION_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE7_NAT_INTEGRATION_CHECKLIST.md) is now the controlling checklist for the next implementation slice.
+[PHASE7_NAT_INTEGRATION_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE7_NAT_INTEGRATION_CHECKLIST.md) is now the closed validation record for the NAT milestone.
 
 It contains:
 
@@ -184,7 +185,7 @@ It contains:
 - a file-ownership map for renderer/main/preload/host responsibilities
 - a step-by-step implementation sequence by file
 - concrete implementation notes and non-goals for the first NAT slice
-- the updated completion state for the validated NAT-readiness slices
+- the closeout state for the bounded desktop-client NAT milestone
 
 ## Immediate Next Slice
 
@@ -193,14 +194,14 @@ Do not reopen the Phase 4 dual-ear routing checklist unless a regression appears
 Do not reopen the Phase 5 Commander checklist unless a regression appears.
 Do not reopen the Phase 6 admin checklist unless a regression appears.
 
-The next concrete target is the next bounded follow-on inside Phase 7, not a new phase.
+The next concrete target should move to a new controlling planning artifact, not another ad hoc Phase 7 extension.
 
-The most likely coding targets are:
+The most likely next planning targets are:
 
-1. Decide whether later NAT claims need transport-authoritative host participation instead of renderer-advisory discovery.
-2. Decide whether the current advisory probe model is sufficient to close the desktop-client Phase 7 interpretation.
-3. If escalation is needed, define the narrowest additive IPC/host path for transport-authoritative probing.
-4. Keep the host boundary and admin surface bounded unless the checklist is explicitly revised.
+1. Define a follow-on admin slice if mutations or richer observability are the next product need.
+2. Capture any backend/deployment follow-on in a dedicated checklist if that becomes the stronger priority.
+3. Keep Phase 7 closed unless a regression or a new requirement reopens NAT work explicitly.
+4. Preserve the current host boundary unless a future checklist proves it needs expansion.
 
 ## Important Constraints
 
@@ -222,7 +223,7 @@ Last clean validation before this handoff:
 - `node --check src\\renderer\\admin.js`
 - `node --check test\\e2e\\app.spec.js`
 - `npm run test:e2e`
-- result: `33/33` passing
+- result: `34/34` passing
 
 Validated implementation updates after that baseline:
 
@@ -239,9 +240,11 @@ Validated implementation updates after that baseline:
 - per-peer NAT probe state, probe refresh hooks, and probe summaries added in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js) and [src/renderer/managed-controller.js](C:/NodeProjects/1492-app/src/renderer/managed-controller.js)
 - admin probe inspection visibility added in [src/renderer/admin.html](C:/NodeProjects/1492-app/src/renderer/admin.html), [src/renderer/admin.js](C:/NodeProjects/1492-app/src/renderer/admin.js), and [src/renderer/style.css](C:/NodeProjects/1492-app/src/renderer/style.css)
 - Playwright probe timeout coverage and probe debug hooks added in [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
-- package/app version bumped to `0.1.22`
-- renderer version bumped to `0.4.21`
-- `PHASE7_NAT_INTEGRATION_CHECKLIST.md`, `MANAGED_MODE_ADAPTATION_PLAN.md`, and `NEXT_CHAT_HANDOFF.md` updated for the Phase 7 probe follow-on slice
+- transport-authoritative probe upgrades using existing host `peerUpdate` / `pingHistory` evidence added in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js) without widening the host IPC contract
+- Playwright host-evidence NAT validation added in [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
+- package/app version bumped to `0.1.23`
+- renderer version bumped to `0.4.22`
+- `PHASE7_NAT_INTEGRATION_CHECKLIST.md`, `MANAGED_MODE_ADAPTATION_PLAN.md`, and `NEXT_CHAT_HANDOFF.md` updated for the Phase 7 closeout
 
 Safe validation commands for the next chat:
 
@@ -266,7 +269,7 @@ Safe validation commands for the next chat:
 - Workflow file: [.github/workflows/windows-release.yml](C:/NodeProjects/1492-app/.github/workflows/windows-release.yml)
 - Release publishing was fixed earlier by building with `--publish never` in the build step
 - Latest published release from the prior chat context was `v0.1.13`
-- Current code version is `0.1.22`
+- Current code version is `0.1.23`
 - After a complete validated slice, update the online GitHub repo before stopping
 
 ## If Continuing Immediately
@@ -278,5 +281,5 @@ Treat Phase 3 Group B desktop-client activation as closed.
 Treat Phase 4 dual-ear routing as closed.
 Treat Phase 5 Commander groundwork as closed.
 Treat Phase 6 admin surface as closed.
-Treat Phase 7 NAT integration as active.
-If work continues immediately, stay inside the Phase 7 checklist and start from the next bounded follow-on slice rather than reopening planning or Phase 6 work.
+Treat Phase 7 NAT integration as closed for the bounded desktop-client milestone.
+If work continues immediately, start by creating or selecting the next controlling planning artifact rather than extending Phase 7 ad hoc.

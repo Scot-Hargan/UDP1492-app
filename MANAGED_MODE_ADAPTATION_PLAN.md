@@ -334,7 +334,7 @@ The next product phase should therefore move past the first admin observability 
 
 ### Current Phase 7 status
 
-Phase 7 NAT integration is now active and two bounded desktop-client slices are complete.
+Phase 7 NAT integration is now complete for the bounded desktop-client milestone.
 
 Those validated slices delivered:
 
@@ -344,11 +344,12 @@ Those validated slices delivered:
 - managed presence publication that can include mapped public candidates alongside local candidates
 - main-shell and admin-surface NAT-readiness visibility
 - renderer-owned per-peer probe state with bounded admin/main visibility
-- Playwright coverage for mapped-public success, probe timeout visibility, and non-destructive NAT failure behavior
+- transport-authoritative probe upgrades derived from existing host ping/handshake evidence
+- Playwright coverage for mapped-public success, transport-authoritative probe success, probe timeout visibility, and non-destructive NAT failure behavior
 
 The controlling artifact remains `PHASE7_NAT_INTEGRATION_CHECKLIST.md`.
 
-Admin mutation follow-on work should remain deferred unless a later NAT slice uncovers a stronger reason to reorder the roadmap.
+The next product phase should now move to a new controlling artifact rather than extending Phase 7 ad hoc. Admin mutation follow-on work is the most obvious candidate unless roadmap priorities change elsewhere.
 
 ## Renderer State Model Adaptation
 
@@ -553,12 +554,12 @@ This adaptation is complete when the desktop project is understood as:
 
 ## Immediate Next Implementation Target For 1492-app
 
-The next coding target for this repo should stay inside `PHASE7_NAT_INTEGRATION_CHECKLIST.md`.
+The next coding target for this repo should not reopen Phase 7 unless a regression appears.
 
-The most likely next bounded follow-on slice is:
+Before more implementation work starts, create the next controlling planning artifact and choose between:
 
-- decide whether later NAT claims require transport-authoritative host participation instead of renderer-advisory discovery
-- decide whether the current advisory probe model is sufficient to close the desktop-client Phase 7 milestone
-- if escalation is needed, narrow the additive IPC/host surface to a transport-authoritative probe path only
+- a follow-on admin slice for mutations or richer observability
+- another bounded desktop-client closeout driven by a concrete checklist
+- a backend- or deployment-oriented follow-on if that is the stronger priority
 
-Do not reopen the closed Phase 3 through Phase 6 checklists as active implementation plans, and do not jump to admin mutations unless the NAT checklist is explicitly superseded.
+Do not reopen the closed Phase 3 through Phase 7 checklists as active implementation plans unless a regression requires it.
