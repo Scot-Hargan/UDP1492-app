@@ -14,29 +14,31 @@ Use this file if work continues in a fresh chat.
 - Phase 4 dual-ear routing desktop-client work is closed
 - Phase 5 Commander Mode desktop-client work is closed
 - Phase 6 admin-surface work is closed and validated
+- Phase 7 NAT-integration planning is now active
 
 ## Start Here
 
 Read these in order:
 
-1. [PHASE6_ADMIN_SURFACE_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE6_ADMIN_SURFACE_CHECKLIST.md)
-2. [DEVELOPMENT_NOTES.md](C:/NodeProjects/1492-app/DEVELOPMENT_NOTES.md)
-3. [MANAGED_MODE_ADAPTATION_PLAN.md](C:/NodeProjects/1492-app/MANAGED_MODE_ADAPTATION_PLAN.md)
-4. [PHASE5_COMMANDER_MODE_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE5_COMMANDER_MODE_CHECKLIST.md)
-5. [PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md)
-6. [PHASE3_GROUPB_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE3_GROUPB_CHECKLIST.md)
-7. [PHASE2_CLIENT_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE2_CLIENT_CHECKLIST.md)
-8. [PHASE1_REVISED_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE1_REVISED_CHECKLIST.md)
-9. [src/renderer/managed-controller.js](C:/NodeProjects/1492-app/src/renderer/managed-controller.js)
-10. [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js)
-11. [src/renderer/admin.html](C:/NodeProjects/1492-app/src/renderer/admin.html)
-12. [src/renderer/admin.js](C:/NodeProjects/1492-app/src/renderer/admin.js)
-13. [src/renderer/index.html](C:/NodeProjects/1492-app/src/renderer/index.html)
-14. [src/renderer/style.css](C:/NodeProjects/1492-app/src/renderer/style.css)
-15. [src/main/main.js](C:/NodeProjects/1492-app/src/main/main.js)
-16. [src/main/preload.js](C:/NodeProjects/1492-app/src/main/preload.js)
-17. [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
-18. [test/e2e/fixtures.js](C:/NodeProjects/1492-app/test/e2e/fixtures.js)
+1. [PHASE7_NAT_INTEGRATION_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE7_NAT_INTEGRATION_CHECKLIST.md)
+2. [PHASE6_ADMIN_SURFACE_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE6_ADMIN_SURFACE_CHECKLIST.md)
+3. [DEVELOPMENT_NOTES.md](C:/NodeProjects/1492-app/DEVELOPMENT_NOTES.md)
+4. [MANAGED_MODE_ADAPTATION_PLAN.md](C:/NodeProjects/1492-app/MANAGED_MODE_ADAPTATION_PLAN.md)
+5. [PHASE5_COMMANDER_MODE_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE5_COMMANDER_MODE_CHECKLIST.md)
+6. [PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md)
+7. [PHASE3_GROUPB_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE3_GROUPB_CHECKLIST.md)
+8. [PHASE2_CLIENT_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE2_CLIENT_CHECKLIST.md)
+9. [PHASE1_REVISED_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE1_REVISED_CHECKLIST.md)
+10. [src/renderer/managed-runtime.js](C:/NodeProjects/1492-app/src/renderer/managed-runtime.js)
+11. [src/renderer/managed-api.js](C:/NodeProjects/1492-app/src/renderer/managed-api.js)
+12. [src/renderer/managed-controller.js](C:/NodeProjects/1492-app/src/renderer/managed-controller.js)
+13. [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js)
+14. [src/renderer/admin.html](C:/NodeProjects/1492-app/src/renderer/admin.html)
+15. [src/renderer/admin.js](C:/NodeProjects/1492-app/src/renderer/admin.js)
+16. [src/main/main.js](C:/NodeProjects/1492-app/src/main/main.js)
+17. [src/main/preload.js](C:/NodeProjects/1492-app/src/main/preload.js)
+18. [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
+19. [test/e2e/fixtures.js](C:/NodeProjects/1492-app/test/e2e/fixtures.js)
 
 ## What Is Already Complete
 
@@ -153,19 +155,20 @@ Closed items in this slice include:
 
 ## Active Planning Artifact
 
-[PHASE6_ADMIN_SURFACE_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE6_ADMIN_SURFACE_CHECKLIST.md) is now the closeout record for the completed admin-surface slice.
+[PHASE7_NAT_INTEGRATION_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE7_NAT_INTEGRATION_CHECKLIST.md) is now the controlling checklist for the next implementation slice.
 
-There is not yet a new controlling checklist after Phase 6.
+It contains:
 
-Use the Phase 6 checklist plus the managed-mode adaptation plan to decide the next planning artifact.
-
-The Phase 6 checklist now contains:
-
-- finish-line criteria
-- locked decisions
-- completed implementation order
-- current implementation baseline
-- validation closeout for the dedicated admin window slice
+- the recommendation to prioritize NAT integration over an admin mutation follow-on
+- finish-line criteria for a bounded NAT-readiness milestone
+- locked decisions around candidate publication, probe orchestration, and host-boundary restraint
+- explicit preference for local-candidate plus STUN-style mapped public candidate discovery over generic HTTP public-IP lookups
+- current implementation baseline for managed runtime/api/controller/admin seams
+- recommended first-slice decisions for candidate kinds, runtime-only NAT state, and probe lifecycle vocabulary
+- a concrete runtime NAT-state shape and a renderer-vs-host decision gate for candidate authority
+- a file-ownership map for renderer/main/preload/host responsibilities
+- a step-by-step implementation sequence by file
+- concrete implementation notes and non-goals for the first NAT slice
 
 ## Immediate Next Slice
 
@@ -174,13 +177,15 @@ Do not reopen the Phase 4 dual-ear routing checklist unless a regression appears
 Do not reopen the Phase 5 Commander checklist unless a regression appears.
 Do not reopen the Phase 6 admin checklist unless a regression appears.
 
-The next concrete target is creating the next planning artifact before more code is started.
+The next concrete target is implementing the first bounded NAT-integration slice.
 
-Recommended next planning choices:
+The first coding targets should be:
 
-1. NAT integration planning.
-2. A follow-on admin slice for mutation workflows or richer observability.
-3. Another bounded desktop-client milestone driven by a new checklist.
+1. Define the NAT candidate/probe state model in the renderer and document any required managed-backend contract assumptions.
+2. Add the renderer/main/preload seam for NAT probe orchestration.
+3. Extend the main/admin surfaces with explicit NAT-state visibility.
+4. Add focused Playwright coverage for candidate/probe state and failure handling.
+5. Run `npm run test:e2e`.
 
 ## Important Constraints
 
@@ -214,6 +219,13 @@ Validated implementation updates after that baseline:
 - package/app version bumped to `0.1.20`
 - renderer version bumped to `0.4.19`
 - `PHASE6_ADMIN_SURFACE_CHECKLIST.md`, `MANAGED_MODE_ADAPTATION_PLAN.md`, `DEVELOPMENT_NOTES.md`, and `NEXT_CHAT_HANDOFF.md` updated for the Phase 6 closeout
+
+Planning-only updates after that validated slice:
+
+- `PHASE7_NAT_INTEGRATION_CHECKLIST.md` created
+- `MANAGED_MODE_ADAPTATION_PLAN.md` updated to mark NAT integration planning as the active target
+- `DEVELOPMENT_NOTES.md` updated to include the new planning artifact
+- `NEXT_CHAT_HANDOFF.md` updated to point the next chat at the NAT planning slice
 
 Safe validation commands for the next chat:
 
@@ -250,4 +262,5 @@ Treat Phase 3 Group B desktop-client activation as closed.
 Treat Phase 4 dual-ear routing as closed.
 Treat Phase 5 Commander groundwork as closed.
 Treat Phase 6 admin surface as closed.
-If work continues immediately, first create or update the next controlling checklist before starting code.
+Treat Phase 7 NAT integration planning as active.
+If work continues immediately, start from the Phase 7 checklist and implement the first bounded NAT-readiness slice.

@@ -92,6 +92,7 @@ Check this file before making further code changes.
   - `PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md`
   - `PHASE5_COMMANDER_MODE_CHECKLIST.md`
   - `PHASE6_ADMIN_SURFACE_CHECKLIST.md`
+  - `PHASE7_NAT_INTEGRATION_CHECKLIST.md`
   - `PHASE0_HANDOFF.md` when historical context needs redirect notes
   - `NEXT_CHAT_HANDOFF.md` when the active slice, validation baseline, or continuation target changes
 - When a phase closes and there is no new checklist yet, update the closed checklist as a validation record and note the next planning gap explicitly in `NEXT_CHAT_HANDOFF.md`.

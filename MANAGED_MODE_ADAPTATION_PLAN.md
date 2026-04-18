@@ -332,6 +332,20 @@ That work is captured in `PHASE6_ADMIN_SURFACE_CHECKLIST.md` and now includes:
 
 The next product phase should therefore move past the first admin observability milestone. NAT planning or a follow-on admin mutation slice should be captured in a new checklist before more code is started.
 
+### Current Phase 7 planning target
+
+The next active desktop-client planning target is now NAT integration.
+
+That work is captured in `PHASE7_NAT_INTEGRATION_CHECKLIST.md` with:
+
+- a bounded NAT-readiness scope
+- explicit preference for local-candidate plus STUN-style mapped public candidate discovery
+- a candidate/publication/probe-state checklist
+- explicit constraints around keeping the host mostly intact
+- a validation strategy that emphasizes failure tolerance as much as happy-path progress
+
+Admin mutation follow-on work should remain deferred unless NAT planning uncovers a stronger reason to reorder the roadmap.
+
 ## Renderer State Model Adaptation
 
 The same `AppStateV2` model should be used in the Electron renderer, with one project-specific note:
