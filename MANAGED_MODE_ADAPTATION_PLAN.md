@@ -370,6 +370,10 @@ The current backend/bootstrap baseline is now concrete:
   - Worker routing for the six existing managed endpoints
   - `DirectoryDO` session/catalog handling
   - `ChannelDO` membership/presence/peer handling
+- the repo now also has a dedicated local live-backend Electron validation lane:
+  - `playwright.live.config.js`
+  - `test/e2e/live-backend.spec.js`
+  - `npm run test:e2e:live-backend`
 
 That means the current implementation phase is:
 

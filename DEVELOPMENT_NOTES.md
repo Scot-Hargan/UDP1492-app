@@ -17,8 +17,11 @@ Check this file before making further code changes.
 
 - Run `npm run test:backend` after meaningful Cloudflare Worker / Durable Object changes.
 - Run `npm run test:e2e` after meaningful UI/main-process changes.
+- Run `npm run test:e2e:live-backend` after changes that affect the desktop client to Worker integration seam.
 - After a complete slice passes its intended validation, update the online GitHub repo before stopping.
 - E2E tests use Playwright Electron fixtures in `test/e2e/fixtures.js`.
+- The dedicated live-backend lane is configured in `playwright.live.config.js` and owns local `wrangler dev` lifecycle through Playwright `webServer`.
+- Keep the default `npm run test:e2e` suite mock-based and stable; do not fold live Worker startup into the shared Electron fixture path.
 - Tests launch the app with:
   - isolated `userData`
   - mock host bridge

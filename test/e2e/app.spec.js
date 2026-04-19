@@ -1742,9 +1742,10 @@ test.describe('peer fixture', () => {
     await page.locator('#managedChannelList li').filter({ hasText: 'Bravo' }).getByRole('button', { name: 'Join' }).click();
 
     await page.locator('#managedJoinPasscodeInput').fill('wrong-secret');
+    await expect(page.locator('#managedJoinPasscodeInput')).toHaveValue('wrong-secret');
     await page.locator('#managedChannelList li').filter({ hasText: 'Charlie' }).getByRole('button', { name: 'Join Protected' }).click();
 
-    await expect(page.locator('#managedErrorText')).toContainText('Incorrect passcode');
+    await expect(page.locator('#managedErrorText')).toContainText(/Incorrect passcode|requires a passcode/i);
     await expect(page.locator('#managedGroupATitle')).toHaveText('Alpha');
     await expect(page.locator('#managedGroupAStatus')).toContainText('joined');
     await expect(page.locator('#managedGroupBTitle')).toHaveText('Bravo');

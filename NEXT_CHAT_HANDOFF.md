@@ -6,7 +6,7 @@ Use this file if work continues in a fresh chat.
 
 - Repo: `C:\NodeProjects\1492-app`
 - Branch: `main`
-- Package/app version: `0.1.24`
+- Package/app version: `0.1.25`
 - Renderer version marker in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js): `0.4.22`
 - Phase 1 is closed
 - Phase 2 protected-channel client work is closed
@@ -31,16 +31,18 @@ Read these in order:
 6. [backend/src/index.ts](C:/NodeProjects/1492-app/backend/src/index.ts)
 7. [backend/vitest.config.mjs](C:/NodeProjects/1492-app/backend/vitest.config.mjs)
 8. [backend/test/backend.spec.mjs](C:/NodeProjects/1492-app/backend/test/backend.spec.mjs)
-9. [src/renderer/managed-api.js](C:/NodeProjects/1492-app/src/renderer/managed-api.js)
-10. [src/renderer/managed-runtime.js](C:/NodeProjects/1492-app/src/renderer/managed-runtime.js)
-11. [src/renderer/managed-controller.js](C:/NodeProjects/1492-app/src/renderer/managed-controller.js)
-12. [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js)
-13. [src/renderer/admin.html](C:/NodeProjects/1492-app/src/renderer/admin.html)
-14. [src/renderer/admin.js](C:/NodeProjects/1492-app/src/renderer/admin.js)
-15. [src/main/main.js](C:/NodeProjects/1492-app/src/main/main.js)
-16. [src/main/preload.js](C:/NodeProjects/1492-app/src/main/preload.js)
-17. [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
-18. [test/e2e/fixtures.js](C:/NodeProjects/1492-app/test/e2e/fixtures.js)
+9. [playwright.live.config.js](C:/NodeProjects/1492-app/playwright.live.config.js)
+10. [test/e2e/live-backend.spec.js](C:/NodeProjects/1492-app/test/e2e/live-backend.spec.js)
+11. [src/renderer/managed-api.js](C:/NodeProjects/1492-app/src/renderer/managed-api.js)
+12. [src/renderer/managed-runtime.js](C:/NodeProjects/1492-app/src/renderer/managed-runtime.js)
+13. [src/renderer/managed-controller.js](C:/NodeProjects/1492-app/src/renderer/managed-controller.js)
+14. [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js)
+15. [src/renderer/admin.html](C:/NodeProjects/1492-app/src/renderer/admin.html)
+16. [src/renderer/admin.js](C:/NodeProjects/1492-app/src/renderer/admin.js)
+17. [src/main/main.js](C:/NodeProjects/1492-app/src/main/main.js)
+18. [src/main/preload.js](C:/NodeProjects/1492-app/src/main/preload.js)
+19. [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
+20. [test/e2e/fixtures.js](C:/NodeProjects/1492-app/test/e2e/fixtures.js)
 
 ## What Is Already Complete
 
@@ -212,15 +214,18 @@ The current backend implementation in [backend/src/index.ts](C:/NodeProjects/149
 - seeded development channels including one protected path for passcode validation
 - membership-gated `presence` / `peers` behavior so a valid session cannot bypass `join`
 - replacement-join handoff that clears old-channel slot ownership immediately on successful switch
+- a dedicated Playwright Electron lane that exercises the desktop client against a real local `wrangler dev` Worker
 
 Backend-focused automated validation now exists in:
 
 - [backend/vitest.config.mjs](C:/NodeProjects/1492-app/backend/vitest.config.mjs)
 - [backend/test/backend.spec.mjs](C:/NodeProjects/1492-app/backend/test/backend.spec.mjs)
+- [playwright.live.config.js](C:/NodeProjects/1492-app/playwright.live.config.js)
+- [test/e2e/live-backend.spec.js](C:/NodeProjects/1492-app/test/e2e/live-backend.spec.js)
 
 Current limitations of the in-progress slice:
 
-- the desktop client is not yet pointed at the real backend in automated tests
+- the default desktop Playwright suite still uses mocks; real-backend coverage currently lives in a separate dedicated config/script
 - channel provisioning is still seeded/static, not admin-driven
 - auth hardening remains intentionally lightweight
 
@@ -237,6 +242,7 @@ It contains:
 - the `Worker` / `DirectoryDO` / `ChannelDO` responsibility model
 - privacy and retention rules for presence, endpoints, and limited admin facts
 - the implementation order for Phase 10 core managed API work
+- the current split between mock-first desktop coverage and the dedicated live-Worker Electron integration lane
 
 [PHASE7_NAT_INTEGRATION_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE7_NAT_INTEGRATION_CHECKLIST.md) now remains the closed validation record for the NAT milestone.
 
@@ -251,9 +257,10 @@ Do not reopen the closed Phase 7 NAT milestone unless a regression or a new expl
 The next concrete target is now:
 
 1. Continue and harden Phase 10 core managed API behavior in `backend/`.
-2. Keep the backend aligned to the six existing client endpoints before adding broader admin/friend features.
-3. Preserve the current host boundary and peer-to-peer media path.
-4. Treat local retention of managed-learned reusable peer knowledge as a required future client rule while implementing the backend.
+2. Broaden real-backend desktop validation beyond the first join/presence/peer flow.
+3. Keep the backend aligned to the six existing client endpoints before adding broader admin/friend features.
+4. Preserve the current host boundary and peer-to-peer media path.
+5. Treat local retention of managed-learned reusable peer knowledge as a required future client rule while implementing the backend.
 
 ## Important Constraints
 
@@ -273,14 +280,10 @@ The next concrete target is now:
 
 Last clean validation before this handoff:
 
-- `node --check src\\main\\main.js`
-- `node --check src\\main\\preload.js`
-- `node --check src\\renderer\\ui.js`
-- `node --check src\\renderer\\managed-controller.js`
-- `node --check src\\renderer\\admin.js`
-- `node --check test\\e2e\\app.spec.js`
+- `npm run test:backend`
 - `npm run test:e2e`
-- result: `34/34` passing
+- `npm run test:e2e:live-backend`
+- `npx wrangler deploy --dry-run --config backend/wrangler.toml`
 
 Validated implementation updates after that baseline:
 
@@ -318,10 +321,19 @@ Validated implementation updates after that baseline:
 - backend Cloudflare tests were then added in:
   - `backend/vitest.config.mjs`
   - `backend/test/backend.spec.mjs`
+- the desktop app was then wired into a dedicated local live-backend validation lane without disturbing the default mock suite:
+  - `playwright.live.config.js` starts `wrangler dev` through Playwright `webServer`
+  - `test/e2e/live-backend.spec.js` drives the Electron app against the real local Worker
+  - `playwright.config.js` ignores the live spec so `npm run test:e2e` stays mock-based and stable
+  - `package.json` now exposes `npm run test:e2e:live-backend`
+- the default Playwright suite also had one bounded assertion relaxed so the replacement-join regression test accepts either the local passcode-required guard or the backend invalid-passcode response while still enforcing the membership-preservation invariant
+- package/app version bumped to `0.1.25`
 - backend validation was run with:
   - `npm run test:backend`
+  - `npm run test:e2e`
+  - `npm run test:e2e:live-backend`
   - `npx wrangler deploy --dry-run --config backend/wrangler.toml`
-  - a local `wrangler dev` smoke flow covering open session, list channels, join, presence, peers, and leave
+  - a local `wrangler dev` smoke flow covering open session, list channels, join, presence, peers, and leave through the Electron app
 
 Safe validation commands for the next chat:
 
@@ -333,6 +345,7 @@ Safe validation commands for the next chat:
 - `node --check test\\e2e\\app.spec.js`
 - `npm run test:backend`
 - `npm run test:e2e`
+- `npm run test:e2e:live-backend`
 - `npx wrangler deploy --dry-run --config backend/wrangler.toml`
 
 ## Useful Test Fixtures
@@ -348,7 +361,7 @@ Safe validation commands for the next chat:
 - Workflow file: [.github/workflows/windows-release.yml](C:/NodeProjects/1492-app/.github/workflows/windows-release.yml)
 - Release publishing was fixed earlier by building with `--publish never` in the build step
 - Latest published release from the prior chat context was `v0.1.13`
-- Current code version is `0.1.23`
+- Current code version is `0.1.25`
 - After a complete validated slice, update the online GitHub repo before stopping
 
 ## If Continuing Immediately

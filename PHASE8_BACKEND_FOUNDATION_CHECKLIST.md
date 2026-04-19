@@ -284,6 +284,15 @@ Currently provides:
 - CORS-friendly HTTP responses for the Electron renderer
 - seeded development channels for initial backend bring-up
 
+### Live desktop integration lane
+
+The repo now also includes a dedicated local real-backend Electron validation path:
+
+- `playwright.live.config.js` starts `wrangler dev` through Playwright `webServer`
+- `test/e2e/live-backend.spec.js` drives the desktop client against the local Worker
+- `package.json` exposes this as `npm run test:e2e:live-backend`
+- the default `npm run test:e2e` suite intentionally stays mock-based by ignoring `live-backend.spec.js`
+
 This is the first real Phase 10 implementation slice, not the final backend closeout.
 
 ## Phase 10 Objective
@@ -312,12 +321,13 @@ The current implementation baseline already includes:
 - channel-owned peer listing from live active presence
 - server-side membership gates so `presence` and `peers` require a real join instead of only a valid session
 - basic protected-channel passcode enforcement for seeded development channels
+- a dedicated local Playwright Electron path that validates session open, channel list, join, presence-driven peer visibility, and leave against the actual Worker
 
 The current known bounds of this first implementation slice are:
 
 - seeded channels are development defaults, not an admin-configured provisioning system
 - session/auth hardening is intentionally lightweight
-- local client integration against the real backend URL is not yet wired and validated in Playwright
+- the default desktop suite still runs against mocks; live Worker coverage currently exists as a separate dedicated config/script
 - richer friend/admin mutation workflows remain out of scope
 
 ## Recommended Phase 10 Implementation Order
@@ -328,7 +338,8 @@ The current known bounds of this first implementation slice are:
 4. Implement channel join/leave/presence/peer flows in `ChannelDO`.
 5. Thread endpoint registration and peer response shaping through the current client endpoint model.
 6. Add small backend-focused validation before wiring the desktop app to the live URL.
-7. Only after the core contract works, consider richer admin or friend-oriented extensions.
+7. Add a dedicated desktop integration lane against local `wrangler dev` without destabilizing the default mock suite.
+8. Only after the core contract works, consider richer admin or friend-oriented extensions.
 
 ## Current Validation Notes
 
@@ -336,6 +347,7 @@ The backend implementation should currently be validated with:
 
 - `npx wrangler deploy --dry-run --config backend/wrangler.toml`
 - `npm run test:backend`
+- `npm run test:e2e:live-backend`
 - a local `wrangler dev` smoke flow that exercises:
   - session open
   - channel list
@@ -353,8 +365,9 @@ The current automated backend suite covers:
 - membership-required gating for `presence` and `peers`
 - peer visibility from live presence
 - replacement-join handoff that removes stale old-channel visibility immediately
+- Electron desktop integration against the real local Worker for open-session, seeded-channel join, peer visibility, and leave
 
-Those checks prove bundling and baseline request flow, but they do not yet replace end-to-end desktop integration against the live Worker.
+Those checks now prove bundling, baseline request flow, and one bounded end-to-end desktop path against the live Worker. Broader desktop/backend coverage still remains future hardening work.
 
 ## Explicit Non-Goals For This Phase
 
@@ -383,12 +396,14 @@ Do not reopen the closed Phase 3 through Phase 7 client checklists unless regres
 
 The next implementation slice should be:
 
-- Phase 10 core managed API implementation in `backend/`
+- Phase 10 core managed API hardening plus broader real-backend desktop validation
 
 The first files to inspect and evolve are:
 
 - `backend/wrangler.toml`
 - `backend/src/index.ts`
+- `playwright.live.config.js`
+- `test/e2e/live-backend.spec.js`
 - `src/renderer/managed-api.js`
 - `src/renderer/managed-controller.js`
 - `test/e2e/app.spec.js`
