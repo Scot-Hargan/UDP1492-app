@@ -1,0 +1,20 @@
+name = "1492-backend-test"
+main = "src/index.ts"
+compatibility_date = "2024-04-01"
+
+[vars]
+MANAGED_HEARTBEAT_INTERVAL_MS = "1000"
+MANAGED_SESSION_TTL_MS = "3000"
+MANAGED_PRESENCE_TTL_MS = "2500"
+
+[[durable_objects.bindings]]
+name = "CHANNEL_DO"
+class_name = "ChannelDO"
+
+[[durable_objects.bindings]]
+name = "DIRECTORY_DO"
+class_name = "DirectoryDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ChannelDO", "DirectoryDO"]

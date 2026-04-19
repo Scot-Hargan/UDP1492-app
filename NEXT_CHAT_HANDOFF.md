@@ -6,7 +6,7 @@ Use this file if work continues in a fresh chat.
 
 - Repo: `C:\NodeProjects\1492-app`
 - Branch: `main`
-- Package/app version: `0.1.25`
+- Package/app version: `0.1.26`
 - Renderer version marker in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js): `0.4.22`
 - Phase 1 is closed
 - Phase 2 protected-channel client work is closed
@@ -28,21 +28,22 @@ Read these in order:
 3. [DEVELOPMENT_NOTES.md](C:/NodeProjects/1492-app/DEVELOPMENT_NOTES.md)
 4. [MANAGED_MODE_ADAPTATION_PLAN.md](C:/NodeProjects/1492-app/MANAGED_MODE_ADAPTATION_PLAN.md)
 5. [backend/wrangler.toml](C:/NodeProjects/1492-app/backend/wrangler.toml)
-6. [backend/src/index.ts](C:/NodeProjects/1492-app/backend/src/index.ts)
-7. [backend/vitest.config.mjs](C:/NodeProjects/1492-app/backend/vitest.config.mjs)
-8. [backend/test/backend.spec.mjs](C:/NodeProjects/1492-app/backend/test/backend.spec.mjs)
-9. [playwright.live.config.js](C:/NodeProjects/1492-app/playwright.live.config.js)
-10. [test/e2e/live-backend.spec.js](C:/NodeProjects/1492-app/test/e2e/live-backend.spec.js)
-11. [src/renderer/managed-api.js](C:/NodeProjects/1492-app/src/renderer/managed-api.js)
-12. [src/renderer/managed-runtime.js](C:/NodeProjects/1492-app/src/renderer/managed-runtime.js)
-13. [src/renderer/managed-controller.js](C:/NodeProjects/1492-app/src/renderer/managed-controller.js)
-14. [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js)
-15. [src/renderer/admin.html](C:/NodeProjects/1492-app/src/renderer/admin.html)
-16. [src/renderer/admin.js](C:/NodeProjects/1492-app/src/renderer/admin.js)
-17. [src/main/main.js](C:/NodeProjects/1492-app/src/main/main.js)
-18. [src/main/preload.js](C:/NodeProjects/1492-app/src/main/preload.js)
-19. [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
-20. [test/e2e/fixtures.js](C:/NodeProjects/1492-app/test/e2e/fixtures.js)
+6. [backend/wrangler.test.toml](C:/NodeProjects/1492-app/backend/wrangler.test.toml)
+7. [backend/src/index.ts](C:/NodeProjects/1492-app/backend/src/index.ts)
+8. [backend/vitest.config.mjs](C:/NodeProjects/1492-app/backend/vitest.config.mjs)
+9. [backend/test/backend.spec.mjs](C:/NodeProjects/1492-app/backend/test/backend.spec.mjs)
+10. [playwright.live.config.js](C:/NodeProjects/1492-app/playwright.live.config.js)
+11. [test/e2e/live-backend.spec.js](C:/NodeProjects/1492-app/test/e2e/live-backend.spec.js)
+12. [src/renderer/managed-api.js](C:/NodeProjects/1492-app/src/renderer/managed-api.js)
+13. [src/renderer/managed-runtime.js](C:/NodeProjects/1492-app/src/renderer/managed-runtime.js)
+14. [src/renderer/managed-controller.js](C:/NodeProjects/1492-app/src/renderer/managed-controller.js)
+15. [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js)
+16. [src/renderer/admin.html](C:/NodeProjects/1492-app/src/renderer/admin.html)
+17. [src/renderer/admin.js](C:/NodeProjects/1492-app/src/renderer/admin.js)
+18. [src/main/main.js](C:/NodeProjects/1492-app/src/main/main.js)
+19. [src/main/preload.js](C:/NodeProjects/1492-app/src/main/preload.js)
+20. [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
+21. [test/e2e/fixtures.js](C:/NodeProjects/1492-app/test/e2e/fixtures.js)
 
 ## What Is Already Complete
 
@@ -215,9 +216,12 @@ The current backend implementation in [backend/src/index.ts](C:/NodeProjects/149
 - membership-gated `presence` / `peers` behavior so a valid session cannot bypass `join`
 - replacement-join handoff that clears old-channel slot ownership immediately on successful switch
 - a dedicated Playwright Electron lane that exercises the desktop client against a real local `wrangler dev` Worker
+- env-driven backend lifecycle timing for session expiry and stale presence cleanup hardening without changing deploy defaults
+- directory cleanup of stale slot membership when sessions expire
 
 Backend-focused automated validation now exists in:
 
+- [backend/wrangler.test.toml](C:/NodeProjects/1492-app/backend/wrangler.test.toml)
 - [backend/vitest.config.mjs](C:/NodeProjects/1492-app/backend/vitest.config.mjs)
 - [backend/test/backend.spec.mjs](C:/NodeProjects/1492-app/backend/test/backend.spec.mjs)
 - [playwright.live.config.js](C:/NodeProjects/1492-app/playwright.live.config.js)
@@ -225,7 +229,7 @@ Backend-focused automated validation now exists in:
 
 Current limitations of the in-progress slice:
 
-- the default desktop Playwright suite still uses mocks; real-backend coverage currently lives in a separate dedicated config/script
+- the default desktop Playwright suite still uses mocks; real-backend coverage still lives in a separate dedicated config/script
 - channel provisioning is still seeded/static, not admin-driven
 - auth hardening remains intentionally lightweight
 
@@ -257,7 +261,7 @@ Do not reopen the closed Phase 7 NAT milestone unless a regression or a new expl
 The next concrete target is now:
 
 1. Continue and harden Phase 10 core managed API behavior in `backend/`.
-2. Broaden real-backend desktop validation beyond the first join/presence/peer flow.
+2. Broaden real-backend desktop validation beyond the current protected-join, replacement-join, stale-peer, and idle-session-expiry cases.
 3. Keep the backend aligned to the six existing client endpoints before adding broader admin/friend features.
 4. Preserve the current host boundary and peer-to-peer media path.
 5. Treat local retention of managed-learned reusable peer knowledge as a required future client rule while implementing the backend.
@@ -283,6 +287,7 @@ Last clean validation before this handoff:
 - `npm run test:backend`
 - `npm run test:e2e`
 - `npm run test:e2e:live-backend`
+- `node --check src\\renderer\\ui.js`
 - `npx wrangler deploy --dry-run --config backend/wrangler.toml`
 
 Validated implementation updates after that baseline:
@@ -327,11 +332,23 @@ Validated implementation updates after that baseline:
   - `playwright.config.js` ignores the live spec so `npm run test:e2e` stays mock-based and stable
   - `package.json` now exposes `npm run test:e2e:live-backend`
 - the default Playwright suite also had one bounded assertion relaxed so the replacement-join regression test accepts either the local passcode-required guard or the backend invalid-passcode response while still enforcing the membership-preservation invariant
-- package/app version bumped to `0.1.25`
+- backend lifecycle hardening was then added:
+  - `backend/src/index.ts` now reads `MANAGED_HEARTBEAT_INTERVAL_MS`, `MANAGED_SESSION_TTL_MS`, and `MANAGED_PRESENCE_TTL_MS`
+  - `DirectoryDO` now clears stale `slot_memberships` when sessions expire
+  - `backend/wrangler.test.toml` now drives short-TTL backend unit coverage
+  - `backend/test/backend.spec.mjs` now covers idle session expiry and stale peer cleanup
+  - `test/e2e/live-backend.spec.js` now covers:
+    - protected seeded-channel passcodes
+    - stale peer disappearance after timeout
+    - Alpha -> Bravo replacement join
+    - idle session expiry recovery
+  - `src/renderer/ui.js` now exposes test-only `window.udp1492ManagedDebug` hooks for live managed lifecycle coverage
+- package/app version bumped to `0.1.26`
 - backend validation was run with:
   - `npm run test:backend`
   - `npm run test:e2e`
   - `npm run test:e2e:live-backend`
+  - `node --check src\\renderer\\ui.js`
   - `npx wrangler deploy --dry-run --config backend/wrangler.toml`
   - a local `wrangler dev` smoke flow covering open session, list channels, join, presence, peers, and leave through the Electron app
 
@@ -343,6 +360,7 @@ Safe validation commands for the next chat:
 - `node --check src\\renderer\\managed-controller.js`
 - `node --check src\\renderer\\admin.js`
 - `node --check test\\e2e\\app.spec.js`
+- `node --check src\\renderer\\ui.js`
 - `npm run test:backend`
 - `npm run test:e2e`
 - `npm run test:e2e:live-backend`
@@ -361,7 +379,7 @@ Safe validation commands for the next chat:
 - Workflow file: [.github/workflows/windows-release.yml](C:/NodeProjects/1492-app/.github/workflows/windows-release.yml)
 - Release publishing was fixed earlier by building with `--publish never` in the build step
 - Latest published release from the prior chat context was `v0.1.13`
-- Current code version is `0.1.25`
+- Current code version is `0.1.26`
 - After a complete validated slice, update the online GitHub repo before stopping
 
 ## If Continuing Immediately

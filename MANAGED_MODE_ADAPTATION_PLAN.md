@@ -374,6 +374,11 @@ The current backend/bootstrap baseline is now concrete:
   - `playwright.live.config.js`
   - `test/e2e/live-backend.spec.js`
   - `npm run test:e2e:live-backend`
+- the backend lifecycle is now configurable by environment for test/dev hardening without changing deploy defaults:
+  - `MANAGED_HEARTBEAT_INTERVAL_MS`
+  - `MANAGED_SESSION_TTL_MS`
+  - `MANAGED_PRESENCE_TTL_MS`
+- backend unit tests now use `backend/wrangler.test.toml` to exercise expiry-sensitive lifecycle behavior under short TTLs
 
 That means the current implementation phase is:
 

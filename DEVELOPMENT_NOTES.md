@@ -21,6 +21,7 @@ Check this file before making further code changes.
 - After a complete slice passes its intended validation, update the online GitHub repo before stopping.
 - E2E tests use Playwright Electron fixtures in `test/e2e/fixtures.js`.
 - The dedicated live-backend lane is configured in `playwright.live.config.js` and owns local `wrangler dev` lifecycle through Playwright `webServer`.
+- Backend unit tests use `backend/wrangler.test.toml` so expiry-sensitive lifecycle cases can run against short TTLs without changing deploy defaults.
 - Keep the default `npm run test:e2e` suite mock-based and stable; do not fold live Worker startup into the shared Electron fixture path.
 - Tests launch the app with:
   - isolated `userData`
@@ -97,6 +98,7 @@ Check this file before making further code changes.
   - `src/renderer/admin.js`
   - `src/main/main.js` admin-window lifecycle and state relay
   - `src/main/preload.js` admin open/state/refresh bridge
+- Test-only managed lifecycle hooks now live behind `window.udp1492ManagedDebug` in `src/renderer/ui.js`.
 - `src/renderer/ui.js` should remain the rendering and app-shell coordination layer, not the long-term home for all managed-mode control flow.
 - `udp1492_app_state_v2` should persist durable operating-mode and slot-intent state only.
 - Live managed session facts such as current session ID, membership status, presence, and resolved transport peers should stay runtime-only and be rebuilt on resume.

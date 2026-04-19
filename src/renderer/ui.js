@@ -3702,6 +3702,10 @@ import {
       runProbes: (options = {}) => runManagedNatPeerProbes(options),
       refresh: (options = {}) => refreshManagedNatDiscovery(options)
     };
+    window.udp1492ManagedDebug = {
+      sendPresence: (slotId) => sendManagedPresence(slotId),
+      refreshPeers: (slotId, options = {}) => managedController.refreshManagedPeers(slotId, options)
+    };
   }
 
   (async function init() {

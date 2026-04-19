@@ -1,6 +1,10 @@
 import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function readJson(response) {
   const text = await response.text();
   return text ? JSON.parse(text) : null;
@@ -318,5 +322,113 @@ describe("1492 backend core managed API", () => {
     );
     expect(oldChannelPeers.response.status).toBe(200);
     expect(oldChannelPeers.payload.peers).toHaveLength(0);
+  });
+
+  it("expires idle sessions after the configured TTL", async () => {
+    const opened = await openSession("Scot");
+
+    await sleep(3200);
+
+    const channels = await requestJson(
+      `/api/channels?sessionId=${encodeURIComponent(opened.identity.sessionId)}`
+    );
+    expect(channels.response.status).toBe(401);
+    expect(channels.payload.code).toBe("managed_session_expired");
+  });
+
+  it("drops stale peers after the configured presence timeout while active members stay visible", async () => {
+    const first = await openSession("Scot");
+    const second = await openSession("Peer Two");
+
+    for (const opened of [first, second]) {
+      const joinAlpha = await requestJson("/api/channels/chn_alpha/join", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          sessionId: opened.identity.sessionId,
+          slotId: "A",
+          passcode: null
+        })
+      });
+      expect(joinAlpha.response.status).toBe(200);
+    }
+
+    const firstPresence = await requestJson("/api/channels/chn_alpha/presence", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: first.identity.sessionId,
+        slotId: "A",
+        onlineState: "online",
+        endpoints: [
+          {
+            kind: "public",
+            ip: "198.51.100.11",
+            port: 1492
+          }
+        ]
+      })
+    });
+    expect(firstPresence.response.status).toBe(200);
+
+    const secondPresence = await requestJson("/api/channels/chn_alpha/presence", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: second.identity.sessionId,
+        slotId: "A",
+        onlineState: "online",
+        endpoints: [
+          {
+            kind: "public",
+            ip: "198.51.100.12",
+            port: 1492
+          }
+        ]
+      })
+    });
+    expect(secondPresence.response.status).toBe(200);
+
+    const initialPeers = await requestJson(
+      `/api/channels/chn_alpha/peers?sessionId=${encodeURIComponent(first.identity.sessionId)}`
+    );
+    expect(initialPeers.response.status).toBe(200);
+    expect(initialPeers.payload.peers).toHaveLength(1);
+
+    await sleep(1600);
+
+    const keepAlive = await requestJson("/api/channels/chn_alpha/presence", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: first.identity.sessionId,
+        slotId: "A",
+        onlineState: "online",
+        endpoints: [
+          {
+            kind: "public",
+            ip: "198.51.100.11",
+            port: 1492
+          }
+        ]
+      })
+    });
+    expect(keepAlive.response.status).toBe(200);
+
+    await sleep(1200);
+
+    const peersAfterTimeout = await requestJson(
+      `/api/channels/chn_alpha/peers?sessionId=${encodeURIComponent(first.identity.sessionId)}`
+    );
+    expect(peersAfterTimeout.response.status).toBe(200);
+    expect(peersAfterTimeout.payload.peers).toHaveLength(0);
   });
 });

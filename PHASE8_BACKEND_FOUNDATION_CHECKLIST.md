@@ -292,6 +292,11 @@ The repo now also includes a dedicated local real-backend Electron validation pa
 - `test/e2e/live-backend.spec.js` drives the desktop client against the local Worker
 - `package.json` exposes this as `npm run test:e2e:live-backend`
 - the default `npm run test:e2e` suite intentionally stays mock-based by ignoring `live-backend.spec.js`
+- lifecycle-sensitive backend unit tests use `backend/wrangler.test.toml`
+- backend timing can now be overridden through:
+  - `MANAGED_HEARTBEAT_INTERVAL_MS`
+  - `MANAGED_SESSION_TTL_MS`
+  - `MANAGED_PRESENCE_TTL_MS`
 
 This is the first real Phase 10 implementation slice, not the final backend closeout.
 
@@ -322,6 +327,13 @@ The current implementation baseline already includes:
 - server-side membership gates so `presence` and `peers` require a real join instead of only a valid session
 - basic protected-channel passcode enforcement for seeded development channels
 - a dedicated local Playwright Electron path that validates session open, channel list, join, presence-driven peer visibility, and leave against the actual Worker
+- env-driven lifecycle timing so session expiry and stale presence cleanup can be hardened without changing deploy defaults
+- slot-membership cleanup when sessions expire in the directory object
+- live Electron coverage for:
+  - protected-channel passcode enforcement
+  - stale peer cleanup after presence timeout
+  - replacement join from Alpha to protected Bravo
+  - idle session expiry recovery in the desktop client
 
 The current known bounds of this first implementation slice are:
 
@@ -365,7 +377,14 @@ The current automated backend suite covers:
 - membership-required gating for `presence` and `peers`
 - peer visibility from live presence
 - replacement-join handoff that removes stale old-channel visibility immediately
+- idle session expiry after the configured TTL
+- stale peer cleanup after the configured presence timeout while an active member stays fresh
 - Electron desktop integration against the real local Worker for open-session, seeded-channel join, peer visibility, and leave
+- Electron desktop integration against the real local Worker for:
+  - protected seeded-channel passcodes
+  - replacement join into protected Bravo
+  - stale peer disappearance after timeout
+  - idle session expiry recovery
 
 Those checks now prove bundling, baseline request flow, and one bounded end-to-end desktop path against the live Worker. Broader desktop/backend coverage still remains future hardening work.
 
@@ -401,6 +420,7 @@ The next implementation slice should be:
 The first files to inspect and evolve are:
 
 - `backend/wrangler.toml`
+- `backend/wrangler.test.toml`
 - `backend/src/index.ts`
 - `playwright.live.config.js`
 - `test/e2e/live-backend.spec.js`

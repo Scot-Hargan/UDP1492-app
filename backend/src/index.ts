@@ -1,9 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
 
 const DIRECTORY_OBJECT_NAME = "managed-directory";
-const HEARTBEAT_INTERVAL_MS = 15_000;
-const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
-const PRESENCE_TTL_MS = HEARTBEAT_INTERVAL_MS * 3;
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
+const DEFAULT_SESSION_TTL_MS = 2 * 60 * 60 * 1000;
+const DEFAULT_PRESENCE_TTL_MS = DEFAULT_HEARTBEAT_INTERVAL_MS * 3;
 
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
@@ -20,6 +20,9 @@ interface JsonObject {
 export interface Env {
   CHANNEL_DO: DurableObjectNamespace<ChannelDO>;
   DIRECTORY_DO: DurableObjectNamespace<DirectoryDO>;
+  MANAGED_HEARTBEAT_INTERVAL_MS?: string;
+  MANAGED_SESSION_TTL_MS?: string;
+  MANAGED_PRESENCE_TTL_MS?: string;
 }
 
 interface SessionRecord {
@@ -100,12 +103,29 @@ function numberOrNull(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function positiveIntegerOrNull(value: unknown): number | null {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 function nowIso(): string {
   return new Date().toISOString();
 }
 
 function addMs(iso: string, ms: number): string {
   return new Date(Date.parse(iso) + ms).toISOString();
+}
+
+function getHeartbeatIntervalMs(env: Env): number {
+  return positiveIntegerOrNull(env.MANAGED_HEARTBEAT_INTERVAL_MS) ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
+}
+
+function getSessionTtlMs(env: Env): number {
+  return positiveIntegerOrNull(env.MANAGED_SESSION_TTL_MS) ?? DEFAULT_SESSION_TTL_MS;
+}
+
+function getPresenceTtlMs(env: Env): number {
+  return positiveIntegerOrNull(env.MANAGED_PRESENCE_TTL_MS) ?? (getHeartbeatIntervalMs(env) * 3 || DEFAULT_PRESENCE_TTL_MS);
 }
 
 function sanitizeSlotId(value: unknown): string {
@@ -265,6 +285,14 @@ export class DirectoryDO extends DurableObject<Env> {
     });
   }
 
+  getHeartbeatIntervalMs(): number {
+    return getHeartbeatIntervalMs(this.env);
+  }
+
+  getSessionTtlMs(): number {
+    return getSessionTtlMs(this.env);
+  }
+
   initializeSchema(): void {
     this.ctx.storage.sql.exec(`
       CREATE TABLE IF NOT EXISTS channels (
@@ -326,6 +354,13 @@ export class DirectoryDO extends DurableObject<Env> {
     this.ctx.storage.sql.exec(
       "DELETE FROM sessions WHERE expires_at < ?",
       now
+    );
+    this.ctx.storage.sql.exec(
+      `DELETE FROM slot_memberships
+       WHERE session_id NOT IN (
+         SELECT session_id
+         FROM sessions
+       )`
     );
   }
 
@@ -430,7 +465,7 @@ export class DirectoryDO extends DurableObject<Env> {
         code: "managed_session_expired"
       });
     }
-    const nextExpiresAt = addMs(now, SESSION_TTL_MS);
+    const nextExpiresAt = addMs(now, this.getSessionTtlMs());
     this.ctx.storage.sql.exec(
       `UPDATE sessions
        SET last_seen_at = ?, expires_at = ?
@@ -535,7 +570,7 @@ export class DirectoryDO extends DurableObject<Env> {
     const requestedUserId = stringOrEmpty(body.requestedUserId).trim();
     const clientVersion = stringOrEmpty(body.clientVersion).trim();
     const mode = stringOrEmpty(body.mode).trim() || "managed";
-    const nextExpiresAt = addMs(now, SESSION_TTL_MS);
+    const nextExpiresAt = addMs(now, this.getSessionTtlMs());
 
     if (resumeSessionId) {
       const resumed = this.getSessionRow(resumeSessionId);
@@ -560,7 +595,7 @@ export class DirectoryDO extends DurableObject<Env> {
           session: {
             openedAt: now,
             expiresAt: nextExpiresAt,
-            heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS
+            heartbeatIntervalMs: this.getHeartbeatIntervalMs()
           }
         });
       }
@@ -598,7 +633,7 @@ export class DirectoryDO extends DurableObject<Env> {
       session: {
         openedAt: now,
         expiresAt: nextExpiresAt,
-        heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS
+        heartbeatIntervalMs: this.getHeartbeatIntervalMs()
       }
     });
   }
@@ -710,28 +745,28 @@ export class DirectoryDO extends DurableObject<Env> {
       const url = new URL(request.url);
       if (request.method === "OPTIONS") return emptyResponse();
       if (request.method === "POST" && url.pathname === "/internal/session/open") {
-        return this.handleOpenSession(request);
+        return await this.handleOpenSession(request);
       }
       if (request.method === "GET" && url.pathname === "/internal/channels") {
-        return this.handleListChannels(request);
+        return await this.handleListChannels(request);
       }
       if (request.method === "GET" && url.pathname === "/internal/session") {
-        return this.handleGetSession(request);
+        return await this.handleGetSession(request);
       }
       if (request.method === "GET" && url.pathname === "/internal/channel-config") {
-        return this.handleGetChannelConfig(request);
+        return await this.handleGetChannelConfig(request);
       }
       if (request.method === "GET" && url.pathname === "/internal/slot-membership") {
-        return this.handleGetSlotMembership(request);
+        return await this.handleGetSlotMembership(request);
       }
       if (request.method === "POST" && url.pathname === "/internal/slot-membership/set") {
-        return this.handleSetSlotMembership(request);
+        return await this.handleSetSlotMembership(request);
       }
       if (request.method === "POST" && url.pathname === "/internal/slot-membership/clear") {
-        return this.handleClearSlotMembership(request);
+        return await this.handleClearSlotMembership(request);
       }
       if (request.method === "GET" && url.pathname === "/internal/channel-membership") {
-        return this.handleAssertChannelMembership(request);
+        return await this.handleAssertChannelMembership(request);
       }
       if (request.method === "GET" && url.pathname === "/internal/health") {
         return jsonResponse({ status: "ok", object: "directory" });
@@ -755,6 +790,14 @@ export class ChannelDO extends DurableObject<Env> {
     ctx.blockConcurrencyWhile(async () => {
       this.initializeSchema();
     });
+  }
+
+  getHeartbeatIntervalMs(): number {
+    return getHeartbeatIntervalMs(this.env);
+  }
+
+  getPresenceTtlMs(): number {
+    return getPresenceTtlMs(this.env);
   }
 
   initializeSchema(): void {
@@ -787,7 +830,7 @@ export class ChannelDO extends DurableObject<Env> {
   }
 
   cleanupStaleState(now = nowIso()): void {
-    const cutoff = addMs(now, -PRESENCE_TTL_MS);
+    const cutoff = addMs(now, -this.getPresenceTtlMs());
     this.ctx.storage.sql.exec(
       `UPDATE memberships
        SET membership_state = 'none',
@@ -827,14 +870,14 @@ export class ChannelDO extends DurableObject<Env> {
            AND last_seen_at >= ?`,
         sessionId,
         slotId,
-        addMs(nowIso(), -PRESENCE_TTL_MS)
+        addMs(nowIso(), -this.getPresenceTtlMs())
       )
       .toArray();
     return rows[0] ? { joinedAt: rows[0].joined_at } : null;
   }
 
   requireJoinedMembership(sessionId: string, slotId?: string): { joinedAt: string } {
-    const cutoff = addMs(nowIso(), -PRESENCE_TTL_MS);
+    const cutoff = addMs(nowIso(), -this.getPresenceTtlMs());
     const rows = this.ctx.storage.sql
       .exec<{ joined_at: string }>(
         `SELECT joined_at
@@ -860,7 +903,7 @@ export class ChannelDO extends DurableObject<Env> {
   async handleMemberCount(): Promise<Response> {
     const now = nowIso();
     this.cleanupStaleState(now);
-    const cutoff = addMs(now, -PRESENCE_TTL_MS);
+    const cutoff = addMs(now, -this.getPresenceTtlMs());
     const rows = this.ctx.storage.sql
       .exec<{ count: number }>(
         `SELECT COUNT(DISTINCT session_id) AS count
@@ -1034,7 +1077,7 @@ export class ChannelDO extends DurableObject<Env> {
         lastSeenAt: now
       },
       registrations,
-      nextHeartbeatAt: addMs(now, HEARTBEAT_INTERVAL_MS)
+      nextHeartbeatAt: addMs(now, this.getHeartbeatIntervalMs())
     });
   }
 
@@ -1052,7 +1095,7 @@ export class ChannelDO extends DurableObject<Env> {
     const now = nowIso();
     this.cleanupStaleState(now);
     this.requireJoinedMembership(sessionId);
-    const cutoff = addMs(now, -PRESENCE_TTL_MS);
+    const cutoff = addMs(now, -this.getPresenceTtlMs());
 
     const peerRows = this.ctx.storage.sql
       .exec<{
@@ -1163,19 +1206,19 @@ export class ChannelDO extends DurableObject<Env> {
       const url = new URL(request.url);
       if (request.method === "OPTIONS") return emptyResponse();
       if (request.method === "GET" && url.pathname === "/internal/member-count") {
-        return this.handleMemberCount();
+        return await this.handleMemberCount();
       }
       if (request.method === "POST" && url.pathname === "/internal/join") {
-        return this.handleJoin(request);
+        return await this.handleJoin(request);
       }
       if (request.method === "POST" && url.pathname === "/internal/presence") {
-        return this.handlePresence(request);
+        return await this.handlePresence(request);
       }
       if (request.method === "GET" && url.pathname === "/internal/peers") {
-        return this.handlePeers(request);
+        return await this.handlePeers(request);
       }
       if (request.method === "POST" && url.pathname === "/internal/leave") {
-        return this.handleLeave(request);
+        return await this.handleLeave(request);
       }
       if (request.method === "GET" && url.pathname === "/internal/health") {
         return jsonResponse({ status: "ok", object: "channel" });
@@ -1286,11 +1329,12 @@ export default {
       if (request.method === "POST" && url.pathname === "/api/session/open") {
         const directory = getDirectoryStub(env);
         const body = await request.text();
-        return fetchStubJson<JsonObject>(directory, "https://directory/internal/session/open", {
+        const payload = await fetchStubJson<JsonObject>(directory, "https://directory/internal/session/open", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body
-        }).then((payload) => jsonResponse(payload));
+        });
+        return jsonResponse(payload);
       }
 
       if (request.method === "GET" && url.pathname === "/api/channels") {

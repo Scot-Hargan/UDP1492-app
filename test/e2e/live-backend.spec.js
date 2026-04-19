@@ -1,5 +1,7 @@
 const { test, expect } = require('./fixtures');
 
+test.describe.configure({ mode: 'serial' });
+
 function buildManagedApiUrl(baseUrl, pathname = '') {
   const url = new URL(baseUrl);
   const baseSegments = url.pathname.split('/').filter(Boolean);
@@ -31,6 +33,58 @@ async function requestManagedBackend(baseUrl, pathname, options = {}) {
   return { response, payload };
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function openManagedSession(page, displayName = 'Scot') {
+  await page.locator('#operatingModeManaged').click();
+  await page.locator('#managedDisplayNameInput').fill(displayName);
+  await expect(page.locator('#managedProfileStatus')).toContainText('app config');
+  await page.locator('#managedOpenSessionBtn').click();
+  await expect(page.locator('#managedIdentityMeta')).toContainText('Session ses_');
+}
+
+async function openPeerSession(baseUrl, displayName = 'Peer Two') {
+  const opened = await requestManagedBackend(baseUrl, '/api/session/open', {
+    method: 'POST',
+    body: {
+      displayName,
+      mode: 'managed',
+      clientVersion: 'playwright-live'
+    }
+  });
+  expect(opened.response.status).toBe(200);
+  return opened.payload;
+}
+
+async function joinPeerChannel(baseUrl, sessionId, channelId, slotId = 'A', passcode = null) {
+  const joined = await requestManagedBackend(baseUrl, `/api/channels/${channelId}/join`, {
+    method: 'POST',
+    body: {
+      sessionId,
+      slotId,
+      passcode
+    }
+  });
+  expect(joined.response.status).toBe(200);
+  return joined.payload;
+}
+
+async function sendPeerPresence(baseUrl, sessionId, channelId, endpoint, slotId = 'A') {
+  const presence = await requestManagedBackend(baseUrl, `/api/channels/${channelId}/presence`, {
+    method: 'POST',
+    body: {
+      sessionId,
+      slotId,
+      onlineState: 'online',
+      endpoints: [endpoint]
+    }
+  });
+  expect(presence.response.status).toBe(200);
+  return presence.payload;
+}
+
 test.use({
   runtimeEnv: {
     UDP1492_MANAGED_BACKEND_URL: 'http://127.0.0.1:8791/api',
@@ -42,54 +96,20 @@ test('opens a managed session against the local Worker, joins a seeded channel, 
   const { page } = appHarness;
   const managedBackendBaseUrl = 'http://127.0.0.1:8791';
 
-  await page.locator('#operatingModeManaged').click();
-  await page.locator('#managedDisplayNameInput').fill('Scot');
-  await expect(page.locator('#managedProfileStatus')).toContainText('app config');
-  await page.locator('#managedOpenSessionBtn').click();
-
-  await expect(page.locator('#managedIdentityMeta')).toContainText('Session ses_');
+  await openManagedSession(page);
   await expect(page.locator('#managedLobbyStatus')).toContainText('1 open | 1 protected');
   await expect(page.locator('#managedChannelList')).toContainText('Alpha');
   await expect(page.locator('#managedChannelList')).toContainText('Bravo');
   await page.getByRole('button', { name: 'Join Selected' }).click();
   await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
 
-  const peerSession = await requestManagedBackend(managedBackendBaseUrl, '/api/session/open', {
-    method: 'POST',
-    body: {
-      displayName: 'Peer Two',
-      mode: 'managed',
-      clientVersion: 'playwright-live'
-    }
+  const peerSession = await openPeerSession(managedBackendBaseUrl, 'Peer Two');
+  await joinPeerChannel(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha');
+  await sendPeerPresence(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha', {
+    kind: 'public',
+    ip: '198.51.100.10',
+    port: 1492
   });
-  expect(peerSession.response.status).toBe(200);
-
-  const peerJoin = await requestManagedBackend(managedBackendBaseUrl, '/api/channels/chn_alpha/join', {
-    method: 'POST',
-    body: {
-      sessionId: peerSession.payload.identity.sessionId,
-      slotId: 'A',
-      passcode: null
-    }
-  });
-  expect(peerJoin.response.status).toBe(200);
-
-  const peerPresence = await requestManagedBackend(managedBackendBaseUrl, '/api/channels/chn_alpha/presence', {
-    method: 'POST',
-    body: {
-      sessionId: peerSession.payload.identity.sessionId,
-      slotId: 'A',
-      onlineState: 'online',
-      endpoints: [
-        {
-          kind: 'public',
-          ip: '198.51.100.10',
-          port: 1492
-        }
-      ]
-    }
-  });
-  expect(peerPresence.response.status).toBe(200);
 
   await page.locator('#managedRefreshPeersBtn').click();
   await expect(page.locator('#networkTable tbody')).toContainText('Peer Two');
@@ -98,7 +118,7 @@ test('opens a managed session against the local Worker, joins a seeded channel, 
   const peerLeave = await requestManagedBackend(managedBackendBaseUrl, '/api/channels/chn_alpha/leave', {
     method: 'POST',
     body: {
-      sessionId: peerSession.payload.identity.sessionId,
+      sessionId: peerSession.identity.sessionId,
       slotId: 'A'
     }
   });
@@ -109,4 +129,91 @@ test('opens a managed session against the local Worker, joins a seeded channel, 
 
   await page.locator('#managedLeaveChannelBtn').click();
   await expect(page.locator('#managedActiveChannel')).toHaveText('Group A has no active membership');
+});
+
+test('enforces protected seeded-channel passcodes against the real Worker', async ({ appHarness }) => {
+  const { page } = appHarness;
+
+  await openManagedSession(page);
+
+  await expect(page.locator('#managedChannelList')).toContainText('Bravo');
+  await page.locator('#managedChannelList li').filter({ hasText: 'Bravo' }).locator('button').click();
+  await expect(page.locator('#managedErrorText')).toContainText(/requires a passcode/i);
+
+  await page.locator('#managedJoinPasscodeInput').fill('wrong-secret');
+  await page.locator('#managedChannelList li').filter({ hasText: 'Bravo' }).locator('button').click();
+  await expect(page.locator('#managedErrorText')).toContainText(/invalid.*passcode|supplied passcode is invalid/i);
+
+  await page.locator('#managedJoinPasscodeInput').fill('alpha-secret');
+  await page.locator('#managedChannelList li').filter({ hasText: 'Bravo' }).locator('button').click();
+  await expect(page.locator('#managedActiveChannel')).toHaveText('Bravo');
+  await expect(page.locator('#managedJoinPasscodeInput')).toHaveValue('');
+});
+
+test('removes stale peers after presence timeout while the desktop session stays active', async ({ appHarness }) => {
+  const { page } = appHarness;
+  const managedBackendBaseUrl = 'http://127.0.0.1:8791';
+
+  await openManagedSession(page);
+  await page.getByRole('button', { name: 'Join Selected' }).click();
+  await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+
+  const peerSession = await openPeerSession(managedBackendBaseUrl, 'Stale Peer');
+  await joinPeerChannel(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha');
+  await sendPeerPresence(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha', {
+    kind: 'public',
+    ip: '198.51.100.25',
+    port: 1492
+  });
+
+  await page.locator('#managedRefreshPeersBtn').click();
+  await expect(page.locator('#networkTable tbody')).toContainText('Stale Peer');
+
+  await sleep(1600);
+  await page.evaluate(() => window.udp1492ManagedDebug.sendPresence('A'));
+  await sleep(1400);
+
+  await page.locator('#managedRefreshPeersBtn').click();
+  await expect(page.locator('#networkTable tbody')).not.toContainText('Stale Peer');
+  await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+});
+
+test('switches from Alpha to protected Bravo without leaving the desktop client in a broken state', async ({ appHarness }) => {
+  const { page } = appHarness;
+  const managedBackendBaseUrl = 'http://127.0.0.1:8791';
+
+  await openManagedSession(page);
+  await page.getByRole('button', { name: 'Join Selected' }).click();
+  await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+
+  const peerSession = await openPeerSession(managedBackendBaseUrl, 'Alpha Peer');
+  await joinPeerChannel(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha');
+  await sendPeerPresence(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha', {
+    kind: 'public',
+    ip: '198.51.100.30',
+    port: 1492
+  });
+
+  await page.locator('#managedRefreshPeersBtn').click();
+  await expect(page.locator('#networkTable tbody')).toContainText('Alpha Peer');
+
+  await page.locator('#managedJoinPasscodeInput').fill('alpha-secret');
+  await page.locator('#managedChannelList li').filter({ hasText: 'Bravo' }).locator('button').click();
+  await expect(page.locator('#managedActiveChannel')).toHaveText('Bravo');
+
+  await page.locator('#managedRefreshPeersBtn').click();
+  await expect(page.locator('#networkTable tbody')).not.toContainText('Alpha Peer');
+});
+
+test('expires an idle managed session cleanly and resets the desktop state', async ({ appHarness }) => {
+  const { page } = appHarness;
+
+  await openManagedSession(page);
+  await sleep(2600);
+
+  await page.locator('#managedRefreshChannelsBtn').click();
+  await expect(page.locator('#managedErrorText')).toContainText(/expired/i);
+  await expect(page.locator('#managedIdentityMeta')).not.toContainText('Session ses_');
+  await expect(page.locator('#managedActiveChannel')).toHaveText('Group A has no active membership');
+  await expect(page.locator('#managedJoinPasscodeInput')).toHaveValue('');
 });

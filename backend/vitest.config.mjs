@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
 
-const wranglerConfigPath = fileURLToPath(new URL("./wrangler.toml", import.meta.url));
+const wranglerConfigPath = fileURLToPath(new URL("./wrangler.test.toml", import.meta.url));
 
 export default defineConfig({
   plugins: [
