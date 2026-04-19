@@ -1,6 +1,6 @@
 {
   "name": "udp-1492-app",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "private": false,
   "description": "Standalone Electron desktop app for UDP 1492 Audio Link.",
   "main": "src/main/main.js",
@@ -20,13 +20,17 @@
     "dist:win": "electron-builder --win portable nsis",
     "dist:win:portable": "electron-builder --win portable",
     "dist:win:nsis": "electron-builder --win nsis",
+    "test:backend": "vitest --config backend/vitest.config.mjs run",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.14.7",
     "@playwright/test": "^1.59.1",
     "electron": "^41.2.1",
-    "electron-builder": "^26.8.1"
+    "electron-builder": "^26.8.1",
+    "vitest": "^4.1.4",
+    "wrangler": "^4.83.0"
   },
   "build": {
     "appId": "com.udp1492.desktop",

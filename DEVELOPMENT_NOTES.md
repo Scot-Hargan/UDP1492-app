@@ -15,6 +15,7 @@ Check this file before making further code changes.
 
 ## Test discipline
 
+- Run `npm run test:backend` after meaningful Cloudflare Worker / Durable Object changes.
 - Run `npm run test:e2e` after meaningful UI/main-process changes.
 - After a complete slice passes its intended validation, update the online GitHub repo before stopping.
 - E2E tests use Playwright Electron fixtures in `test/e2e/fixtures.js`.
@@ -63,6 +64,21 @@ Check this file before making further code changes.
 - `UDP1492_MANAGED_LOCAL_ADDRESSES`
   - optional comma-separated override for desktop local endpoint addresses used in managed presence payloads
 
+## Backend workspace
+
+- The Cloudflare backend scaffold now lives in `backend/`.
+- Current bootstrap files include:
+  - `backend/wrangler.toml`
+  - `backend/src/index.ts`
+- Durable Object bindings currently configured there are:
+  - `CHANNEL_DO` -> `ChannelDO`
+  - `DIRECTORY_DO` -> `DirectoryDO`
+- Treat `backend/.wrangler/` as local Cloudflare state, not as a durable decision record.
+- Keep the backend coordination-only:
+  - no voice/data relay path
+  - no content storage
+  - no host-protocol redesign unless a concrete blocker appears
+
 ## Workspace reminders
 
 - This workspace root is the git repository at `C:\NodeProjects\1492-app`.
@@ -93,6 +109,7 @@ Check this file before making further code changes.
   - `PHASE5_COMMANDER_MODE_CHECKLIST.md`
   - `PHASE6_ADMIN_SURFACE_CHECKLIST.md`
   - `PHASE7_NAT_INTEGRATION_CHECKLIST.md`
+  - `PHASE8_BACKEND_FOUNDATION_CHECKLIST.md`
   - `PHASE0_HANDOFF.md` when historical context needs redirect notes
   - `NEXT_CHAT_HANDOFF.md` when the active slice, validation baseline, or continuation target changes
 - When a phase closes and there is no new checklist yet, update the closed checklist as a validation record and note the next planning gap explicitly in `NEXT_CHAT_HANDOFF.md`.

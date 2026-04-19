@@ -6,7 +6,7 @@ Use this file if work continues in a fresh chat.
 
 - Repo: `C:\NodeProjects\1492-app`
 - Branch: `main`
-- Package/app version: `0.1.23`
+- Package/app version: `0.1.24`
 - Renderer version marker in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js): `0.4.22`
 - Phase 1 is closed
 - Phase 2 protected-channel client work is closed
@@ -15,30 +15,32 @@ Use this file if work continues in a fresh chat.
 - Phase 5 Commander Mode desktop-client work is closed
 - Phase 6 admin-surface work is closed and validated
 - Phase 7 NAT integration is closed and validated for the bounded desktop-client milestone
+- Phase 8 backend foundation planning is active
+- Phase 9 Cloudflare bootstrap is complete locally
+- Phase 10 core managed API implementation is in progress
 
 ## Start Here
 
 Read these in order:
 
-1. [PHASE7_NAT_INTEGRATION_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE7_NAT_INTEGRATION_CHECKLIST.md)
-2. [PHASE6_ADMIN_SURFACE_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE6_ADMIN_SURFACE_CHECKLIST.md)
+1. [PHASE8_BACKEND_FOUNDATION_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE8_BACKEND_FOUNDATION_CHECKLIST.md)
+2. [PHASE7_NAT_INTEGRATION_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE7_NAT_INTEGRATION_CHECKLIST.md)
 3. [DEVELOPMENT_NOTES.md](C:/NodeProjects/1492-app/DEVELOPMENT_NOTES.md)
 4. [MANAGED_MODE_ADAPTATION_PLAN.md](C:/NodeProjects/1492-app/MANAGED_MODE_ADAPTATION_PLAN.md)
-5. [PHASE5_COMMANDER_MODE_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE5_COMMANDER_MODE_CHECKLIST.md)
-6. [PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE4_DUAL_EAR_ROUTING_CHECKLIST.md)
-7. [PHASE3_GROUPB_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE3_GROUPB_CHECKLIST.md)
-8. [PHASE2_CLIENT_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE2_CLIENT_CHECKLIST.md)
-9. [PHASE1_REVISED_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE1_REVISED_CHECKLIST.md)
+5. [backend/wrangler.toml](C:/NodeProjects/1492-app/backend/wrangler.toml)
+6. [backend/src/index.ts](C:/NodeProjects/1492-app/backend/src/index.ts)
+7. [backend/vitest.config.mjs](C:/NodeProjects/1492-app/backend/vitest.config.mjs)
+8. [backend/test/backend.spec.mjs](C:/NodeProjects/1492-app/backend/test/backend.spec.mjs)
+9. [src/renderer/managed-api.js](C:/NodeProjects/1492-app/src/renderer/managed-api.js)
 10. [src/renderer/managed-runtime.js](C:/NodeProjects/1492-app/src/renderer/managed-runtime.js)
-11. [src/renderer/managed-api.js](C:/NodeProjects/1492-app/src/renderer/managed-api.js)
-12. [src/renderer/managed-controller.js](C:/NodeProjects/1492-app/src/renderer/managed-controller.js)
-13. [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js)
-14. [src/renderer/admin.html](C:/NodeProjects/1492-app/src/renderer/admin.html)
-15. [src/renderer/admin.js](C:/NodeProjects/1492-app/src/renderer/admin.js)
-16. [src/main/main.js](C:/NodeProjects/1492-app/src/main/main.js)
-17. [src/main/preload.js](C:/NodeProjects/1492-app/src/main/preload.js)
-18. [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
-19. [test/e2e/fixtures.js](C:/NodeProjects/1492-app/test/e2e/fixtures.js)
+11. [src/renderer/managed-controller.js](C:/NodeProjects/1492-app/src/renderer/managed-controller.js)
+12. [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js)
+13. [src/renderer/admin.html](C:/NodeProjects/1492-app/src/renderer/admin.html)
+14. [src/renderer/admin.js](C:/NodeProjects/1492-app/src/renderer/admin.js)
+15. [src/main/main.js](C:/NodeProjects/1492-app/src/main/main.js)
+16. [src/main/preload.js](C:/NodeProjects/1492-app/src/main/preload.js)
+17. [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
+18. [test/e2e/fixtures.js](C:/NodeProjects/1492-app/test/e2e/fixtures.js)
 
 ## What Is Already Complete
 
@@ -169,23 +171,74 @@ Closed items in this milestone include:
 - transport-authoritative probe upgrades derived from existing host ping/handshake evidence
 - deterministic Playwright NAT mocks plus coverage for advisory success, transport-authoritative success, timeout visibility, and non-destructive failure handling
 
+### Phase 8
+
+Phase 8 backend foundation planning is now active.
+
+Closed planning decisions in this phase include:
+
+- the backend is coordination-only, not a media relay
+- Cloudflare Workers plus SQLite-backed Durable Objects are the active backend platform
+- managed-mode knowledge that is reusable for direct/private use should remain retainable locally in the desktop app
+- the first implementation milestone should match the existing desktop client contract before adding broader backend features
+- the active planning artifact is now [PHASE8_BACKEND_FOUNDATION_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE8_BACKEND_FOUNDATION_CHECKLIST.md)
+
+### Phase 9
+
+The Cloudflare bootstrap baseline is now complete locally.
+
+Current backend bootstrap state includes:
+
+- Worker scaffold in [backend](C:/NodeProjects/1492-app/backend)
+- config in [backend/wrangler.toml](C:/NodeProjects/1492-app/backend/wrangler.toml)
+- Worker entrypoint in [backend/src/index.ts](C:/NodeProjects/1492-app/backend/src/index.ts)
+- Durable Object bindings:
+  - `CHANNEL_DO` -> `ChannelDO`
+  - `DIRECTORY_DO` -> `DirectoryDO`
+- migration `v1` using SQLite-backed `new_sqlite_classes`
+
+Phase 9 bootstrap is closed enough for current product needs.
+
+### Phase 10
+
+Phase 10 core managed API implementation is now in progress.
+
+The current backend implementation in [backend/src/index.ts](C:/NodeProjects/1492-app/backend/src/index.ts) now includes:
+
+- Worker routing for the six managed endpoints the desktop client already expects
+- SQL-backed `DirectoryDO` session issuance/validation, seeded channel catalog behavior, and slot-membership tracking
+- SQL-backed `ChannelDO` join, presence, peer listing, leave, and member-count behavior
+- CORS-friendly responses for the Electron renderer
+- seeded development channels including one protected path for passcode validation
+- membership-gated `presence` / `peers` behavior so a valid session cannot bypass `join`
+- replacement-join handoff that clears old-channel slot ownership immediately on successful switch
+
+Backend-focused automated validation now exists in:
+
+- [backend/vitest.config.mjs](C:/NodeProjects/1492-app/backend/vitest.config.mjs)
+- [backend/test/backend.spec.mjs](C:/NodeProjects/1492-app/backend/test/backend.spec.mjs)
+
+Current limitations of the in-progress slice:
+
+- the desktop client is not yet pointed at the real backend in automated tests
+- channel provisioning is still seeded/static, not admin-driven
+- auth hardening remains intentionally lightweight
+
 ## Active Planning Artifact
 
-[PHASE7_NAT_INTEGRATION_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE7_NAT_INTEGRATION_CHECKLIST.md) is now the closed validation record for the NAT milestone.
+[PHASE8_BACKEND_FOUNDATION_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE8_BACKEND_FOUNDATION_CHECKLIST.md) is now the active controlling artifact.
 
 It contains:
 
-- the recommendation to prioritize NAT integration over an admin mutation follow-on
-- finish-line criteria for a bounded NAT-readiness milestone
-- locked decisions around candidate publication, probe orchestration, and host-boundary restraint
-- explicit preference for local-candidate plus STUN-style mapped public candidate discovery over generic HTTP public-IP lookups
-- current implementation baseline for managed runtime/api/controller/admin seams
-- recommended first-slice decisions for candidate kinds, runtime-only NAT state, and probe lifecycle vocabulary
-- a concrete runtime NAT-state shape and a renderer-vs-host decision gate for candidate authority
-- a file-ownership map for renderer/main/preload/host responsibilities
-- a step-by-step implementation sequence by file
-- concrete implementation notes and non-goals for the first NAT slice
-- the closeout state for the bounded desktop-client NAT milestone
+- the backend/product philosophy that managed mode coordinates while voice/data remain peer-to-peer
+- local-knowledge retention rules for managed-learned peer/friend data that should remain reusable for direct mode
+- the confirmed Cloudflare bootstrap baseline now present in `backend/`
+- the exact six-endpoint managed API contract already assumed by the desktop client
+- the `Worker` / `DirectoryDO` / `ChannelDO` responsibility model
+- privacy and retention rules for presence, endpoints, and limited admin facts
+- the implementation order for Phase 10 core managed API work
+
+[PHASE7_NAT_INTEGRATION_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE7_NAT_INTEGRATION_CHECKLIST.md) now remains the closed validation record for the NAT milestone.
 
 ## Immediate Next Slice
 
@@ -193,15 +246,14 @@ Do not reopen the Phase 3 Group B client checklist unless a regression appears.
 Do not reopen the Phase 4 dual-ear routing checklist unless a regression appears.
 Do not reopen the Phase 5 Commander checklist unless a regression appears.
 Do not reopen the Phase 6 admin checklist unless a regression appears.
+Do not reopen the closed Phase 7 NAT milestone unless a regression or a new explicit NAT requirement appears.
 
-The next concrete target should move to a new controlling planning artifact, not another ad hoc Phase 7 extension.
+The next concrete target is now:
 
-The most likely next planning targets are:
-
-1. Define a follow-on admin slice if mutations or richer observability are the next product need.
-2. Capture any backend/deployment follow-on in a dedicated checklist if that becomes the stronger priority.
-3. Keep Phase 7 closed unless a regression or a new requirement reopens NAT work explicitly.
-4. Preserve the current host boundary unless a future checklist proves it needs expansion.
+1. Continue and harden Phase 10 core managed API behavior in `backend/`.
+2. Keep the backend aligned to the six existing client endpoints before adding broader admin/friend features.
+3. Preserve the current host boundary and peer-to-peer media path.
+4. Treat local retention of managed-learned reusable peer knowledge as a required future client rule while implementing the backend.
 
 ## Important Constraints
 
@@ -211,6 +263,11 @@ The most likely next planning targets are:
 - Do not redesign the host protocol unless a concrete blocker appears.
 - Avoid touching [src/host/udp_audio1492_host.js](C:/NodeProjects/1492-app/src/host/udp_audio1492_host.js) unless the renderer/client work hits a real blocker.
 - Keep planning and handoff documents current when the active phase or design decisions change.
+- Keep the backend coordination-only:
+  - no voice/data relay
+  - no content storage
+  - no unnecessary long-term metadata archive
+- Be aware the current local worktree may include externally created backend bootstrap files in `backend/` plus unrelated package-file edits. Check `git status --short` before committing new work.
 
 ## Validation Baseline
 
@@ -245,6 +302,26 @@ Validated implementation updates after that baseline:
 - package/app version bumped to `0.1.23`
 - renderer version bumped to `0.4.22`
 - `PHASE7_NAT_INTEGRATION_CHECKLIST.md`, `MANAGED_MODE_ADAPTATION_PLAN.md`, and `NEXT_CHAT_HANDOFF.md` updated for the Phase 7 closeout
+- backend Cloudflare bootstrap was later added externally in `backend/` with:
+  - `wrangler.toml`
+  - `src/index.ts`
+  - Worker name `1492-backend-dev`
+  - Durable Object bindings `CHANNEL_DO` / `DIRECTORY_DO`
+  - migration `v1` using SQLite-backed `new_sqlite_classes`
+- `PHASE8_BACKEND_FOUNDATION_CHECKLIST.md`, `MANAGED_MODE_ADAPTATION_PLAN.md`, and `DEVELOPMENT_NOTES.md` were then updated to make backend implementation the active next phase
+- `backend/src/index.ts` was later upgraded from a bootstrap skeleton to the first real Phase 10 implementation slice:
+  - Worker routing for the six managed endpoints
+  - `DirectoryDO` SQL-backed sessions, seeded channels, and slot-membership tracking
+  - `ChannelDO` SQL-backed memberships, presence, endpoints, and peer listing
+  - server-side membership gates for `presence` and `peers`
+  - replacement-join handoff that clears the old channel on successful switch
+- backend Cloudflare tests were then added in:
+  - `backend/vitest.config.mjs`
+  - `backend/test/backend.spec.mjs`
+- backend validation was run with:
+  - `npm run test:backend`
+  - `npx wrangler deploy --dry-run --config backend/wrangler.toml`
+  - a local `wrangler dev` smoke flow covering open session, list channels, join, presence, peers, and leave
 
 Safe validation commands for the next chat:
 
@@ -254,7 +331,9 @@ Safe validation commands for the next chat:
 - `node --check src\\renderer\\managed-controller.js`
 - `node --check src\\renderer\\admin.js`
 - `node --check test\\e2e\\app.spec.js`
+- `npm run test:backend`
 - `npm run test:e2e`
+- `npx wrangler deploy --dry-run --config backend/wrangler.toml`
 
 ## Useful Test Fixtures
 

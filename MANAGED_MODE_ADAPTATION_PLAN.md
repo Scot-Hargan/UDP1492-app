@@ -349,7 +349,37 @@ Those validated slices delivered:
 
 The controlling artifact remains `PHASE7_NAT_INTEGRATION_CHECKLIST.md`.
 
-The next product phase should now move to a new controlling artifact rather than extending Phase 7 ad hoc. Admin mutation follow-on work is the most obvious candidate unless roadmap priorities change elsewhere.
+The next product phase should now move to a new controlling artifact rather than extending Phase 7 ad hoc.
+
+### Current backend foundation status
+
+Backend planning is now the active product direction.
+
+The controlling artifact is:
+
+- `C:\NodeProjects\1492-app\PHASE8_BACKEND_FOUNDATION_CHECKLIST.md`
+
+The current backend/bootstrap baseline is now concrete:
+
+- a Cloudflare Worker scaffold exists in `backend/`
+- SQLite-backed Durable Object bindings are configured for:
+  - `CHANNEL_DO` / `ChannelDO`
+  - `DIRECTORY_DO` / `DirectoryDO`
+- the initial migration `v1` is present using `new_sqlite_classes`
+- `backend/src/index.ts` now contains the first real Phase 10 implementation pass:
+  - Worker routing for the six existing managed endpoints
+  - `DirectoryDO` session/catalog handling
+  - `ChannelDO` membership/presence/peer handling
+
+That means the current implementation phase is:
+
+- Phase 10 core managed API implementation against the existing desktop client contract
+
+The backend plan must also preserve the product's private/direct philosophy:
+
+- managed mode coordinates
+- voice/data remain peer-to-peer
+- reusable peer knowledge learned through managed mode should remain retainable locally for future direct-mode use
 
 ## Renderer State Model Adaptation
 
@@ -563,3 +593,9 @@ Before more implementation work starts, create the next controlling planning art
 - a backend- or deployment-oriented follow-on if that is the stronger priority
 
 Do not reopen the closed Phase 3 through Phase 7 checklists as active implementation plans unless a regression requires it.
+
+That planning gap is now closed by `PHASE8_BACKEND_FOUNDATION_CHECKLIST.md`.
+
+The immediate next implementation target for this repo should be:
+
+- `backend/` Phase 10 core managed API work
