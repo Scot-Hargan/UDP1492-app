@@ -1,0 +1,6 @@
+{
+  "managedBackendUrl": "https://1492-backend-dev.dcab40.workers.dev/api",
+  "managedRequestTimeoutMs": 10000,
+  "managedLocalAddresses": [],
+  "managedStunServerUrls": []
+}

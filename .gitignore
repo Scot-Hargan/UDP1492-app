@@ -8,7 +8,6 @@ test-results/
 tmp-start.out.log
 tmp-start.err.log
 .udp1492.local.json
-udp1492.runtime.example.json
 PHASE*.md
 MANAGED_MODE_ADAPTATION_PLAN.md
 NEXT_CHAT_HANDOFF.md

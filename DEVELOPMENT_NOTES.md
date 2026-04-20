@@ -87,6 +87,8 @@ Check this file before making further code changes.
   - supported keys are `managedBackendUrl`, `managedRequestTimeoutMs`, `managedLocalAddresses`, and `managedStunServerUrls`
   - env vars still override the sidecar when both are present
   - this is the preferred direction for future helper setup, QR-assisted bootstrap, and import/export flows
+- `udp1492.runtime.example.json`
+  - tracked example sidecar template for helpers/operators to copy into `udp1492.runtime.json`
 
 ## Backend workspace
 
