@@ -481,6 +481,27 @@ test.describe('peer fixture', () => {
     await expect(page.locator('#disconnectBtn')).toBeDisabled();
   });
 
+  test('quits cleanly while connected if renderer host sends are still in flight', async ({ appHarness }) => {
+    const { page, electronApp } = appHarness;
+
+    await page.locator('#connectBtn').click();
+    await expect(page.locator('#disconnectBtn')).toBeEnabled();
+
+    await page.evaluate(() => {
+      const timer = window.setInterval(() => {
+        window.udp1492.sendHostMessage({ type: 'version', version: 'shutdown-race' }).catch(() => {});
+      }, 5);
+      window.addEventListener('beforeunload', () => window.clearInterval(timer), { once: true });
+    });
+
+    const closed = electronApp.waitForEvent('close');
+    await electronApp.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      if (win) win.close();
+    });
+    await closed;
+  });
+
   test('opens a managed session, joins a channel, and adapts resolved peers into host config', async ({ appHarness }) => {
     const { page, getSentHostMessages, readStorage } = appHarness;
     const { baseUrl } = await installManagedApiRoutes(page);

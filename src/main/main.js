@@ -20,6 +20,13 @@ let quitRequested = false;
 let quitPromise = null;
 const defaultUserDataPath = app.getPath('userData');
 
+function createHostNotRunningError(cause) {
+  const error = new Error('Host process is not running.');
+  error.code = 'HOST_NOT_RUNNING';
+  if (cause) error.cause = cause;
+  return error;
+}
+
 function sanitizeManagedBackendUrl(value) {
   const raw = String(value || '').trim().replace(/\/+$/, '');
   if (!raw) return '';
@@ -388,8 +395,19 @@ class HostBridge {
   }
 
   send(message) {
-    if (!this.child) throw new Error('Host process is not running.');
-    this.child.send(message);
+    const child = this.child;
+    if (!child || child.killed || child.connected === false || child.channel == null) {
+      throw createHostNotRunningError();
+    }
+    try {
+      child.send(message);
+    } catch (error) {
+      if (error?.code === 'ERR_IPC_CHANNEL_CLOSED') {
+        this.child = null;
+        throw createHostNotRunningError(error);
+      }
+      throw error;
+    }
   }
 
   stop() {
@@ -449,7 +467,7 @@ class MockHostBridge {
   }
 
   send(message) {
-    if (!this.started) throw new Error('Host process is not running.');
+    if (!this.started) throw createHostNotRunningError();
     this.sentMessages.push(message);
     if (!this.webContents || this.webContents.isDestroyed()) return;
 
@@ -661,11 +679,19 @@ app.whenReady().then(async () => {
     return { ok: true };
   });
   ipcMain.handle('udp1492:host-send', async (_event, message) => {
-    hostBridge.send(message);
-    return { ok: true };
+    if (quitRequested) return { ok: false, error: 'app-quitting' };
+    try {
+      hostBridge.send(message);
+      return { ok: true };
+    } catch (error) {
+      if (error?.code === 'HOST_NOT_RUNNING') {
+        return { ok: false, error: 'host-not-running' };
+      }
+      throw error;
+    }
   });
   ipcMain.handle('udp1492:host-stop', async () => {
-    hostBridge.stop();
+    await hostBridge.stop();
     return { ok: true };
   });
   if (isTestMode) {

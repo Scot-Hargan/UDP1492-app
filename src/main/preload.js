@@ -1,6 +1,15 @@
 const { contextBridge, ipcRenderer } = require('electron');
 const isTestMode = process.env.UDP1492_TEST_MODE === '1';
 
+async function sendHostMessage(message) {
+  const result = await ipcRenderer.invoke('udp1492:host-send', message);
+  if (result?.ok) return result;
+
+  const error = new Error(result?.error === 'app-quitting' ? 'Application is quitting.' : 'Host process is not running.');
+  error.code = result?.error || 'host-send-failed';
+  throw error;
+}
+
 contextBridge.exposeInMainWorld('udp1492', {
   storageGet: (keys) => ipcRenderer.invoke('udp1492:storage-get', keys),
   storageSet: (values) => ipcRenderer.invoke('udp1492:storage-set', values),
@@ -20,7 +29,7 @@ contextBridge.exposeInMainWorld('udp1492', {
     return () => ipcRenderer.removeListener('udp1492:admin-refresh-request', handler);
   },
   startHost: () => ipcRenderer.invoke('udp1492:host-start'),
-  sendHostMessage: (message) => ipcRenderer.invoke('udp1492:host-send', message),
+  sendHostMessage,
   stopHost: () => ipcRenderer.invoke('udp1492:host-stop'),
   onHostMessage: (callback) => {
     const handler = (_event, payload) => callback(payload);
