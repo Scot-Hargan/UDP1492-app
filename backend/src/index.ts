@@ -18,8 +18,8 @@ interface JsonObject {
 }
 
 export interface Env {
-  CHANNEL_DO: DurableObjectNamespace<ChannelDO>;
-  DIRECTORY_DO: DurableObjectNamespace<DirectoryDO>;
+  CHANNEL_DO: DurableObjectNamespace<ChannelDOManagedV2>;
+  DIRECTORY_DO: DurableObjectNamespace<DirectoryDOManagedV2>;
   MANAGED_HEARTBEAT_INTERVAL_MS?: string;
   MANAGED_SESSION_TTL_MS?: string;
   MANAGED_PRESENCE_TTL_MS?: string;
@@ -277,7 +277,7 @@ function normalizeChannelForClient(channel: ChannelConfig, memberCount: number):
   };
 }
 
-export class DirectoryDO extends DurableObject<Env> {
+export class DirectoryDOManagedV2 extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
@@ -723,7 +723,7 @@ export class DirectoryDO extends DurableObject<Env> {
     const sessionId = stringOrEmpty(body.sessionId).trim();
     const slotId = sanitizeSlotId(body.slotId);
     const channelId = stringOrEmpty(body.channelId).trim();
-    if (sessionId) this.validateSession(sessionId);
+    // Internal leave cleanup must stay idempotent even if the session already expired.
     this.clearSlotMembership(sessionId, slotId, channelId || undefined);
     return jsonResponse({
       cleared: true
@@ -784,7 +784,11 @@ export class DirectoryDO extends DurableObject<Env> {
   }
 }
 
-export class ChannelDO extends DurableObject<Env> {
+// Keep the original exported class name alive so Cloudflare can continue to
+// understand the historical migration graph, even though new bindings use V2.
+export class DirectoryDO extends DirectoryDOManagedV2 {}
+
+export class ChannelDOManagedV2 extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
@@ -1235,6 +1239,10 @@ export class ChannelDO extends DurableObject<Env> {
     }
   }
 }
+
+// Keep the original exported class name alive so Cloudflare can continue to
+// understand the historical migration graph, even though new bindings use V2.
+export class ChannelDO extends ChannelDOManagedV2 {}
 
 function getDirectoryStub(env: Env): DurableObjectStub {
   const id = env.DIRECTORY_DO.idFromName(DIRECTORY_OBJECT_NAME);

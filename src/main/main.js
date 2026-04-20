@@ -6,6 +6,8 @@ const path = require('node:path');
 
 const APP_ID = 'com.udp1492.desktop';
 const USER_DATA_DIR_NAME = 'UDP 1492 Desktop';
+const LOCAL_DEV_CONFIG_PATH = path.join(__dirname, '..', '..', '.udp1492.local.json');
+const RUNTIME_CONFIG_FILENAME = 'udp1492.runtime.json';
 const isTestMode = process.env.UDP1492_TEST_MODE === '1';
 const useMockHost = isTestMode && process.env.UDP1492_TEST_MOCK_HOST === '1';
 const customUserDataPath = process.env.UDP1492_USER_DATA_DIR;
@@ -61,10 +63,72 @@ function sanitizeManagedStunServerUrls(values) {
   return ordered;
 }
 
+function readJsonConfig(configPath) {
+  try {
+    const text = require('node:fs').readFileSync(configPath, 'utf8');
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function getPackagedRuntimeConfigPaths() {
+  const userDataConfigPath = path.join(app.getPath('userData'), RUNTIME_CONFIG_FILENAME);
+  const execDirConfigPath = path.join(path.dirname(process.execPath), RUNTIME_CONFIG_FILENAME);
+  return Array.from(new Set([
+    execDirConfigPath,
+    userDataConfigPath
+  ]));
+}
+
+function readRuntimeConfigOverrides() {
+  if (!app.isPackaged) return {};
+  for (const configPath of getPackagedRuntimeConfigPaths()) {
+    const parsed = readJsonConfig(configPath);
+    if (Object.keys(parsed).length) {
+      return parsed;
+    }
+  }
+  return {};
+}
+
+function readLocalDevConfig() {
+  if (app.isPackaged) return {};
+  return readJsonConfig(LOCAL_DEV_CONFIG_PATH);
+}
+
+function getManagedConfigValue(key) {
+  const envKeyMap = {
+    managedBackendUrl: process.env.UDP1492_MANAGED_BACKEND_URL,
+    managedRequestTimeoutMs: process.env.UDP1492_MANAGED_REQUEST_TIMEOUT_MS
+  };
+  const envValue = envKeyMap[key];
+  if (typeof envValue === 'string' && envValue.trim()) {
+    return envValue;
+  }
+
+  const runtimeOverrides = readRuntimeConfigOverrides();
+  if (runtimeOverrides[key] !== undefined && runtimeOverrides[key] !== null && String(runtimeOverrides[key]).trim?.()) {
+    return runtimeOverrides[key];
+  }
+
+  const localConfig = readLocalDevConfig();
+  return localConfig[key];
+}
+
 function getManagedLocalAddresses() {
   const envValue = process.env.UDP1492_MANAGED_LOCAL_ADDRESSES;
   if (typeof envValue === 'string' && envValue.trim()) {
     return sanitizeManagedLocalAddresses(envValue.split(','));
+  }
+  const runtimeOverrides = readRuntimeConfigOverrides();
+  if (Array.isArray(runtimeOverrides.managedLocalAddresses) && runtimeOverrides.managedLocalAddresses.length) {
+    return sanitizeManagedLocalAddresses(runtimeOverrides.managedLocalAddresses);
+  }
+  const localConfig = readLocalDevConfig();
+  if (Array.isArray(localConfig.managedLocalAddresses) && localConfig.managedLocalAddresses.length) {
+    return sanitizeManagedLocalAddresses(localConfig.managedLocalAddresses);
   }
 
   const interfaces = os.networkInterfaces();
@@ -90,13 +154,21 @@ function getManagedStunServerUrls() {
   if (typeof envValue === 'string' && envValue.trim()) {
     return sanitizeManagedStunServerUrls(envValue.split(','));
   }
+  const runtimeOverrides = readRuntimeConfigOverrides();
+  if (Array.isArray(runtimeOverrides.managedStunServerUrls) && runtimeOverrides.managedStunServerUrls.length) {
+    return sanitizeManagedStunServerUrls(runtimeOverrides.managedStunServerUrls);
+  }
+  const localConfig = readLocalDevConfig();
+  if (Array.isArray(localConfig.managedStunServerUrls) && localConfig.managedStunServerUrls.length) {
+    return sanitizeManagedStunServerUrls(localConfig.managedStunServerUrls);
+  }
   return [];
 }
 
 function getRuntimeConfig() {
   return {
-    managedBackendUrl: sanitizeManagedBackendUrl(process.env.UDP1492_MANAGED_BACKEND_URL),
-    managedRequestTimeoutMs: sanitizeManagedRequestTimeoutMs(process.env.UDP1492_MANAGED_REQUEST_TIMEOUT_MS),
+    managedBackendUrl: sanitizeManagedBackendUrl(getManagedConfigValue('managedBackendUrl')),
+    managedRequestTimeoutMs: sanitizeManagedRequestTimeoutMs(getManagedConfigValue('managedRequestTimeoutMs')),
     managedLocalAddresses: getManagedLocalAddresses(),
     managedStunServerUrls: getManagedStunServerUrls()
   };

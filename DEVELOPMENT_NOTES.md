@@ -18,9 +18,17 @@ Check this file before making further code changes.
 - Run `npm run test:backend` after meaningful Cloudflare Worker / Durable Object changes.
 - Run `npm run test:e2e` after meaningful UI/main-process changes.
 - Run `npm run test:e2e:live-backend` after changes that affect the desktop client to Worker integration seam.
+- Run `npm run test:e2e:cloudflare` when you need a baseline smoke check against the hosted Cloudflare backend.
 - After a complete slice passes its intended validation, update the online GitHub repo before stopping.
 - E2E tests use Playwright Electron fixtures in `test/e2e/fixtures.js`.
 - The dedicated live-backend lane is configured in `playwright.live.config.js` and owns local `wrangler dev` lifecycle through Playwright `webServer`.
+- The dedicated hosted-backend smoke lane is configured in `playwright.cloudflare.config.js` and targets the repo-local or env-configured Cloudflare backend URL without starting a local Worker.
+- Keep the hosted Cloudflare lane bounded and reliable. It currently covers:
+  - managed session open
+  - lobby/channel load
+  - Alpha join/leave
+  - protected Bravo passcode enforcement
+  - one real peer-resolution path against hosted presence
 - Backend unit tests use `backend/wrangler.test.toml` so expiry-sensitive lifecycle cases can run against short TTLs without changing deploy defaults.
 - The live-backend lane now also covers real dual-slot Alpha/Bravo membership and Group B leave-preservation; keep new live tests focused on backend truth rather than replaying the full mock suite.
 - Keep the default `npm run test:e2e` suite mock-based and stable; do not fold live Worker startup into the shared Electron fixture path.
@@ -68,6 +76,19 @@ Check this file before making further code changes.
   - optional managed HTTP timeout override
 - `UDP1492_MANAGED_LOCAL_ADDRESSES`
   - optional comma-separated override for desktop local endpoint addresses used in managed presence payloads
+- `.udp1492.local.json`
+  - optional gitignored repo-local development config file
+  - supports `managedBackendUrl`, `managedRequestTimeoutMs`, `managedLocalAddresses`, and `managedStunServerUrls`
+  - env vars still override this file when both are present
+  - the hosted Cloudflare smoke lane also uses this file when `UDP1492_MANAGED_BACKEND_URL` is not set
+- `udp1492.runtime.json`
+  - packaged/runtime sidecar config for non-dev use
+  - the app looks for it next to the packaged executable first, then in `userData`
+  - supported keys are `managedBackendUrl`, `managedRequestTimeoutMs`, `managedLocalAddresses`, and `managedStunServerUrls`
+  - env vars still override the sidecar when both are present
+  - this is the preferred direction for future helper setup, QR-assisted bootstrap, and import/export flows
+- `udp1492.runtime.example.json`
+  - tracked example sidecar template for helpers/operators to copy into `udp1492.runtime.json`
 
 ## Backend workspace
 

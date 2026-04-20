@@ -162,6 +162,34 @@ test('enforces protected seeded-channel passcodes against the real Worker', asyn
   await expect(page.locator('#managedJoinPasscodeInput')).toHaveValue('');
 });
 
+test('preserves the active Alpha membership when a protected replacement join is denied by the real Worker', async ({ appHarness }) => {
+  const { page } = appHarness;
+  const managedBackendBaseUrl = 'http://127.0.0.1:8791';
+
+  await openManagedSession(page);
+  await page.getByRole('button', { name: 'Join Selected' }).click();
+  await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+
+  const peerSession = await openPeerSession(managedBackendBaseUrl, 'Alpha Peer');
+  await joinPeerChannel(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha');
+  await sendPeerPresence(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha', {
+    kind: 'public',
+    ip: '198.51.100.31',
+    port: 1492
+  });
+
+  await page.locator('#managedRefreshPeersBtn').click();
+  await expect(page.locator('#networkTable tbody')).toContainText('Alpha Peer');
+
+  await page.locator('#managedJoinPasscodeInput').fill('wrong-secret');
+  await page.locator('#managedChannelList li').filter({ hasText: 'Bravo' }).locator('button').click();
+  await expect(page.locator('#managedErrorText')).toContainText(/invalid.*passcode|supplied passcode is invalid/i);
+  await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+
+  await page.locator('#managedRefreshPeersBtn').click();
+  await expect(page.locator('#networkTable tbody')).toContainText('Alpha Peer');
+});
+
 test('removes stale peers after presence timeout while the desktop session stays active', async ({ appHarness }) => {
   const { page } = appHarness;
   const managedBackendBaseUrl = 'http://127.0.0.1:8791';

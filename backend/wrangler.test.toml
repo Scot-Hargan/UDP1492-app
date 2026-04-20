@@ -9,12 +9,16 @@ MANAGED_PRESENCE_TTL_MS = "2500"
 
 [[durable_objects.bindings]]
 name = "CHANNEL_DO"
-class_name = "ChannelDO"
+class_name = "ChannelDOManagedV2"
 
 [[durable_objects.bindings]]
 name = "DIRECTORY_DO"
-class_name = "DirectoryDO"
+class_name = "DirectoryDOManagedV2"
 
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["ChannelDO", "DirectoryDO"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["ChannelDOManagedV2", "DirectoryDOManagedV2"]

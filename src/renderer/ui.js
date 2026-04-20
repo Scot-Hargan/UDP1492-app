@@ -47,10 +47,10 @@ import {
   DEFAULT_MANAGED_STUN_SERVER_URLS
 } from './managed-runtime.js';
 
-// ui.js v0.4.22
+// ui.js v0.4.23
 (() => {
   'use strict';
-  const VERSION = '0.4.22';
+  const VERSION = '0.4.23';
   const platform = window.udp1492;
   const testPlatform = window.udp1492Test || null;
 

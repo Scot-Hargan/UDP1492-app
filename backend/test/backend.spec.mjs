@@ -137,6 +137,84 @@ describe("1492 backend core managed API", () => {
     });
   });
 
+  it("preserves the current slot membership when a protected replacement join is denied", async () => {
+    const first = await openSession("Scot");
+    const second = await openSession("Peer Two");
+
+    for (const opened of [first, second]) {
+      const joinAlpha = await requestJson("/api/channels/chn_alpha/join", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          sessionId: opened.identity.sessionId,
+          slotId: "A",
+          passcode: null
+        })
+      });
+      expect(joinAlpha.response.status).toBe(200);
+    }
+
+    const secondPresence = await requestJson("/api/channels/chn_alpha/presence", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: second.identity.sessionId,
+        slotId: "A",
+        onlineState: "online",
+        endpoints: [
+          {
+            kind: "public",
+            ip: "198.51.100.13",
+            port: 1492
+          }
+        ]
+      })
+    });
+    expect(secondPresence.response.status).toBe(200);
+
+    const deniedSwitch = await requestJson("/api/channels/chn_bravo/join", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: second.identity.sessionId,
+        slotId: "A",
+        passcode: "wrong-secret"
+      })
+    });
+    expect(deniedSwitch.response.status).toBe(403);
+    expect(deniedSwitch.payload.code).toBe("managed_passcode_invalid");
+
+    const peersAfterDeniedSwitch = await requestJson(
+      `/api/channels/chn_alpha/peers?sessionId=${encodeURIComponent(first.identity.sessionId)}`
+    );
+    expect(peersAfterDeniedSwitch.response.status).toBe(200);
+    expect(peersAfterDeniedSwitch.payload.peers).toHaveLength(1);
+    expect(peersAfterDeniedSwitch.payload.peers[0]).toMatchObject({
+      displayName: "Peer Two",
+      channelId: "chn_alpha"
+    });
+
+    for (const opened of [second, first]) {
+      const leaveAlpha = await requestJson("/api/channels/chn_alpha/leave", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          sessionId: opened.identity.sessionId,
+          slotId: "A"
+        })
+      });
+      expect(leaveAlpha.response.status).toBe(200);
+    }
+  });
+
   it("requires a real join before presence or peer resolution is allowed", async () => {
     const opened = await openSession("Scot");
 
@@ -334,6 +412,42 @@ describe("1492 backend core managed API", () => {
     );
     expect(channels.response.status).toBe(401);
     expect(channels.payload.code).toBe("managed_session_expired");
+  });
+
+  it("allows late leave cleanup after the session has already expired", async () => {
+    const opened = await openSession("Scot");
+
+    const joined = await requestJson("/api/channels/chn_alpha/join", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: opened.identity.sessionId,
+        slotId: "A",
+        passcode: null
+      })
+    });
+    expect(joined.response.status).toBe(200);
+
+    await sleep(3200);
+
+    const lateLeave = await requestJson("/api/channels/chn_alpha/leave", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: opened.identity.sessionId,
+        slotId: "A"
+      })
+    });
+    expect(lateLeave.response.status).toBe(200);
+    expect(lateLeave.payload.membership).toMatchObject({
+      channelId: "chn_alpha",
+      slotId: "A",
+      membershipState: "none"
+    });
   });
 
   it("drops stale peers after the configured presence timeout while active members stay visible", async () => {

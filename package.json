@@ -1,6 +1,6 @@
 {
   "name": "udp-1492-app",
-  "version": "0.1.27",
+  "version": "0.2.0",
   "private": false,
   "description": "Standalone Electron desktop app for UDP 1492 Audio Link.",
   "main": "src/main/main.js",
@@ -23,6 +23,7 @@
     "test:backend": "vitest --config backend/vitest.config.mjs run",
     "test:e2e": "playwright test",
     "test:e2e:live-backend": "playwright test -c playwright.live.config.js",
+    "test:e2e:cloudflare": "playwright test -c playwright.cloudflare.config.js",
     "test:e2e:headed": "playwright test --headed"
   },
   "devDependencies": {

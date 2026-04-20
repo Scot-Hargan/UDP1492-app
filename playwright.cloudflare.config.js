@@ -2,7 +2,7 @@ const { defineConfig } = require('@playwright/test');
 
 module.exports = defineConfig({
   testDir: './test/e2e',
-  testIgnore: /(live-backend|cloudflare-backend)\.spec\.js/,
+  testMatch: /cloudflare-backend\.spec\.js/,
   timeout: 30000,
   fullyParallel: false,
   workers: 1,
