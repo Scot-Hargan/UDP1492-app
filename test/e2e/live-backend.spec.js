@@ -85,6 +85,18 @@ async function sendPeerPresence(baseUrl, sessionId, channelId, endpoint, slotId 
   return presence.payload;
 }
 
+async function leavePeerChannel(baseUrl, sessionId, channelId, slotId = 'A') {
+  const leave = await requestManagedBackend(baseUrl, `/api/channels/${channelId}/leave`, {
+    method: 'POST',
+    body: {
+      sessionId,
+      slotId
+    }
+  });
+  expect(leave.response.status).toBe(200);
+  return leave.payload;
+}
+
 test.use({
   runtimeEnv: {
     UDP1492_MANAGED_BACKEND_URL: 'http://127.0.0.1:8791/api',
@@ -216,4 +228,98 @@ test('expires an idle managed session cleanly and resets the desktop state', asy
   await expect(page.locator('#managedIdentityMeta')).not.toContainText('Session ses_');
   await expect(page.locator('#managedActiveChannel')).toHaveText('Group A has no active membership');
   await expect(page.locator('#managedJoinPasscodeInput')).toHaveValue('');
+});
+
+test('supports real dual-slot membership and aggregates peers from Alpha and Bravo', async ({ appHarness }) => {
+  const { page, getSentHostMessages } = appHarness;
+  const managedBackendBaseUrl = 'http://127.0.0.1:8791';
+
+  await openManagedSession(page);
+  await page.getByRole('button', { name: 'Join Selected' }).click();
+  await expect(page.locator('#managedGroupATitle')).toHaveText('Alpha');
+  await expect(page.locator('#managedGroupAStatus')).toContainText('joined');
+
+  const alphaPeer = await openPeerSession(managedBackendBaseUrl, 'Peer Alpha');
+  await joinPeerChannel(managedBackendBaseUrl, alphaPeer.identity.sessionId, 'chn_alpha');
+  await sendPeerPresence(managedBackendBaseUrl, alphaPeer.identity.sessionId, 'chn_alpha', {
+    kind: 'public',
+    ip: '198.51.100.40',
+    port: 1492
+  });
+
+  await page.locator('#managedRefreshPeersBtn').click();
+  await expect(page.locator('#networkTable tbody')).toContainText('Peer Alpha');
+
+  await page.locator('#managedSelectGroupB').click();
+  await expect(page.locator('#managedActiveSlotLabel')).toHaveText('Group B');
+  await page.locator('#managedJoinPasscodeInput').fill('alpha-secret');
+  await page.locator('#managedChannelList li').filter({ hasText: 'Bravo' }).locator('button').click();
+  await expect(page.locator('#managedGroupBTitle')).toHaveText('Bravo');
+  await expect(page.locator('#managedGroupBStatus')).toContainText('joined');
+
+  const bravoPeer = await openPeerSession(managedBackendBaseUrl, 'Peer Bravo');
+  await joinPeerChannel(managedBackendBaseUrl, bravoPeer.identity.sessionId, 'chn_bravo', 'A', 'alpha-secret');
+  await sendPeerPresence(managedBackendBaseUrl, bravoPeer.identity.sessionId, 'chn_bravo', {
+    kind: 'public',
+    ip: '198.51.100.41',
+    port: 1492
+  });
+
+  await page.locator('#managedRefreshPeersBtn').click();
+  await expect(page.locator('#networkTable tbody')).toContainText('Peer Alpha');
+  await expect(page.locator('#networkTable tbody')).toContainText('Peer Bravo');
+
+  await expect.poll(async () => {
+    const messages = await getSentHostMessages();
+    const configureMessages = messages.filter((message) => message.type === 'configure');
+    const lastConfigure = configureMessages.at(-1);
+    return Array.isArray(lastConfigure?.peers)
+      ? lastConfigure.peers.map((peer) => peer.name).sort().join(',')
+      : '';
+  }).toBe('Peer Alpha,Peer Bravo');
+});
+
+test('leaving real Group B membership preserves active Group A state and peers', async ({ appHarness }) => {
+  const { page } = appHarness;
+  const managedBackendBaseUrl = 'http://127.0.0.1:8791';
+
+  await openManagedSession(page);
+  await page.getByRole('button', { name: 'Join Selected' }).click();
+  await expect(page.locator('#managedGroupATitle')).toHaveText('Alpha');
+
+  const alphaPeer = await openPeerSession(managedBackendBaseUrl, 'Alpha Survivor');
+  await joinPeerChannel(managedBackendBaseUrl, alphaPeer.identity.sessionId, 'chn_alpha');
+  await sendPeerPresence(managedBackendBaseUrl, alphaPeer.identity.sessionId, 'chn_alpha', {
+    kind: 'public',
+    ip: '198.51.100.42',
+    port: 1492
+  });
+
+  await page.locator('#managedRefreshPeersBtn').click();
+  await expect(page.locator('#networkTable tbody')).toContainText('Alpha Survivor');
+
+  await page.locator('#managedSelectGroupB').click();
+  await page.locator('#managedJoinPasscodeInput').fill('alpha-secret');
+  await page.locator('#managedChannelList li').filter({ hasText: 'Bravo' }).locator('button').click();
+  await expect(page.locator('#managedGroupBTitle')).toHaveText('Bravo');
+
+  const bravoPeer = await openPeerSession(managedBackendBaseUrl, 'Bravo Temporary');
+  await joinPeerChannel(managedBackendBaseUrl, bravoPeer.identity.sessionId, 'chn_bravo', 'A', 'alpha-secret');
+  await sendPeerPresence(managedBackendBaseUrl, bravoPeer.identity.sessionId, 'chn_bravo', {
+    kind: 'public',
+    ip: '198.51.100.43',
+    port: 1492
+  });
+
+  await page.locator('#managedRefreshPeersBtn').click();
+  await expect(page.locator('#networkTable tbody')).toContainText('Alpha Survivor');
+  await expect(page.locator('#networkTable tbody')).toContainText('Bravo Temporary');
+
+  await leavePeerChannel(managedBackendBaseUrl, bravoPeer.identity.sessionId, 'chn_bravo');
+  await page.locator('#managedLeaveChannelBtn').click();
+  await expect(page.locator('#managedGroupATitle')).toHaveText('Alpha');
+  await expect(page.locator('#managedGroupAStatus')).toContainText('joined');
+  await expect(page.locator('#managedGroupBStatus')).toContainText('No active managed membership');
+  await expect(page.locator('#networkTable tbody')).toContainText('Alpha Survivor');
+  await expect(page.locator('#networkTable tbody')).not.toContainText('Bravo Temporary');
 });

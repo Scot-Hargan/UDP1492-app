@@ -374,6 +374,13 @@ The current backend/bootstrap baseline is now concrete:
   - `playwright.live.config.js`
   - `test/e2e/live-backend.spec.js`
   - `npm run test:e2e:live-backend`
+  - live Worker coverage now includes:
+    - protected seeded-channel passcodes
+    - dual-slot Alpha + Bravo membership
+    - Group B leave while Group A remains active
+    - replacement join into protected Bravo
+    - stale peer timeout cleanup
+    - idle session expiry recovery
 - the backend lifecycle is now configurable by environment for test/dev hardening without changing deploy defaults:
   - `MANAGED_HEARTBEAT_INTERVAL_MS`
   - `MANAGED_SESSION_TTL_MS`

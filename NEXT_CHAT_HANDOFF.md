@@ -6,7 +6,7 @@ Use this file if work continues in a fresh chat.
 
 - Repo: `C:\NodeProjects\1492-app`
 - Branch: `main`
-- Package/app version: `0.1.26`
+- Package/app version: `0.1.27`
 - Renderer version marker in [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js): `0.4.22`
 - Phase 1 is closed
 - Phase 2 protected-channel client work is closed
@@ -261,7 +261,7 @@ Do not reopen the closed Phase 7 NAT milestone unless a regression or a new expl
 The next concrete target is now:
 
 1. Continue and harden Phase 10 core managed API behavior in `backend/`.
-2. Broaden real-backend desktop validation beyond the current protected-join, replacement-join, stale-peer, and idle-session-expiry cases.
+2. Broaden real-backend desktop validation beyond the current protected-join, dual-slot, Group B leave-preservation, replacement-join, stale-peer, and idle-session-expiry cases.
 3. Keep the backend aligned to the six existing client endpoints before adding broader admin/friend features.
 4. Preserve the current host boundary and peer-to-peer media path.
 5. Treat local retention of managed-learned reusable peer knowledge as a required future client rule while implementing the backend.
@@ -336,14 +336,17 @@ Validated implementation updates after that baseline:
   - `backend/src/index.ts` now reads `MANAGED_HEARTBEAT_INTERVAL_MS`, `MANAGED_SESSION_TTL_MS`, and `MANAGED_PRESENCE_TTL_MS`
   - `DirectoryDO` now clears stale `slot_memberships` when sessions expire
   - `backend/wrangler.test.toml` now drives short-TTL backend unit coverage
-  - `backend/test/backend.spec.mjs` now covers idle session expiry and stale peer cleanup
+  - `backend/test/backend.spec.mjs` now covers idle session expiry, stale peer cleanup, and channel member-count transitions across join/replacement/leave
   - `test/e2e/live-backend.spec.js` now covers:
     - protected seeded-channel passcodes
+    - dual-slot Alpha + Bravo membership against the real Worker
+    - Group B leave while Group A remains active
     - stale peer disappearance after timeout
     - Alpha -> Bravo replacement join
     - idle session expiry recovery
   - `src/renderer/ui.js` now exposes test-only `window.udp1492ManagedDebug` hooks for live managed lifecycle coverage
-- package/app version bumped to `0.1.26`
+  - `test/e2e/app.spec.js` now has one bounded input-value assertion to stabilize the fresh-session reopen regression test
+- package/app version bumped to `0.1.27`
 - backend validation was run with:
   - `npm run test:backend`
   - `npm run test:e2e`
@@ -379,7 +382,7 @@ Safe validation commands for the next chat:
 - Workflow file: [.github/workflows/windows-release.yml](C:/NodeProjects/1492-app/.github/workflows/windows-release.yml)
 - Release publishing was fixed earlier by building with `--publish never` in the build step
 - Latest published release from the prior chat context was `v0.1.13`
-- Current code version is `0.1.26`
+- Current code version is `0.1.27`
 - After a complete validated slice, update the online GitHub repo before stopping
 
 ## If Continuing Immediately

@@ -331,6 +331,8 @@ The current implementation baseline already includes:
 - slot-membership cleanup when sessions expire in the directory object
 - live Electron coverage for:
   - protected-channel passcode enforcement
+  - real dual-slot Alpha + Bravo membership
+  - Group B leave while Group A remains active
   - stale peer cleanup after presence timeout
   - replacement join from Alpha to protected Bravo
   - idle session expiry recovery in the desktop client
@@ -379,9 +381,12 @@ The current automated backend suite covers:
 - replacement-join handoff that removes stale old-channel visibility immediately
 - idle session expiry after the configured TTL
 - stale peer cleanup after the configured presence timeout while an active member stays fresh
+- channel member-count transitions across join, replacement join, and leave
 - Electron desktop integration against the real local Worker for open-session, seeded-channel join, peer visibility, and leave
 - Electron desktop integration against the real local Worker for:
   - protected seeded-channel passcodes
+  - dual-slot Alpha + Bravo membership
+  - Group B leave while Group A remains active
   - replacement join into protected Bravo
   - stale peer disappearance after timeout
   - idle session expiry recovery

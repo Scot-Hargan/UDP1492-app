@@ -22,6 +22,7 @@ Check this file before making further code changes.
 - E2E tests use Playwright Electron fixtures in `test/e2e/fixtures.js`.
 - The dedicated live-backend lane is configured in `playwright.live.config.js` and owns local `wrangler dev` lifecycle through Playwright `webServer`.
 - Backend unit tests use `backend/wrangler.test.toml` so expiry-sensitive lifecycle cases can run against short TTLs without changing deploy defaults.
+- The live-backend lane now also covers real dual-slot Alpha/Bravo membership and Group B leave-preservation; keep new live tests focused on backend truth rather than replaying the full mock suite.
 - Keep the default `npm run test:e2e` suite mock-based and stable; do not fold live Worker startup into the shared Electron fixture path.
 - Tests launch the app with:
   - isolated `userData`

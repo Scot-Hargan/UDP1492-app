@@ -431,4 +431,107 @@ describe("1492 backend core managed API", () => {
     expect(peersAfterTimeout.response.status).toBe(200);
     expect(peersAfterTimeout.payload.peers).toHaveLength(0);
   });
+
+  it("reports channel member counts correctly across join, replacement join, and leave", async () => {
+    const first = await openSession("Scot");
+    const second = await openSession("Peer Two");
+
+    const initialChannels = await requestJson(
+      `/api/channels?sessionId=${encodeURIComponent(first.identity.sessionId)}`
+    );
+    expect(initialChannels.response.status).toBe(200);
+    const initialAlphaCount = Number(
+      initialChannels.payload.channels.find((channel) => channel.channelId === "chn_alpha")?.memberCount
+    ) || 0;
+    const initialBravoCount = Number(
+      initialChannels.payload.channels.find((channel) => channel.channelId === "chn_bravo")?.memberCount
+    ) || 0;
+
+    const firstJoinAlpha = await requestJson("/api/channels/chn_alpha/join", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: first.identity.sessionId,
+        slotId: "A",
+        passcode: null
+      })
+    });
+    expect(firstJoinAlpha.response.status).toBe(200);
+    expect(firstJoinAlpha.payload.channel.memberCount).toBe(initialAlphaCount + 1);
+
+    const secondJoinAlpha = await requestJson("/api/channels/chn_alpha/join", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: second.identity.sessionId,
+        slotId: "A",
+        passcode: null
+      })
+    });
+    expect(secondJoinAlpha.response.status).toBe(200);
+    expect(secondJoinAlpha.payload.channel.memberCount).toBe(initialAlphaCount + 2);
+
+    const afterTwoJoinAlpha = await requestJson(
+      `/api/channels?sessionId=${encodeURIComponent(first.identity.sessionId)}`
+    );
+    expect(afterTwoJoinAlpha.response.status).toBe(200);
+    expect(afterTwoJoinAlpha.payload.channels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ channelId: "chn_alpha", memberCount: initialAlphaCount + 2 }),
+        expect.objectContaining({ channelId: "chn_bravo", memberCount: initialBravoCount })
+      ])
+    );
+
+    const secondSwitchBravo = await requestJson("/api/channels/chn_bravo/join", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: second.identity.sessionId,
+        slotId: "A",
+        passcode: "alpha-secret"
+      })
+    });
+    expect(secondSwitchBravo.response.status).toBe(200);
+    expect(secondSwitchBravo.payload.channel.memberCount).toBe(initialBravoCount + 1);
+
+    const afterReplacementJoin = await requestJson(
+      `/api/channels?sessionId=${encodeURIComponent(first.identity.sessionId)}`
+    );
+    expect(afterReplacementJoin.response.status).toBe(200);
+    expect(afterReplacementJoin.payload.channels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ channelId: "chn_alpha", memberCount: initialAlphaCount + 1 }),
+        expect.objectContaining({ channelId: "chn_bravo", memberCount: initialBravoCount + 1 })
+      ])
+    );
+
+    const secondLeaveBravo = await requestJson("/api/channels/chn_bravo/leave", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: second.identity.sessionId,
+        slotId: "A"
+      })
+    });
+    expect(secondLeaveBravo.response.status).toBe(200);
+
+    const afterLeave = await requestJson(
+      `/api/channels?sessionId=${encodeURIComponent(first.identity.sessionId)}`
+    );
+    expect(afterLeave.response.status).toBe(200);
+    expect(afterLeave.payload.channels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ channelId: "chn_alpha", memberCount: initialAlphaCount + 1 }),
+        expect.objectContaining({ channelId: "chn_bravo", memberCount: initialBravoCount })
+      ])
+    );
+  });
 });

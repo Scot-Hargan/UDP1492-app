@@ -2139,6 +2139,7 @@ test.describe('peer fixture', () => {
     await expect(page.locator('#managedIdentityMeta')).toContainText('Session ses_01');
 
     await page.locator('#managedDisplayNameInput').fill('Scot Two');
+    await expect(page.locator('#managedDisplayNameInput')).toHaveValue('Scot Two');
     await page.locator('#managedBackendBaseUrlInput').fill('https://managed-two.example.test');
     await page.locator('#managedOpenSessionBtn').click();
 
