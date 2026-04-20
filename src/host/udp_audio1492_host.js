@@ -3,11 +3,12 @@
 // udp_audio1492_host.js (v0.4.4) - Steve adding multiple peers, better encryption, native vs extension and statistics
 // udp_audio1492_host.js (v0.4.5) - bugs created from 0.4.0 to 0.4.4 appear to be worked out, still need to handle config updates
 // udp_audio1492_host.js (v0.4.6) - audio again
+// udp_audio1492_host.js (v0.4.10.1) - added handshake/reconnect diagnostic logging
 const dgram = require('dgram');
 const crypto = require('crypto');
 const zlib = require('zlib');
 
-const HOST_VERSION = '0.4.10.0';
+const HOST_VERSION = '0.4.10.1';
 const GCM_IV_LENGTH = 12;
 const GCM_TAG_LENGTH = 16;
 const IPC_MODE = typeof process.send === 'function';
@@ -244,6 +245,7 @@ function handleNetworkMessage(msg,rinfo) {
       if (err) postMessage({ type: 'error', message: 'Pong send error: ' + err.message });
     });
     if (!peer.connected) {
+      postMessage({ type: 'log', message: `PING from unconnected peer ${peer.name} - initiating handshake (connected=${peer.connected}, myEph=${!!peer.myEph})` });
       sendHandshake(peer,TYPE_HANDSHAKE_INIT);
     }
   } else if (kind === TYPE_PONG) {
@@ -260,9 +262,25 @@ function handleNetworkMessage(msg,rinfo) {
       }
     }
   } else if (kind === TYPE_HANDSHAKE_INIT) {
+    postMessage({ type: 'log', message: `HANDSHAKE_INIT received from ${peer.name} (connected=${peer.connected}, myEph=${!!peer.myEph}, keyEpoch=${peer.keyEpoch ? peer.keyEpoch.toString() : 'null'})` });
+    // Rate-limit: ignore if we got a handshake from this peer within the last 500ms
+    const nowMs = Date.now();
+    if (peer.lastHandshakeRx && (nowMs - peer.lastHandshakeRx) < 500) {
+      postMessage({ type: 'log', message: `HANDSHAKE_INIT from ${peer.name} suppressed (rate limit, ${nowMs - peer.lastHandshakeRx}ms since last)` });
+      return;
+    }
+    peer.lastHandshakeRx = nowMs;
     sendHandshake(peer,TYPE_HANDSHAKE_RESP);
     readHandshake(peer,msg,kind);
   } else if (peer.myEph && kind === TYPE_HANDSHAKE_RESP) {
+    postMessage({ type: 'log', message: `HANDSHAKE_RESP received from ${peer.name} (connected=${peer.connected}, myEph=${!!peer.myEph}, keyEpoch=${peer.keyEpoch ? peer.keyEpoch.toString() : 'null'})` });
+    // Rate-limit: ignore if we got a handshake from this peer within the last 500ms
+    const nowMs = Date.now();
+    if (peer.lastHandshakeRx && (nowMs - peer.lastHandshakeRx) < 500) {
+      postMessage({ type: 'log', message: `HANDSHAKE_RESP from ${peer.name} suppressed (rate limit, ${nowMs - peer.lastHandshakeRx}ms since last)` });
+      return;
+    }
+    peer.lastHandshakeRx = nowMs;
     readHandshake(peer,msg,kind)
   } else if (peer.connected && (kind === TYPE_DATA || kind === TYPE_DATA_ENCRYPTED)) {
     //if (kind === TYPE_DATA && peer.encryptionEnabled && !peer.encryptionMismatchDetected) {
@@ -291,7 +309,7 @@ function handleNetworkMessage(msg,rinfo) {
   } else if (kind === TYPE_ERROR) {
     //ADD-CODE Handle error message
   } else {
-    //ADD-CODE - unknown packet type, handle - send message to other side? disconnect? would disconnect allow DoS? just ignore?
+    postMessage({ type: 'log', message: `Unhandled packet type 0x${kind.toString(16)} from ${peer.name} (connected=${peer.connected}, myEph=${!!peer.myEph})` });
   }
 }
 function sendData(msg,peer) {
@@ -378,6 +396,8 @@ function receiveData(msg,peer,now) {
 }
 
 function readHandshake(peer,msg,type){
+  postMessage({ type: 'log', message: `readHandshake enter: peer=${peer.name} type=${type===TYPE_HANDSHAKE_INIT?'INIT':'RESP'} connected=${peer.connected} myEph=${!!peer.myEph} keyEpoch=${peer.keyEpoch?peer.keyEpoch.toString():'null'}` });
+
   let offset = 1;
   peer.theirSig    = msg.subarray(offset, offset += 64);
   let keyEpoch     = msg.subarray(offset, offset += 8);
@@ -401,20 +421,22 @@ function readHandshake(peer,msg,type){
   const msgToVerify = Buffer.concat([Buffer.from([TYPE_HANDSHAKE_INIT]), keyEpoch, peer.theirNonce, theirEph]);
   const ok = crypto.verify(null, msgToVerify, tempPeer.theirId, peer.theirSig);
 
+  postMessage({ type: 'log', message: `readHandshake sig verify: peer=${peer.name} ok=${ok} validated=${tempPeer.validated} idChange=${idChange} incomingEpoch=${Buffer.from(keyEpoch).readBigUInt64BE(0).toString()} storedEpoch=${peer.keyEpoch?peer.keyEpoch.readBigUInt64BE?peer.keyEpoch.readBigUInt64BE(0).toString():peer.keyEpoch:'null'}` });
+
   if (tempPeer.validated != peer.validated) {
     peer.validated = tempPeer.validated;
     postMessage({ type: 'peerUpdate', key:`${peer.ip}:${peer.port}`, field:'validated', validated:peer.validated});
   }
 
   if (!ok) {
-    postMessage({ type: 'error', message: `Peer Handshake message verify failed for peer ${peer.name}` });
+    postMessage({ type: 'error', message: `readHandshake EARLY RETURN: sig verify failed for peer ${peer.name}` });
     return;
   } else if (peer.keyEpoch && peer.keyEpoch >= keyEpoch) {
-    postMessage({ type: 'error', message: `Old Handshake message from peer ${peer.name} - ${peer.keyEpoch} >= ${keyEpoch}` });
+    postMessage({ type: 'error', message: `readHandshake EARLY RETURN: old epoch from peer ${peer.name} - stored=${peer.keyEpoch} incoming=${keyEpoch}` });
     return;
   } else if (!tempPeer.validated) {
     //alert the extension, don't save/send ID
-    postMessage({ type: 'error', message: `Invalid Peer ID for peer ${peer.name} (validated against psk)` });
+    postMessage({ type: 'error', message: `readHandshake: invalid peer ID for peer ${peer.name} (validated against psk)` });
   } else if ((idChange || !peer.theirId) && tempPeer.validated) {
     //ID new or changed, and the PSK checked out, log and save
     peer.theirId = tempPeer.theirId;
@@ -431,8 +453,9 @@ function readHandshake(peer,msg,type){
     postMessage({ type: 'peerUpdate', key:`${peer.ip}:${peer.port}`, field:'theirId', theirId:peer.theirIdExported});
   } else if (idChange) {
     //alert the extension, don't save ID
-    postMessage({ type: 'error', message: `Peer ID changed for peer ${peer.name}, unable to verify, not saving` });
+    postMessage({ type: 'error', message: `readHandshake EARLY RETURN: peer ID changed for peer ${peer.name}, unable to verify, not saving` });
     postMessage({ type: 'peerUpdate', message: `unverified Peer ID change for peer ${peer.name}`, key:`${peer.ip}:${peer.port}`, field:'validated', validated:false});
+    return;
   }
 
   let initiatorNonce  = (type === TYPE_HANDSHAKE_INIT) ? peer.theirNonce : peer.myNonce;
@@ -450,9 +473,12 @@ function readHandshake(peer,msg,type){
   peer.theirSig = null;
   peer.myEph = null;
   peer.myEphExported = null;
-  peer.myNonce = null;  
+  peer.myNonce = null;
+
+  postMessage({ type: 'log', message: `readHandshake complete: peer=${peer.name} session established` });
 }
 function sendHandshake(peer,type){
+  postMessage({ type: 'log', message: `sendHandshake: peer=${peer.name} type=${type===TYPE_HANDSHAKE_INIT?'INIT':'RESP'} connected=${peer.connected} myEph=${!!peer.myEph}` });
   let keyEpoch = Buffer.alloc(8);
   keyEpoch.writeBigUInt64BE(BigInt(Date.now()));
   peer.myEph = crypto.generateKeyPairSync('x25519');
