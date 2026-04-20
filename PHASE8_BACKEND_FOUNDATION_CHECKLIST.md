@@ -422,6 +422,12 @@ The next implementation slice should be:
 
 - Phase 10 core managed API hardening plus broader real-backend desktop validation
 
+Prepared follow-on planning artifacts now exist for the post-Phase-10 roadmap:
+
+- `PHASE11_MANAGED_ADMIN_DIRECTORY_CHECKLIST.md`
+- `PHASE12_LOCAL_KNOWLEDGE_RETENTION_CHECKLIST.md`
+- `PHASE13_FRIENDS_AND_PRESENCE_CHECKLIST.md`
+
 The first files to inspect and evolve are:
 
 - `backend/wrangler.toml`
@@ -432,3 +438,13 @@ The first files to inspect and evolve are:
 - `src/renderer/managed-api.js`
 - `src/renderer/managed-controller.js`
 - `test/e2e/app.spec.js`
+
+## Planned Follow-On Phase Sequence
+
+Once the current Phase 10 closeout is judged complete enough, the intended sequence is:
+
+1. `Phase 11`: managed admin and directory productization
+2. `Phase 12`: local reusable knowledge retention for managed-learned peer facts
+3. `Phase 13`: friends and broader online/offline presence
+
+Those artifacts are prepared now so a future chat can start cleanly without reconstructing the roadmap from prior conversation history.

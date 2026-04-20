@@ -116,6 +116,9 @@ Check this file before making further code changes.
   - `PHASE6_ADMIN_SURFACE_CHECKLIST.md`
   - `PHASE7_NAT_INTEGRATION_CHECKLIST.md`
   - `PHASE8_BACKEND_FOUNDATION_CHECKLIST.md`
+  - `PHASE11_MANAGED_ADMIN_DIRECTORY_CHECKLIST.md`
+  - `PHASE12_LOCAL_KNOWLEDGE_RETENTION_CHECKLIST.md`
+  - `PHASE13_FRIENDS_AND_PRESENCE_CHECKLIST.md`
   - `PHASE0_HANDOFF.md` when historical context needs redirect notes
   - `NEXT_CHAT_HANDOFF.md` when the active slice, validation baseline, or continuation target changes
 - When a phase closes and there is no new checklist yet, update the closed checklist as a validation record and note the next planning gap explicitly in `NEXT_CHAT_HANDOFF.md`.

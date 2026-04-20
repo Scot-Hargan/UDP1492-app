@@ -391,6 +391,12 @@ That means the current implementation phase is:
 
 - Phase 10 core managed API implementation against the existing desktop client contract
 
+The prepared next backend/product phases after the current closeout path are now:
+
+- `Phase 11`: managed admin and directory productization
+- `Phase 12`: local reusable knowledge retention
+- `Phase 13`: friends and broader online/offline presence
+
 The backend plan must also preserve the product's private/direct philosophy:
 
 - managed mode coordinates
@@ -615,3 +621,9 @@ That planning gap is now closed by `PHASE8_BACKEND_FOUNDATION_CHECKLIST.md`.
 The immediate next implementation target for this repo should be:
 
 - `backend/` Phase 10 core managed API work
+
+Prepared follow-on artifacts now exist for the next phases:
+
+- `C:\NodeProjects\1492-app\PHASE11_MANAGED_ADMIN_DIRECTORY_CHECKLIST.md`
+- `C:\NodeProjects\1492-app\PHASE12_LOCAL_KNOWLEDGE_RETENTION_CHECKLIST.md`
+- `C:\NodeProjects\1492-app\PHASE13_FRIENDS_AND_PRESENCE_CHECKLIST.md`

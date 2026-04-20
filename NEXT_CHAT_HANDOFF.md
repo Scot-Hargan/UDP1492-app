@@ -18,32 +18,38 @@ Use this file if work continues in a fresh chat.
 - Phase 8 backend foundation planning is active
 - Phase 9 Cloudflare bootstrap is complete locally
 - Phase 10 core managed API implementation is in progress
+- Phase 11 managed admin/directory planning is prepared
+- Phase 12 local knowledge retention planning is prepared
+- Phase 13 friends/presence planning is prepared
 
 ## Start Here
 
 Read these in order:
 
 1. [PHASE8_BACKEND_FOUNDATION_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE8_BACKEND_FOUNDATION_CHECKLIST.md)
-2. [PHASE7_NAT_INTEGRATION_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE7_NAT_INTEGRATION_CHECKLIST.md)
-3. [DEVELOPMENT_NOTES.md](C:/NodeProjects/1492-app/DEVELOPMENT_NOTES.md)
-4. [MANAGED_MODE_ADAPTATION_PLAN.md](C:/NodeProjects/1492-app/MANAGED_MODE_ADAPTATION_PLAN.md)
-5. [backend/wrangler.toml](C:/NodeProjects/1492-app/backend/wrangler.toml)
-6. [backend/wrangler.test.toml](C:/NodeProjects/1492-app/backend/wrangler.test.toml)
-7. [backend/src/index.ts](C:/NodeProjects/1492-app/backend/src/index.ts)
-8. [backend/vitest.config.mjs](C:/NodeProjects/1492-app/backend/vitest.config.mjs)
-9. [backend/test/backend.spec.mjs](C:/NodeProjects/1492-app/backend/test/backend.spec.mjs)
-10. [playwright.live.config.js](C:/NodeProjects/1492-app/playwright.live.config.js)
-11. [test/e2e/live-backend.spec.js](C:/NodeProjects/1492-app/test/e2e/live-backend.spec.js)
-12. [src/renderer/managed-api.js](C:/NodeProjects/1492-app/src/renderer/managed-api.js)
-13. [src/renderer/managed-runtime.js](C:/NodeProjects/1492-app/src/renderer/managed-runtime.js)
-14. [src/renderer/managed-controller.js](C:/NodeProjects/1492-app/src/renderer/managed-controller.js)
-15. [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js)
-16. [src/renderer/admin.html](C:/NodeProjects/1492-app/src/renderer/admin.html)
-17. [src/renderer/admin.js](C:/NodeProjects/1492-app/src/renderer/admin.js)
-18. [src/main/main.js](C:/NodeProjects/1492-app/src/main/main.js)
-19. [src/main/preload.js](C:/NodeProjects/1492-app/src/main/preload.js)
-20. [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
-21. [test/e2e/fixtures.js](C:/NodeProjects/1492-app/test/e2e/fixtures.js)
+2. [PHASE11_MANAGED_ADMIN_DIRECTORY_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE11_MANAGED_ADMIN_DIRECTORY_CHECKLIST.md)
+3. [PHASE12_LOCAL_KNOWLEDGE_RETENTION_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE12_LOCAL_KNOWLEDGE_RETENTION_CHECKLIST.md)
+4. [PHASE13_FRIENDS_AND_PRESENCE_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE13_FRIENDS_AND_PRESENCE_CHECKLIST.md)
+5. [PHASE7_NAT_INTEGRATION_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE7_NAT_INTEGRATION_CHECKLIST.md)
+6. [DEVELOPMENT_NOTES.md](C:/NodeProjects/1492-app/DEVELOPMENT_NOTES.md)
+7. [MANAGED_MODE_ADAPTATION_PLAN.md](C:/NodeProjects/1492-app/MANAGED_MODE_ADAPTATION_PLAN.md)
+8. [backend/wrangler.toml](C:/NodeProjects/1492-app/backend/wrangler.toml)
+9. [backend/wrangler.test.toml](C:/NodeProjects/1492-app/backend/wrangler.test.toml)
+10. [backend/src/index.ts](C:/NodeProjects/1492-app/backend/src/index.ts)
+11. [backend/vitest.config.mjs](C:/NodeProjects/1492-app/backend/vitest.config.mjs)
+12. [backend/test/backend.spec.mjs](C:/NodeProjects/1492-app/backend/test/backend.spec.mjs)
+13. [playwright.live.config.js](C:/NodeProjects/1492-app/playwright.live.config.js)
+14. [test/e2e/live-backend.spec.js](C:/NodeProjects/1492-app/test/e2e/live-backend.spec.js)
+15. [src/renderer/managed-api.js](C:/NodeProjects/1492-app/src/renderer/managed-api.js)
+16. [src/renderer/managed-runtime.js](C:/NodeProjects/1492-app/src/renderer/managed-runtime.js)
+17. [src/renderer/managed-controller.js](C:/NodeProjects/1492-app/src/renderer/managed-controller.js)
+18. [src/renderer/ui.js](C:/NodeProjects/1492-app/src/renderer/ui.js)
+19. [src/renderer/admin.html](C:/NodeProjects/1492-app/src/renderer/admin.html)
+20. [src/renderer/admin.js](C:/NodeProjects/1492-app/src/renderer/admin.js)
+21. [src/main/main.js](C:/NodeProjects/1492-app/src/main/main.js)
+22. [src/main/preload.js](C:/NodeProjects/1492-app/src/main/preload.js)
+23. [test/e2e/app.spec.js](C:/NodeProjects/1492-app/test/e2e/app.spec.js)
+24. [test/e2e/fixtures.js](C:/NodeProjects/1492-app/test/e2e/fixtures.js)
 
 ## What Is Already Complete
 
@@ -248,6 +254,12 @@ It contains:
 - the implementation order for Phase 10 core managed API work
 - the current split between mock-first desktop coverage and the dedicated live-Worker Electron integration lane
 
+Prepared follow-on artifacts for the next phases now exist in:
+
+- [PHASE11_MANAGED_ADMIN_DIRECTORY_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE11_MANAGED_ADMIN_DIRECTORY_CHECKLIST.md)
+- [PHASE12_LOCAL_KNOWLEDGE_RETENTION_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE12_LOCAL_KNOWLEDGE_RETENTION_CHECKLIST.md)
+- [PHASE13_FRIENDS_AND_PRESENCE_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE13_FRIENDS_AND_PRESENCE_CHECKLIST.md)
+
 [PHASE7_NAT_INTEGRATION_CHECKLIST.md](C:/NodeProjects/1492-app/PHASE7_NAT_INTEGRATION_CHECKLIST.md) now remains the closed validation record for the NAT milestone.
 
 ## Immediate Next Slice
@@ -265,6 +277,12 @@ The next concrete target is now:
 3. Keep the backend aligned to the six existing client endpoints before adding broader admin/friend features.
 4. Preserve the current host boundary and peer-to-peer media path.
 5. Treat local retention of managed-learned reusable peer knowledge as a required future client rule while implementing the backend.
+
+After the current Phase 10 closeout, the planned follow-on sequence is:
+
+1. `Phase 11`: managed admin and directory productization
+2. `Phase 12`: local reusable knowledge retention
+3. `Phase 13`: friends and broader online/offline presence
 
 ## Important Constraints
 
@@ -363,7 +381,6 @@ Safe validation commands for the next chat:
 - `node --check src\\renderer\\managed-controller.js`
 - `node --check src\\renderer\\admin.js`
 - `node --check test\\e2e\\app.spec.js`
-- `node --check src\\renderer\\ui.js`
 - `npm run test:backend`
 - `npm run test:e2e`
 - `npm run test:e2e:live-backend`
@@ -395,4 +412,4 @@ Treat Phase 4 dual-ear routing as closed.
 Treat Phase 5 Commander groundwork as closed.
 Treat Phase 6 admin surface as closed.
 Treat Phase 7 NAT integration as closed for the bounded desktop-client milestone.
-If work continues immediately, start by creating or selecting the next controlling planning artifact rather than extending Phase 7 ad hoc.
+If work continues immediately, keep `PHASE8_BACKEND_FOUNDATION_CHECKLIST.md` active until the current Phase 10 closeout is judged complete enough to hand off to `PHASE11_MANAGED_ADMIN_DIRECTORY_CHECKLIST.md`.
