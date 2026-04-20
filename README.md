@@ -34,7 +34,6 @@ Artifacts are written to `dist/`:
 
 - `UDP 1492 Desktop-Portable-<version>.exe`: single-file portable app.
 - `UDP 1492 Desktop-Setup-<version>.exe`: single-file one-click installer.
-- `udp1492.runtime.example.json`: sidecar template for managed-backend runtime configuration.
 - GitHub release uploads are automated for version tags that match `v*`.
 
 ## E2E Fixtures
