@@ -288,6 +288,8 @@ function handleNetworkMessage(msg,rinfo) {
     //  postMessage({type: 'error',message: `received unencrypted data packet from peer: ${peer.name}`});
     //}
     receiveData(msg, peer, now);
+  } else if (kind === TYPE_DATA || kind === TYPE_DATA_ENCRYPTED) {
+    //ADD-CODE Handle data when not connected
   } else if (peer.connected && kind === TYPE_LOGOFF) {
     let offset = 1;
     let theirSig   = msg.subarray(offset, offset += 64);
@@ -431,7 +433,7 @@ function readHandshake(peer,msg,type){
   if (!ok) {
     postMessage({ type: 'error', message: `readHandshake EARLY RETURN: sig verify failed for peer ${peer.name}` });
     return;
-  } else if (peer.keyEpoch && peer.keyEpoch >= keyEpoch) {
+  } else if (peer.keyEpoch && Buffer.compare(peer.keyEpoch, keyEpoch) >= 0) {
     postMessage({ type: 'error', message: `readHandshake EARLY RETURN: old epoch from peer ${peer.name} - stored=${peer.keyEpoch} incoming=${keyEpoch}` });
     return;
   } else if (!tempPeer.validated) {
