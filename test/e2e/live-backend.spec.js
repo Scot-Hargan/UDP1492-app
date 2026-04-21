@@ -177,7 +177,7 @@ test('creates, updates, and deletes a managed channel against the real Worker fr
   const createdName = `Ops ${Date.now().toString().slice(-6)}`;
   const updatedName = `${createdName} Updated`;
 
-  await sleep(2600);
+  await sleep(3200);
   await openManagedSession(page);
 
   const adminPage = await openAdminWindow(appHarness);
@@ -213,6 +213,45 @@ test('creates, updates, and deletes a managed channel against the real Worker fr
   await expect(adminPage.locator('#adminChannelsList')).not.toContainText(updatedName);
   await expect(page.locator('#managedChannelList')).not.toContainText(updatedName);
   await expect(page.locator('#managedIdentityMeta')).toContainText('Session ses_');
+});
+
+test('shows backend admin facts in read-only mode for member sessions against the real Worker', async ({ appHarness }) => {
+  const { page } = appHarness;
+  const managedBackendBaseUrl = 'http://127.0.0.1:8791';
+
+  await sleep(3200);
+  const operatorSession = await openPeerSession(managedBackendBaseUrl, 'Holding Operator');
+  expect(operatorSession.identity.role).toBe('operator');
+
+  await openManagedSession(page, 'Member Desktop');
+  await expect(page.locator('#managedIdentityMeta')).toContainText('Session ses_');
+
+  const adminPage = await openAdminWindow(appHarness);
+  await expect(adminPage.locator('#adminBackendStatus')).toHaveText('member session');
+  await expect(adminPage.locator('#adminBackendFacts')).toContainText('Permissions | channels no | passcodes no');
+  await expect(adminPage.locator('#adminChannelEditorMeta')).toHaveText('Read-only');
+  await expect(adminPage.locator('#adminChannelEditorStatus')).toContainText('does not currently have permission to mutate channels');
+  await expect(adminPage.locator('#adminChannelEditorSelect')).toBeDisabled();
+  await expect(adminPage.locator('#adminChannelCreateBtn')).toBeDisabled();
+  await expect(adminPage.locator('#adminChannelSaveBtn')).toBeDisabled();
+  await expect(adminPage.locator('#adminChannelDeleteBtn')).toBeDisabled();
+
+  const memberSessionId = await page.evaluate(() => window.udp1492AdminDebug?.getSnapshot?.()?.managed?.session?.sessionId || '');
+  expect(memberSessionId).toMatch(/^ses_/);
+
+  const forbiddenCreate = await requestManagedBackend(managedBackendBaseUrl, '/api/admin/channels/create', {
+    method: 'POST',
+    body: {
+      sessionId: memberSessionId,
+      name: 'Forbidden Member Channel',
+      description: 'Should fail',
+      note: '',
+      securityMode: 'open',
+      concurrentAccessAllowed: true
+    }
+  });
+  expect(forbiddenCreate.response.status).toBe(403);
+  expect(forbiddenCreate.payload.code).toBe('managed_admin_forbidden');
 });
 
 test('preserves the active Alpha membership when a protected replacement join is denied by the real Worker', async ({ appHarness }) => {
@@ -302,7 +341,7 @@ test('expires an idle managed session cleanly and resets the desktop state', asy
   const { page } = appHarness;
 
   await openManagedSession(page);
-  await sleep(2600);
+  await sleep(3200);
 
   await page.locator('#managedRefreshChannelsBtn').click();
   await expect(page.locator('#managedErrorText')).toContainText(/expired/i);

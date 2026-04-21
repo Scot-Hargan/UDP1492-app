@@ -93,7 +93,7 @@ describe("1492 backend core managed API", () => {
     expect(payload.identity.displayName).toBe("Scot Two");
   });
 
-  it("assigns operator access to the first active session and gates admin summaries", async () => {
+  it("assigns operator access to the first active session and exposes admin summaries as read-only for members", async () => {
     await sleep(3200);
 
     const operator = await openSession("Operator One", {
@@ -121,11 +121,20 @@ describe("1492 backend core managed API", () => {
       canManagePasscodes: true
     });
 
-    const denied = await requestJson(
+    const memberSummary = await requestJson(
       `/api/admin/summary?sessionId=${encodeURIComponent(member.identity.sessionId)}`
     );
-    expect(denied.response.status).toBe(403);
-    expect(denied.payload.code).toBe("managed_admin_forbidden");
+    expect(memberSummary.response.status).toBe(200);
+    expect(memberSummary.payload.viewer).toMatchObject({
+      sessionId: member.identity.sessionId,
+      userId: "usr_member_one",
+      role: "member"
+    });
+    expect(memberSummary.payload.permissions).toMatchObject({
+      canReadAdminSummary: true,
+      canManageChannels: false,
+      canManagePasscodes: false
+    });
   });
 
   it("lets an operator create, update, and delete a managed channel while members are forbidden", async () => {

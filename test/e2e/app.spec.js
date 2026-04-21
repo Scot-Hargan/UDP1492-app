@@ -823,6 +823,71 @@ test.describe('peer fixture', () => {
     await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
   });
 
+  test('renders backend admin facts in read-only mode when the session lacks channel mutation permission', async ({ appHarness }) => {
+    const { page } = appHarness;
+    const { baseUrl } = await installManagedApiRoutes(page, {
+      adminSummaryResponse: {
+        viewer: {
+          sessionId: 'ses_01',
+          userId: 'usr_member_01',
+          displayName: 'Member Scot',
+          role: 'member'
+        },
+        permissions: {
+          canReadAdminSummary: true,
+          canManageChannels: false,
+          canManagePasscodes: false
+        },
+        directory: {
+          channelCount: 1,
+          protectedChannelCount: 0,
+          openChannelCount: 1,
+          activeSessionCount: 2,
+          activeOperatorSessionCount: 1,
+          activeMemberSessionCount: 1,
+          joinedSlotCount: 1,
+          activeChannelCount: 1,
+          activeMemberCount: 1,
+          onlineMemberCount: 1,
+          readyEndpointCount: 1,
+          sessionTtlMs: 7200000,
+          presenceTtlMs: 45000,
+          observedAt: '2026-04-16T19:25:10Z'
+        },
+        channels: [
+          {
+            channelId: 'chn_alpha',
+            name: 'Alpha',
+            description: 'Primary coordination channel',
+            note: 'Seeded development channel',
+            securityMode: 'open',
+            requiresPasscode: false,
+            concurrentAccessAllowed: true,
+            memberCount: 1,
+            onlineMemberCount: 1,
+            readyEndpointCount: 1,
+            lastPresenceAt: '2026-04-16T19:25:00Z'
+          }
+        ]
+      }
+    });
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+
+    const adminPage = await openAdminWindow(appHarness);
+    await expect(adminPage.locator('#adminBackendStatus')).toHaveText('member session');
+    await expect(adminPage.locator('#adminBackendFacts')).toContainText('Permissions | channels no | passcodes no');
+    await expect(adminPage.locator('#adminChannelEditorMeta')).toHaveText('Read-only');
+    await expect(adminPage.locator('#adminChannelEditorStatus')).toContainText('does not currently have permission to mutate channels');
+    await expect(adminPage.locator('#adminChannelEditorSelect')).toBeDisabled();
+    await expect(adminPage.locator('#adminChannelCreateBtn')).toBeDisabled();
+    await expect(adminPage.locator('#adminChannelSaveBtn')).toBeDisabled();
+    await expect(adminPage.locator('#adminChannelDeleteBtn')).toBeDisabled();
+  });
+
   test('creates, updates, and deletes backend-managed channels from the admin surface', async ({ appHarness }) => {
     const { page } = appHarness;
     const adminCreateRequests = [];

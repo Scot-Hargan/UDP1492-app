@@ -161,7 +161,7 @@ function normalizeSessionRole(value: unknown): SessionRole {
 function buildPermissionsForRole(role: SessionRole): SessionPermissions {
   const canManage = role === "operator";
   return {
-    canReadAdminSummary: canManage,
+    canReadAdminSummary: true,
     canManageChannels: canManage,
     canManagePasscodes: canManage
   };
@@ -1130,7 +1130,7 @@ export class DirectoryDOManagedV2 extends DurableObject<Env> {
   async handleGetAdminSummary(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const sessionId = url.searchParams.get("sessionId") || "";
-    const viewer = this.requireOperatorSession(sessionId);
+    const viewer = this.validateSession(sessionId);
     const observedAt = nowIso();
     this.cleanupExpiredSessions(observedAt);
 
