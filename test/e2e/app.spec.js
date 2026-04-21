@@ -902,6 +902,64 @@ test.describe('peer fixture', () => {
     expect(JSON.stringify(storage.udp1492_local_knowledge_v1)).not.toContain('ses_peer_01');
   });
 
+  test('imports a retained managed peer into the direct peer list from the selector', async ({ appHarness }) => {
+    const { page, readStorage } = appHarness;
+    const { baseUrl } = await installManagedApiRoutes(page);
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+    await page.getByRole('button', { name: 'Join Selected' }).click();
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+
+    await page.locator('#operatingModeDirect').click();
+    await expect(page.locator('#managedModeShell')).toBeHidden();
+
+    const retainedOption = await page.locator('#peerList').evaluate((select) => {
+      const option = Array.from(select.options).find((entry) => {
+        const text = entry.textContent || '';
+        return text.includes('Retained: Peer One') && text.includes('198.51.100.10:1492');
+      });
+      return option ? { value: option.value, label: option.textContent || '' } : null;
+    });
+    expect(retainedOption).toBeTruthy();
+
+    await page.selectOption('#peerList', retainedOption.value);
+    await expect(page.locator('#peerModal')).toBeVisible();
+    await expect(page.locator('#peerModalName')).toHaveValue('Peer One');
+    await expect(page.locator('#peerModalIp')).toHaveValue('198.51.100.10');
+    await expect(page.locator('#peerModalPort')).toHaveValue('1492');
+    await expect(page.locator('#peerModalDelete')).toBeHidden();
+
+    await page.locator('#peerModalSave').click();
+    await expect(page.locator('#peerList')).toContainText('Peer One');
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+
+    await expect.poll(async () => {
+      const storage = await readStorage();
+      const matchingKnowledgePeers = (storage.udp1492_local_knowledge_v1?.peers || []).filter((peer) => {
+        return Array.isArray(peer.endpoints) && peer.endpoints.some((endpoint) => endpoint.ip === '198.51.100.10' && endpoint.port === 1492);
+      });
+      return {
+        peerPersisted: !!storage.udp1492_peers?.some((peer) => peer.name === 'Peer One' && peer.ip === '198.51.100.10' && peer.port === 1492),
+        knowledgePeerCount: matchingKnowledgePeers.length,
+        mergedSources: matchingKnowledgePeers[0]?.sources || [],
+        manualPeerKey: matchingKnowledgePeers[0]?.manualPeerKey || '',
+        managedUserId: matchingKnowledgePeers[0]?.managedUserId || ''
+      };
+    }).toEqual({
+      peerPersisted: true,
+      knowledgePeerCount: 1,
+      mergedSources: expect.arrayContaining(['managed', 'manual']),
+      manualPeerKey: '198.51.100.10:1492',
+      managedUserId: 'usr_peer_01'
+    });
+
+    const storage = await readStorage();
+    expect(JSON.stringify(storage.udp1492_local_knowledge_v1)).not.toContain('ses_peer_01');
+  });
+
   test('renders the admin surface with channels, memberships, endpoints, and local stats', async ({ appHarness }) => {
     const { page } = appHarness;
     const { baseUrl } = await installManagedApiRoutes(page);

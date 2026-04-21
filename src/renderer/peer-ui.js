@@ -51,6 +51,7 @@ export function fillSelect(selectEl, options, selectedValue) {
 
 export function refreshPeerSelects({
   allPeers,
+  retainedOptions = [],
   peerListEl,
   peerModalSelectEl,
   mainSelected,
@@ -61,6 +62,13 @@ export function refreshPeerSelects({
   for (const peer of allPeers) {
     const value = `${peer.ip}:${peer.port}`;
     options.push({ name: peer.name || value, value });
+  }
+  for (const option of Array.isArray(retainedOptions) ? retainedOptions : []) {
+    if (!option?.value) continue;
+    options.push({
+      name: option.name || option.value,
+      value: option.value
+    });
   }
   fillSelect(peerListEl, options, mainSelected);
   fillSelect(peerModalSelectEl, options, modalSelected ?? mainSelected);

@@ -205,6 +205,71 @@ test('retains managed peer observations from the real Worker without persisting 
   await expect(page.locator('#managedActiveChannel')).toHaveText('Group A has no active membership');
 });
 
+test('imports a retained managed peer into the direct peer list after a real managed refresh', async ({ appHarness }) => {
+  const { page, readStorage } = appHarness;
+  const managedBackendBaseUrl = 'http://127.0.0.1:8791';
+
+  await openManagedSession(page);
+  await page.getByRole('button', { name: 'Join Selected' }).click();
+  await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+
+  const peerSession = await openPeerSession(managedBackendBaseUrl, 'Importable Peer');
+  await joinPeerChannel(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha');
+  await sendPeerPresence(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha', {
+    kind: 'public',
+    ip: '198.51.100.45',
+    port: 1492
+  });
+
+  await page.locator('#managedRefreshPeersBtn').click();
+  await expect(page.locator('#networkTable tbody')).toContainText('Importable Peer');
+
+  await page.locator('#operatingModeDirect').click();
+
+  const retainedOption = await page.locator('#peerList').evaluate((select) => {
+    const option = Array.from(select.options).find((entry) => {
+      const text = entry.textContent || '';
+      return text.includes('Retained: Importable Peer') && text.includes('198.51.100.45:1492');
+    });
+    return option ? { value: option.value, label: option.textContent || '' } : null;
+  });
+  expect(retainedOption).toBeTruthy();
+
+  await page.selectOption('#peerList', retainedOption.value);
+  await expect(page.locator('#peerModal')).toBeVisible();
+  await expect(page.locator('#peerModalName')).toHaveValue('Importable Peer');
+  await expect(page.locator('#peerModalIp')).toHaveValue('198.51.100.45');
+  await expect(page.locator('#peerModalPort')).toHaveValue('1492');
+
+  await page.locator('#peerModalSave').click();
+  await expect(page.locator('#networkTable tbody')).toContainText('Importable Peer');
+
+  await expect.poll(async () => {
+    const storage = await readStorage();
+    const matchingKnowledgePeers = (storage.udp1492_local_knowledge_v1?.peers || []).filter((peer) => {
+      return Array.isArray(peer.endpoints) && peer.endpoints.some((endpoint) => endpoint.ip === '198.51.100.45' && endpoint.port === 1492);
+    });
+    return {
+      peerPersisted: !!storage.udp1492_peers?.some((peer) => peer.name === 'Importable Peer' && peer.ip === '198.51.100.45' && peer.port === 1492),
+      knowledgePeerCount: matchingKnowledgePeers.length,
+      mergedSources: matchingKnowledgePeers[0]?.sources || [],
+      manualPeerKey: matchingKnowledgePeers[0]?.manualPeerKey || '',
+      managedUserId: matchingKnowledgePeers[0]?.managedUserId || ''
+    };
+  }).toEqual({
+    peerPersisted: true,
+    knowledgePeerCount: 1,
+    mergedSources: expect.arrayContaining(['managed', 'manual']),
+    manualPeerKey: '198.51.100.45:1492',
+    managedUserId: peerSession.identity.userId
+  });
+
+  const storage = await readStorage();
+  expect(JSON.stringify(storage.udp1492_local_knowledge_v1)).not.toContain(peerSession.identity.sessionId);
+
+  await leavePeerChannel(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha');
+});
+
 test('enforces protected seeded-channel passcodes against the real Worker', async ({ appHarness }) => {
   const { page } = appHarness;
 

@@ -59,6 +59,7 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
   const MANAGED_CACHE_STORAGE_KEY = 'udp1492_managed_cache';
   const LOCAL_KNOWLEDGE_STORAGE_KEY = 'udp1492_local_knowledge_v1';
   const NEW_PEER_VALUE = '__new__';
+  const RETAINED_PEER_SELECTION_PREFIX = '__retained__:';
   const OPERATING_MODES = Object.freeze({
     DIRECT: 'direct',
     MANAGED: 'managed'
@@ -282,6 +283,7 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
   let activeCodecId = DEFAULT_CODEC;
   let allPeers = [];
   let activePeers = new Map();
+  let retainedPeerSelections = new Map();
   const statusDashboard = createStatusDashboard({
     activePeers,
     elements: {
@@ -296,14 +298,67 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
     }
   });
   let dashboardState = statusDashboard.state;
-  const refreshPeerSelects = (mainSelected = NEW_PEER_VALUE, modalSelected) => syncPeerSelects({
-    allPeers,
-    peerListEl,
-    peerModalSelectEl,
-    mainSelected,
-    modalSelected,
-    newPeerValue: NEW_PEER_VALUE
-  });
+  function buildRetainedPeerSelectionOptions() {
+    const savedPeerKeys = new Set(allPeers.map((peer) => getPeerKey(peer)).filter(Boolean));
+    const defaults = getCodecDefaults(activeCodecId);
+    const retainedCandidates = [];
+    for (const peer of Array.isArray(localKnowledge?.peers) ? localKnowledge.peers : []) {
+      const peerSources = Array.isArray(peer?.sources) ? peer.sources : [];
+      for (const endpoint of Array.isArray(peer?.endpoints) ? peer.endpoints : []) {
+        const endpointKey = getEndpointKnowledgeKey(endpoint);
+        if (!endpointKey || savedPeerKeys.has(endpointKey)) continue;
+        if (endpoint?.source !== 'managed' && !peerSources.includes('managed')) continue;
+        retainedCandidates.push({
+          peerId: typeof peer?.peerId === 'string' ? peer.peerId : '',
+          displayName: (typeof peer?.displayName === 'string' && peer.displayName.trim()) || endpointKey,
+          endpointKey,
+          endpointKind: typeof endpoint?.kind === 'string' && endpoint.kind.trim() ? endpoint.kind.trim() : 'unknown',
+          endpoint: {
+            ip: typeof endpoint?.ip === 'string' ? endpoint.ip.trim() : '',
+            port: Number.parseInt(String(endpoint?.port ?? ''), 10)
+          },
+          draftPeer: {
+            name: (typeof peer?.displayName === 'string' && peer.displayName.trim()) || endpointKey,
+            ip: typeof endpoint?.ip === 'string' ? endpoint.ip.trim() : '',
+            port: Number.parseInt(String(endpoint?.port ?? ''), 10),
+            sharedKey: '',
+            gain: defaults.inputGain
+          }
+        });
+      }
+    }
+    retainedCandidates.sort((left, right) => {
+      const leftKey = `${left.displayName}|${left.endpointKind}|${left.endpointKey}`;
+      const rightKey = `${right.displayName}|${right.endpointKind}|${right.endpointKey}`;
+      return leftKey.localeCompare(rightKey);
+    });
+    retainedPeerSelections = new Map();
+    return retainedCandidates.map((candidate, index) => {
+      const value = `${RETAINED_PEER_SELECTION_PREFIX}${index}`;
+      retainedPeerSelections.set(value, candidate);
+      return {
+        name: `Retained: ${candidate.displayName} (${candidate.endpointKind} ${candidate.endpointKey})`,
+        value
+      };
+    });
+  }
+  function getRetainedPeerSelection(selectionKey) {
+    return retainedPeerSelections.get(selectionKey) || null;
+  }
+  function isRetainedPeerSelection(selectionKey) {
+    return !!getRetainedPeerSelection(selectionKey);
+  }
+  function refreshPeerSelects(mainSelected = NEW_PEER_VALUE, modalSelected) {
+    syncPeerSelects({
+      allPeers,
+      retainedOptions: buildRetainedPeerSelectionOptions(),
+      peerListEl,
+      peerModalSelectEl,
+      mainSelected,
+      modalSelected,
+      newPeerValue: NEW_PEER_VALUE
+    });
+  }
   const setMuteButtonVisual = (button, muted) => applyMuteButtonVisual(button, muted);
   const refreshPeerConnectionState = () => statusDashboard.refreshPeerConnectionState(getTransportPeersForMode());
   const markAudioReceiveActivity = (message) => statusDashboard.markAudioReceiveActivity(message);
@@ -658,29 +713,38 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
   }
   function syncLocalKnowledgeFromManualPeers(peers = allPeers) {
     const normalizedStore = createDefaultLocalKnowledgeStore(localKnowledge);
-    const existingByPeerId = new Map(normalizedStore.peers.map((peer) => [peer.peerId, peer]));
-    const nextPeers = [];
-    const retainedManualPeerIds = new Set();
+    const nextPeers = normalizedStore.peers.map((peer) => createDefaultLocalKnowledgePeer(peer));
+    const retainedManualPeerKeys = new Set();
     for (const peer of Array.isArray(peers) ? peers : []) {
       const manualPeerKey = getManualPeerKey(peer);
       if (!manualPeerKey) continue;
-      const peerId = `manual:${manualPeerKey}`;
-      retainedManualPeerIds.add(peerId);
-      const mergedPeer = buildManualKnowledgePeer(peer, existingByPeerId.get(peerId) || {});
-      if (mergedPeer) nextPeers.push(mergedPeer);
-      existingByPeerId.delete(peerId);
-    }
-    for (const existingPeer of normalizedStore.peers) {
-      const isManualOnly = existingPeer.manualPeerKey
-        && existingPeer.peerId === `manual:${existingPeer.manualPeerKey}`
-        && existingPeer.sources.length === 1
-        && existingPeer.sources[0] === 'manual';
-      if (isManualOnly && !retainedManualPeerIds.has(existingPeer.peerId)) continue;
-      if (!retainedManualPeerIds.has(existingPeer.peerId)) nextPeers.push(existingPeer);
+      retainedManualPeerKeys.add(manualPeerKey);
+      let existingIndex = nextPeers.findIndex((entry) => entry.peerId === `manual:${manualPeerKey}` || entry.manualPeerKey === manualPeerKey);
+      if (existingIndex < 0) {
+        existingIndex = nextPeers.findIndex((entry) => localKnowledgePeerHasEndpoint(entry, peer));
+      }
+      const existingPeer = existingIndex >= 0 ? nextPeers[existingIndex] : {};
+      const mergedPeer = buildManualKnowledgePeer(peer, existingPeer);
+      if (!mergedPeer) continue;
+      if (existingIndex >= 0) {
+        nextPeers[existingIndex] = mergedPeer;
+      } else {
+        nextPeers.push(mergedPeer);
+      }
     }
     const nextStore = createDefaultLocalKnowledgeStore({
       ...normalizedStore,
-      peers: nextPeers
+      peers: nextPeers.flatMap((peer) => {
+        if (!peer?.manualPeerKey || retainedManualPeerKeys.has(peer.manualPeerKey)) return [peer];
+        const remainingSources = dedupeLocalKnowledgeSources(peer.sources.filter((source) => source !== 'manual'));
+        if (!remainingSources.length) return [];
+        return [createDefaultLocalKnowledgePeer({
+          ...peer,
+          manualPeerKey: '',
+          sources: remainingSources,
+          endpoints: Array.isArray(peer?.endpoints) ? peer.endpoints.filter((endpoint) => endpoint?.source !== 'manual') : []
+        })];
+      })
     });
     const changed = JSON.stringify(nextStore) !== JSON.stringify(normalizedStore);
     localKnowledge = nextStore;
@@ -3074,6 +3138,10 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
       openPeerModal(NEW_PEER_VALUE);
       return;
     }
+    if (isRetainedPeerSelection(value)) {
+      openPeerModal(value);
+      return;
+    }
     const peer = allPeers.find(p => `${p.ip}:${p.port}` === value);
     if (!peer) {
       refreshPeerSelects(NEW_PEER_VALUE);
@@ -3095,25 +3163,29 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
     if (!peerModalSelectEl) return;
     if (peerModalSelectEl.value !== key) peerModalSelectEl.value = key;
     const defaults = getCodecDefaults(activeCodecId);
-    const peer = allPeers.find(p => `${p.ip}:${p.port}` === key) || { name: '', ip: '', port: settings.localPort || defaults.localPort, gain: defaults.inputGain };
+    const retainedSelection = getRetainedPeerSelection(key);
+    const peer = allPeers.find(p => `${p.ip}:${p.port}` === key)
+      || retainedSelection?.draftPeer
+      || { name: '', ip: '', port: settings.localPort || defaults.localPort, gain: defaults.inputGain };
     if (peerModalNameEl) peerModalNameEl.value = peer.name || '';
     if (peerModalIpEl) peerModalIpEl.value = peer.ip || '';
     if (peerModalPortEl) peerModalPortEl.value = peer.port || defaults.localPort;
     if (peerModalKeyEl) peerModalKeyEl.value = peer.sharedKey || '';
     if (peerModalGainEl) peerModalGainEl.value = peer.gain || defaults.inputGain;
     updatePeerGainLabel(peerModalGainValueEl, peerModalGainEl?.value);
-    if (peerModalDeleteBtn) peerModalDeleteBtn.hidden = key === NEW_PEER_VALUE;
+    if (peerModalDeleteBtn) peerModalDeleteBtn.hidden = key === NEW_PEER_VALUE || !!retainedSelection;
     renderPeerModalOtherFields({
       document,
       container: peerModalOtherFieldsEl,
       peer,
-      selectionKey: key,
+      selectionKey: retainedSelection ? NEW_PEER_VALUE : key,
       newPeerValue: NEW_PEER_VALUE
     });
   }
   async function savePeerFromModal() {
     const selection = peerModalSelectEl?.value || NEW_PEER_VALUE;
-    const isNew = selection === NEW_PEER_VALUE;
+    const retainedSelection = getRetainedPeerSelection(selection);
+    const isNew = selection === NEW_PEER_VALUE || !!retainedSelection;
     const name = (peerModalNameEl?.value || '').trim();
     const ip = (peerModalIpEl?.value || '').trim();
     const port = parseInt(peerModalPortEl?.value, 10);

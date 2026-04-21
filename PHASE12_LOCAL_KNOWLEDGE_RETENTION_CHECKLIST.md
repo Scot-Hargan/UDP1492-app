@@ -179,6 +179,7 @@ The most defensible Phase 12 path is:
 - reuse retained endpoints in one narrow direct-mode path first
 - prefer suggestion/import or derived peer synthesis before large UI redesign
 - keep manual peer editing as the safest override path
+- the first concrete reuse path may be an explicit retained-peer import option that prefills the existing direct peer editor
 
 ### Slice 4: inspection and maintenance
 

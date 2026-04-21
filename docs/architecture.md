@@ -558,6 +558,12 @@ The recommended Phase 12 direction is:
 3. enrich it with managed observations after peer refresh and successful use
 4. reuse retained facts in bounded direct-mode flows only after provenance and merge rules are stable
 
+The first bounded direct-mode reuse path should stay explicit and operator-driven:
+
+- surface retained managed endpoints as direct-peer import suggestions
+- prefill the existing peer editor from retained knowledge rather than auto-activating those endpoints
+- merge the resulting manual import back into the retained record when the endpoint matches
+
 Recommended retained-knowledge boundaries:
 
 - keep it local-first
