@@ -1,14 +1,5 @@
 import {
-  AUDIO_HEADER_SIZE,
   base64FromUint8,
-  base64ToUint8,
-  checksum32,
-  decodeALaw,
-  decodeMuLaw,
-  encodeALaw,
-  encodeMuLaw,
-  packEncodedChunk,
-  packPayloadWithHeader
 } from './audio-packet.js';
 import {
   CODECS,
@@ -18,14 +9,9 @@ import {
   INPUT_GAIN_STORAGE_KEY,
   SELECTED_CODEC_STORAGE_KEY,
   SETTINGS_STORAGE_KEY,
-  TYPE_AUDIO_OPUS,
   TYPE_AUDIO_PCM,
-  buildDecoderConfig,
-  buildEncoderConfig,
-  getCodecByDataType,
   getCodecConfig,
   getCodecDefaults,
-  getDecoderKey,
   getInputGainStorageKey,
   getSettingsStorageKey,
   getValidCodecId
@@ -46,11 +32,14 @@ import {
   buildManagedPresenceEndpoints,
   DEFAULT_MANAGED_STUN_SERVER_URLS
 } from './managed-runtime.js';
+import { createAudioEngine } from './audio-engine.js';
+import { renderManagedShellView, renderPeerModalOtherFields } from './dom-views.js';
+import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from './nat-discovery.js';
 
-// ui.js v0.4.23
+// ui.js v0.4.24
 (() => {
   'use strict';
-  const VERSION = '0.4.23';
+  const VERSION = '0.4.24';
   const platform = window.udp1492;
   const testPlatform = window.udp1492Test || null;
 
@@ -330,25 +319,11 @@ import {
   let nativeHost = null;
   let connected = false;
   let encryptionKeyHex = null;
-  let encoder;
-  let debugDecoder;
-  let decoders = new Map();       // `${codecId}::${peerKey}` -> AudioDecoder
-  let peerPlaybackTimes = new Map(); // peerKey -> scheduled playback head
-  let peerGains = new Map();      // peerKey -> GainNode
-  let peerRoutingNodes = new Map(); // peerKey -> StereoPannerNode
   let peerMeters = new Map();     // peerKey -> <progress> element
-  let peerMuteStates = new Map(); // peerKey -> boolean muted
   let commanderHoldState = createDefaultCommanderHoldState();
-  let masterGain = null;
-  let ac, micStream , micSource, workletNode;
-  let samplesPerFrame = 960;
-  let targetSampleRate = 48000;
-  let PLAYBACK_HEADROOM = 0.05; // seconds of lead time to absorb jitter
+  let targetSampleRate = Number(sampleRateEl?.value) || DEFAULT_SETTINGS.sampleRate;
   const nowTS = () => new Date().toISOString().replace('T', ' ').replace('Z', '');
-  let debugCounters = { sent:0, recv:0, headerOk:0, headerMissing:0, checksumMismatch:0, decodeErrors:0 };
   let debugTimer = null;
-  let unknownHeaderWarned = false;
-  let audioDebug = { rxFrames: [], schedule: [] };
   const peerRuntimeStats = createPeerRuntimeTracker();
   const codecSupportCache = new Map();
   let adminSnapshotPublishTimer = null;
@@ -356,6 +331,90 @@ import {
   let natMockDiscoveryResult = null;
   let natMockProbeResults = {};
   const natProbeTimeouts = new Map();
+  const managedShellElements = {
+    operatingModeSummaryEl,
+    transportPeersHeadingEl,
+    managedModeShellEl,
+    managedModeStatusEl,
+    managedIdentityNameEl,
+    managedIdentityMetaEl,
+    managedProfileStatusEl,
+    managedChannelListEl,
+    managedLobbyStatusEl,
+    managedActiveSlotLabelEl,
+    managedSelectGroupABtn,
+    managedSelectGroupBBtn,
+    managedActiveChannelEl,
+    managedActiveSlotStatusEl,
+    managedGroupATitleEl,
+    managedGroupAStatusEl,
+    managedGroupAIntentEl,
+    managedGroupAPeerSyncEl,
+    managedGroupBTitleEl,
+    managedGroupBStatusEl,
+    managedGroupBIntentEl,
+    managedGroupBPeerSyncEl,
+    managedIntentStatusEl,
+    managedDisplayNameInputEl,
+    managedBackendBaseUrlInputEl,
+    managedRefreshChannelsBtn,
+    managedRefreshNatBtn,
+    managedRefreshPeersBtn,
+    managedLeaveChannelBtn,
+    managedPeerSyncMetaEl,
+    managedNatStatusEl,
+    managedRoutingStatusEl,
+    managedCommanderStatusEl,
+    managedMicModeSingleBtn,
+    managedMicModeCommanderBtn,
+    managedMuteAllBtn,
+    managedMuteGroupABtn,
+    managedMuteGroupBBtn,
+    managedPttAllBtn,
+    managedPttGroupABtn,
+    managedPttGroupBBtn,
+    managedErrorTextEl,
+    managedPasscodeLabelEl,
+    managedJoinPasscodeInputEl
+  };
+  const audioEngine = createAudioEngine({
+    windowRef: window,
+    navigatorRef: navigator,
+    testPlatform,
+    getActiveCodecId: () => activeCodecId,
+    setActiveCodecId: (codecId) => {
+      activeCodecId = codecId;
+    },
+    getSettings: () => settings,
+    getSampleRatePreference: () => Number(sampleRateEl?.value) || settings.sampleRate || DEFAULT_SETTINGS.sampleRate,
+    getFrameMs: () => Number(frameMsEl?.value) || settings.frameMs || DEFAULT_SETTINGS.frameMs,
+    dispatchOutgoingAudio: (config) => dispatchOutgoingAudio(config),
+    getOperatingMode,
+    getPeerAudioRoute,
+    getAudioRoutePanValue,
+    getAudioRouteLabel,
+    getPeerBaseGain,
+    onPeerRouteApplied: (peerKey, route, routeLabel) => {
+      const row = document.getElementById(getPeerRowId(peerKey));
+      if (!row) return;
+      row.dataset.audioRoute = route;
+      row.title = `Audio route: ${routeLabel}`;
+    },
+    onPeerMeter: (peerKey, peak) => updatePeerMeter(peerKey, peak),
+    onMicMeter: (peak) => {
+      if (micMeterEl) micMeterEl.value = peak;
+    },
+    onCaptureStateChange: ({ micActive, audioTxActive } = {}) => {
+      if (typeof micActive === 'boolean') dashboardState.micActive = micActive;
+      if (typeof audioTxActive === 'boolean') dashboardState.audioTxActive = audioTxActive;
+      updateStatusDashboard();
+    },
+    onLog: (line) => log(line),
+    onCodecFallback: (codecId) => {
+      if (codecSelect) codecSelect.value = codecId;
+    },
+    isDebugEnabled: () => debugEnabled
+  });
 
   function sanitizeOperatingMode(mode) {
     return mode === OPERATING_MODES.MANAGED ? OPERATING_MODES.MANAGED : OPERATING_MODES.DIRECT;
@@ -1618,23 +1677,6 @@ import {
     }
     return rows.sort((left, right) => `${left.slotId}:${left.displayName}:${left.ip}:${left.port}`.localeCompare(`${right.slotId}:${right.displayName}:${right.ip}:${right.port}`));
   }
-  function parseIceCandidateString(candidateString) {
-    const parts = String(candidateString || '').trim().split(/\s+/);
-    if (parts[0]?.indexOf('candidate:') !== 0 || parts.length < 8) return null;
-    let type = '';
-    for (let index = 6; index < parts.length; index += 1) {
-      if (parts[index] === 'typ' && parts[index + 1]) {
-        type = parts[index + 1];
-        break;
-      }
-    }
-    return {
-      protocol: String(parts[2] || '').toLowerCase(),
-      ip: String(parts[4] || '').trim(),
-      port: Number(parts[5]),
-      type
-    };
-  }
   function buildLocalNatCandidatesFromRuntime() {
     return dedupeNatCandidates(buildManagedLocalCandidates({
       localPort: settings.localPort,
@@ -1649,12 +1691,6 @@ import {
   function getNatGatherSourceLabel() {
     const urls = getManagedRuntimeConfig()?.managedStunServerUrls || [];
     return urls.length ? 'stun' : 'none';
-  }
-  function buildIceServersForNatDiscovery() {
-    const urls = Array.isArray(getManagedRuntimeConfig()?.managedStunServerUrls) && getManagedRuntimeConfig().managedStunServerUrls.length
-      ? getManagedRuntimeConfig().managedStunServerUrls
-      : DEFAULT_MANAGED_STUN_SERVER_URLS;
-    return urls.map((url) => ({ urls: url }));
   }
   function applyNatGatherResult(result = {}, options = {}) {
     const discoveredAt = new Date().toISOString();
@@ -1732,77 +1768,17 @@ import {
     return 'NAT readiness not evaluated yet.';
   }
   async function gatherNatCandidatesWithWebRtc() {
-    if (testPlatform) {
-      if (natMockDiscoveryResult?.errorMessage) {
-        throw new Error(natMockDiscoveryResult.errorMessage);
+    return gatherNatCandidatesViaWebRtc({
+      testMode: !!testPlatform,
+      mockResult: natMockDiscoveryResult,
+      RTCPeerConnectionImpl: window.RTCPeerConnection,
+      windowRef: window,
+      runtimeConfig: getManagedRuntimeConfig(),
+      defaultStunServerUrls: DEFAULT_MANAGED_STUN_SERVER_URLS,
+      natCandidateKinds: {
+        LOCAL: NAT_CANDIDATE_KINDS.LOCAL,
+        PUBLIC: NAT_CANDIDATE_KINDS.PUBLIC
       }
-      if (natMockDiscoveryResult) {
-        return {
-          localCandidates: natMockDiscoveryResult.localCandidates || [],
-          publicCandidates: natMockDiscoveryResult.publicCandidates || []
-        };
-      }
-      return {
-        localCandidates: [],
-        publicCandidates: []
-      };
-    }
-    if (typeof RTCPeerConnection !== 'function') {
-      throw new Error('RTCPeerConnection is unavailable for NAT discovery.');
-    }
-    return new Promise((resolve, reject) => {
-      const peerConnection = new RTCPeerConnection({
-        iceServers: buildIceServersForNatDiscovery()
-      });
-      const publicCandidates = [];
-      const localCandidates = [];
-      let settled = false;
-      const complete = () => {
-        if (settled) return;
-        settled = true;
-        try { peerConnection.close(); } catch {}
-        resolve({ localCandidates, publicCandidates });
-      };
-      const fail = (error) => {
-        if (settled) return;
-        settled = true;
-        try { peerConnection.close(); } catch {}
-        reject(error);
-      };
-      const timeout = window.setTimeout(() => complete(), 4000);
-      peerConnection.createDataChannel('udp1492-nat');
-      peerConnection.onicecandidate = (event) => {
-        if (!event.candidate) {
-          window.clearTimeout(timeout);
-          complete();
-          return;
-        }
-        const parsed = parseIceCandidateString(event.candidate.candidate);
-        if (!parsed || parsed.protocol !== 'udp') return;
-        if (parsed.type === 'srflx') {
-          publicCandidates.push({
-            kind: NAT_CANDIDATE_KINDS.PUBLIC,
-            ip: parsed.ip,
-            port: parsed.port,
-            protocol: parsed.protocol,
-            source: 'stun'
-          });
-        } else if (parsed.type === 'host') {
-          localCandidates.push({
-            kind: NAT_CANDIDATE_KINDS.LOCAL,
-            ip: parsed.ip,
-            port: parsed.port,
-            protocol: parsed.protocol,
-            source: 'stun'
-          });
-        }
-      };
-      peerConnection.createOffer()
-        .then((offer) => peerConnection.setLocalDescription(offer))
-        .catch((error) => {
-          window.clearTimeout(timeout);
-          fail(error);
-        });
     });
   }
   async function ensureManagedNatDiscovery(options = {}) {
@@ -2019,287 +1995,69 @@ import {
     }
     return `${heldScopes.join(' + ')} active | ${activeTargetKeys.length} deduped peer target(s).`;
   }
-  function renderCommanderButtonState(button, { pressed = false, held = false, text = '' } = {}) {
-    if (!button) return;
-    if (text) button.textContent = text;
-    button.classList.toggle('is-active', !!pressed);
-    button.classList.toggle('is-held', !!held);
-    button.setAttribute('aria-pressed', String(!!pressed));
-  }
-  function renderManagedSlotSummary(elements, viewModel, isActiveSlot) {
-    if (elements.title) elements.title.textContent = viewModel.title;
-    if (elements.status) elements.status.textContent = `${viewModel.statusText}${isActiveSlot ? ' | active slot' : ''}`;
-    if (elements.intent) {
-      elements.intent.textContent = viewModel.intentText;
-    }
-    if (elements.peerSync) {
-      elements.peerSync.textContent = viewModel.peerSyncText;
-    }
-  }
   function renderManagedShell() {
-    const operatingMode = getOperatingMode();
-    const managedSession = getManagedSession();
-    const activeSlotId = getActiveManagedSlotId();
-    const activeSlotView = buildManagedSlotViewModel(activeSlotId);
-    const slotAView = buildManagedSlotViewModel(GROUP_SLOT_IDS.A);
-    const slotBView = buildManagedSlotViewModel(GROUP_SLOT_IDS.B);
-    const runtimeConfig = getManagedRuntimeConfig();
-    const effectiveManagedBaseUrl = getManagedBaseUrl();
-    const backendUrlSource = getConfiguredManagedBaseUrl()
-      ? 'profile'
-      : (runtimeConfig?.managedBackendUrl ? 'app config' : '');
-    const joinedSlotCount = getManagedSlotIds().filter((slotId) => !!getManagedSlot(slotId).channelId).length;
-    const activeSlotLabel = getManagedSlotLabel(activeSlotId);
-    document.body.dataset.operatingMode = operatingMode;
-    updateOperatingModeButtons();
-    if (transportPeersHeadingEl) {
-      transportPeersHeadingEl.textContent = operatingMode === OPERATING_MODES.MANAGED ? 'Transport Peers' : 'Active Peers';
-    }
-    if (operatingModeSummaryEl) {
-      operatingModeSummaryEl.textContent = operatingMode === OPERATING_MODES.MANAGED
-        ? 'Managed mode uses the documented session, channel, presence, and peer-resolution contract over HTTP.'
-        : 'Direct mode uses the saved UDP peer list and current host bridge.';
-    }
-    if (managedModeShellEl) managedModeShellEl.hidden = operatingMode !== OPERATING_MODES.MANAGED;
-    if (managedModeStatusEl) {
-      managedModeStatusEl.textContent = operatingMode === OPERATING_MODES.MANAGED
-        ? (managedSession.sessionId
-            ? `Session ${managedSession.status || 'open'} | ${joinedSlotCount} slot(s) joined${managedSession.expiresAt ? ` | until ${formatManagedTimestamp(managedSession.expiresAt)}` : ''}`
-            : 'Open a managed session, then target Group A or Group B from the lobby.')
-        : 'Managed shell is idle while direct mode is active.';
-    }
-    if (managedIdentityNameEl) {
-      managedIdentityNameEl.textContent = managedProfile.displayName || managedSession.displayName || managedProfile.callsign || 'Unconfigured operator';
-    }
-    if (managedIdentityMetaEl) {
-      managedIdentityMetaEl.textContent = managedSession.userId
-        ? `User ${managedSession.userId}${managedSession.sessionId ? ` | Session ${managedSession.sessionId}` : ''}`
-        : (managedProfile.callsign ? `Callsign ${managedProfile.callsign}` : 'Managed identity scaffold only');
-    }
-    if (managedProfileStatusEl) {
-      managedProfileStatusEl.textContent = effectiveManagedBaseUrl
-        ? `Backend ${effectiveManagedBaseUrl}${backendUrlSource === 'app config' ? ' | app config' : ''}`
-        : 'Backend base URL not set yet';
-    }
-    if (managedDisplayNameInputEl) managedDisplayNameInputEl.value = managedProfile.displayName || '';
-    if (managedBackendBaseUrlInputEl) {
-      managedBackendBaseUrlInputEl.value = getConfiguredManagedBaseUrl() || '';
-      managedBackendBaseUrlInputEl.placeholder = runtimeConfig?.managedBackendUrl || 'https://managed.example.test';
-    }
-    if (managedLobbyStatusEl) {
-      const protectedCount = managedCache.channels.filter((channel) => channelRequiresPasscode(channel)).length;
-      const openCount = Math.max(0, managedCache.channels.length - protectedCount);
-      managedLobbyStatusEl.textContent = managedCache.channels.length
-        ? `${managedCache.channels.length} channel(s) cached | ${openCount} open | ${protectedCount} protected${managedCache.lastUpdatedAt ? ` | synced ${formatManagedTimestamp(managedCache.lastUpdatedAt)}` : ''}`
-        : 'No channels loaded yet';
-    }
-    if (managedActiveSlotLabelEl) {
-      managedActiveSlotLabelEl.textContent = activeSlotLabel;
-    }
-    if (managedSelectGroupABtn) {
-      managedSelectGroupABtn.classList.toggle('is-active', activeSlotId === GROUP_SLOT_IDS.A);
-      managedSelectGroupABtn.setAttribute('aria-pressed', String(activeSlotId === GROUP_SLOT_IDS.A));
-    }
-    if (managedSelectGroupBBtn) {
-      managedSelectGroupBBtn.classList.toggle('is-active', activeSlotId === GROUP_SLOT_IDS.B);
-      managedSelectGroupBBtn.setAttribute('aria-pressed', String(activeSlotId === GROUP_SLOT_IDS.B));
-    }
-    if (managedActiveChannelEl) {
-      managedActiveChannelEl.textContent = activeSlotView.slotState.channelId
-        ? activeSlotView.title
-        : `${activeSlotLabel} has no active membership`;
-    }
-    if (managedActiveSlotStatusEl) {
-      managedActiveSlotStatusEl.textContent = `${activeSlotLabel} | ${activeSlotView.statusText}`;
-    }
-    if (managedIntentStatusEl) {
-      managedIntentStatusEl.hidden = !activeSlotView.intentText;
-      managedIntentStatusEl.textContent = activeSlotView.intentText;
-    }
-    if (managedPeerSyncMetaEl) {
-      managedPeerSyncMetaEl.textContent = activeSlotView.peerSyncText;
-    }
-    if (managedNatStatusEl) {
-      managedNatStatusEl.textContent = getNatStatusText(activeSlotId);
-    }
-    if (managedRoutingStatusEl) {
-      managedRoutingStatusEl.hidden = operatingMode !== OPERATING_MODES.MANAGED;
-      managedRoutingStatusEl.textContent = getManagedRoutingSummary();
-    }
-    if (managedCommanderStatusEl) {
-      managedCommanderStatusEl.textContent = getCommanderStatusText();
-    }
-    renderCommanderButtonState(managedMicModeSingleBtn, {
-      pressed: getCommanderMicMode() === MIC_MODE_IDS.SINGLE,
-      text: 'Single'
-    });
-    renderCommanderButtonState(managedMicModeCommanderBtn, {
-      pressed: getCommanderMicMode() === MIC_MODE_IDS.COMMANDER,
-      text: 'Commander'
-    });
-    renderCommanderButtonState(managedMuteAllBtn, {
-      pressed: isCommanderScopeMuted(COMMANDER_SCOPE_IDS.ALL),
-      text: isCommanderScopeMuted(COMMANDER_SCOPE_IDS.ALL) ? 'Muted' : 'Mute'
-    });
-    renderCommanderButtonState(managedMuteGroupABtn, {
-      pressed: isCommanderScopeMuted(COMMANDER_SCOPE_IDS.A),
-      text: isCommanderScopeMuted(COMMANDER_SCOPE_IDS.A) ? 'Muted' : 'Mute'
-    });
-    renderCommanderButtonState(managedMuteGroupBBtn, {
-      pressed: isCommanderScopeMuted(COMMANDER_SCOPE_IDS.B),
-      text: isCommanderScopeMuted(COMMANDER_SCOPE_IDS.B) ? 'Muted' : 'Mute'
-    });
-    renderCommanderButtonState(managedPttAllBtn, {
-      pressed: !!commanderHoldState.all,
-      held: !!commanderHoldState.all,
-      text: commanderHoldState.all ? 'Talking' : 'Hold To Talk'
-    });
-    renderCommanderButtonState(managedPttGroupABtn, {
-      pressed: !!commanderHoldState.A,
-      held: !!commanderHoldState.A,
-      text: commanderHoldState.A ? 'Talking' : 'Hold To Talk'
-    });
-    renderCommanderButtonState(managedPttGroupBBtn, {
-      pressed: !!commanderHoldState.B,
-      held: !!commanderHoldState.B,
-      text: commanderHoldState.B ? 'Talking' : 'Hold To Talk'
-    });
-    const commanderModeEnabled = getCommanderMicMode() === MIC_MODE_IDS.COMMANDER;
-    if (managedMuteGroupABtn) managedMuteGroupABtn.disabled = !commanderModeEnabled;
-    if (managedMuteGroupBBtn) managedMuteGroupBBtn.disabled = !commanderModeEnabled;
-    if (managedPttAllBtn) managedPttAllBtn.disabled = !commanderModeEnabled;
-    if (managedPttGroupABtn) managedPttGroupABtn.disabled = !commanderModeEnabled;
-    if (managedPttGroupBBtn) managedPttGroupBBtn.disabled = !commanderModeEnabled;
-    renderManagedSlotSummary({
-      title: managedGroupATitleEl,
-      status: managedGroupAStatusEl,
-      intent: managedGroupAIntentEl,
-      peerSync: managedGroupAPeerSyncEl
-    }, slotAView, activeSlotId === GROUP_SLOT_IDS.A);
-    renderManagedSlotSummary({
-      title: managedGroupBTitleEl,
-      status: managedGroupBStatusEl,
-      intent: managedGroupBIntentEl,
-      peerSync: managedGroupBPeerSyncEl
-    }, slotBView, activeSlotId === GROUP_SLOT_IDS.B);
-    if (managedPasscodeLabelEl) {
-      managedPasscodeLabelEl.textContent = activeSlotView.passcodeRequired
-        ? `${activeSlotLabel} Passcode (Required)`
-        : `${activeSlotLabel} Passcode`;
-    }
-    if (managedJoinPasscodeInputEl) {
-      managedJoinPasscodeInputEl.placeholder = activeSlotView.passcodeRequired
-        ? (activeSlotView.hasDifferentIntent
-            ? `Enter the protected channel passcode to switch ${activeSlotLabel}`
-            : 'Enter the protected channel passcode')
-        : 'Only for protected channels';
-      managedJoinPasscodeInputEl.value = getManagedJoinPasscode(getActiveManagedSlotId());
-    }
-    if (managedErrorTextEl) {
-      const errorMessage = activeSlotView.slotState.errorMessage || managedSession.errorMessage || '';
-      managedErrorTextEl.hidden = !errorMessage;
-      managedErrorTextEl.textContent = errorMessage;
-    }
-    syncManagedInputButtonState();
-    if (managedRefreshChannelsBtn) {
-      managedRefreshChannelsBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || !managedSession.sessionId;
-    }
-    if (managedRefreshNatBtn) {
-      managedRefreshNatBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || natRuntime.gatherer.status === NAT_DISCOVERY_STATES.GATHERING;
-    }
-    if (managedRefreshPeersBtn) {
-      managedRefreshPeersBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || !activeSlotView.slotState.channelId;
-    }
-    if (managedLeaveChannelBtn) {
-      managedLeaveChannelBtn.disabled = operatingMode !== OPERATING_MODES.MANAGED || !activeSlotView.slotState.channelId;
-    }
-    if (managedChannelListEl) {
-      managedChannelListEl.innerHTML = '';
-      const channels = managedCache.channels.length ? managedCache.channels : [];
-      if (!channels.length) {
-        const item = document.createElement('li');
-        item.className = 'managed-list-item';
-        const title = document.createElement('strong');
-        title.textContent = managedSession.sessionId ? 'No visible channels' : 'Session not opened';
-        const detail = document.createElement('span');
-        detail.textContent = managedSession.sessionId
-          ? 'Refresh channels or verify the backend returned lobby data.'
-          : 'Open a managed session to load the channel lobby.';
-        item.append(title, detail);
-        managedChannelListEl.appendChild(item);
-      }
-      for (const channel of channels) {
-        const item = document.createElement('li');
-        item.className = 'managed-list-item';
-        item.dataset.securityMode = getManagedChannelSecurityMode(channel);
-        const header = document.createElement('div');
-        header.className = 'managed-list-item-header';
-        const summary = document.createElement('div');
-        const titleRow = document.createElement('div');
-        titleRow.className = 'managed-list-title';
-        const title = document.createElement('strong');
-        title.textContent = channel.name || channel.channelId || 'Unnamed channel';
-        const isProtected = channelRequiresPasscode(channel);
-        const isActive = activeSlotView.slotState.channelId === channel.channelId;
-        const isSelected = !isActive && activeSlotView.selectedChannelId === channel.channelId;
-        const stateBadge = document.createElement('span');
-        stateBadge.className = 'managed-badge';
-        if (isActive) {
-          stateBadge.textContent = 'Joined';
-        } else if (isSelected) {
-          stateBadge.textContent = 'Selected';
-        }
-        stateBadge.hidden = !isActive && !isSelected;
-        const detail = document.createElement('span');
-        detail.textContent = channel.description || channel.note || channel.channelId || 'Managed channel';
-        const meta = document.createElement('div');
-        meta.className = 'managed-list-meta';
-        const security = document.createElement('span');
-        security.className = `managed-badge ${isProtected ? 'is-protected' : 'is-open'}`;
-        security.textContent = getManagedChannelSecurityLabel(channel);
-        const members = document.createElement('span');
-        members.className = 'managed-badge';
-        members.textContent = `${Number(channel.memberCount) || 0} member(s)`;
-        const note = document.createElement('p');
-        note.className = 'managed-list-note';
-        note.textContent = isProtected
-          ? 'Passcode required before join.'
-          : 'Open channel. No passcode required.';
-        titleRow.append(title, stateBadge);
-        meta.append(security, members);
-        summary.append(titleRow, detail, meta, note);
-        const action = document.createElement('button');
-        action.type = 'button';
-        action.className = isActive ? 'secondary' : 'primary';
-        action.textContent = isActive ? 'Joined' : (isSelected ? 'Join Selected' : (isProtected ? 'Join Protected' : 'Join'));
-        action.disabled = !managedSession.sessionId || isActive;
-        item.classList.toggle('is-active', isActive);
-        item.classList.toggle('is-selected', isSelected);
-        action.addEventListener('click', () => {
-          setManagedSlotIntent(activeSlotId, channel.channelId);
-          if (activeSlotId === GROUP_SLOT_IDS.A) managedProfile.preferredChannelId = channel.channelId;
+    renderManagedShellView({
+      document,
+      elements: managedShellElements,
+      constants: {
+        OPERATING_MODES,
+        GROUP_SLOT_IDS,
+        MIC_MODE_IDS,
+        COMMANDER_SCOPE_IDS,
+        NAT_DISCOVERY_STATES
+      },
+      state: {
+        managedProfile,
+        managedCache,
+        natRuntime,
+        commanderHoldState
+      },
+      helpers: {
+        buildManagedSlotViewModel,
+        channelRequiresPasscode,
+        formatManagedTimestamp,
+        getActiveManagedSlotId,
+        getCommanderMicMode,
+        getCommanderStatusText,
+        getConfiguredManagedBaseUrl,
+        getManagedBaseUrl,
+        getManagedChannelSecurityLabel,
+        getManagedChannelSecurityMode,
+        getManagedJoinPasscode,
+        getManagedRoutingSummary,
+        getManagedRuntimeConfig,
+        getManagedSession,
+        getManagedSlot,
+        getManagedSlotIds,
+        getManagedSlotLabel,
+        getNatStatusText,
+        getOperatingMode,
+        isCommanderScopeMuted
+      },
+      actions: {
+        onManagedChannelAction: (slotId, channelId) => {
+          setManagedSlotIntent(slotId, channelId);
+          if (slotId === GROUP_SLOT_IDS.A) managedProfile.preferredChannelId = channelId;
           renderManagedShell();
-          joinManagedChannel(activeSlotId, channel.channelId).catch((err) => {
-            getManagedSlot(activeSlotId).errorMessage = err?.message || 'Failed to join the managed channel.';
-            if (getActiveManagedSlotId() === activeSlotId) {
+          joinManagedChannel(slotId, channelId).catch((err) => {
+            getManagedSlot(slotId).errorMessage = err?.message || 'Failed to join the managed channel.';
+            if (getActiveManagedSlotId() === slotId) {
               setManagedError(err?.message || 'Failed to join the managed channel.');
             }
             renderManagedShell();
             console.error('managed join error', err);
           });
-        });
-        header.append(summary, action);
-        item.append(header);
-        managedChannelListEl.appendChild(item);
+        },
+        queueAdminSnapshotPublish,
+        syncManagedInputButtonState,
+        updateOperatingModeButtons
       }
-    }
-    queueAdminSnapshotPublish();
+    });
   }
   async function updateManagedProfileFromInputs() {
     managedProfile.displayName = (managedDisplayNameInputEl?.value || '').trim();
     managedProfile.backendBaseUrl = sanitizeManagedBaseUrl(managedBackendBaseUrlInputEl?.value || '');
     managedProfile.preferredChannelId = getManagedSlotIntent(GROUP_SLOT_IDS.A) || managedProfile.preferredChannelId || '';
-    renderManagedShell();
     await persistAppState({
       includeLegacyLastPeers: true,
       includeManagedProfile: true,
@@ -2402,32 +2160,7 @@ import {
     const sr = sampleRate || cfg.sampleRate || getCodecDefaults(codecId).sampleRate || 48000;
     const key = `${codecId}:${sr}`;
     if (codecSupportCache.has(key)) return codecSupportCache.get(key);
-    const codecDef = getCodecConfig(codecId);
-    let encoderOk = false;
-    let decoderOk = false;
-    if (codecDef.softwareEncoder) {
-      encoderOk = true;
-    } else {
-      try {
-        const encCfg = { ...buildEncoderConfig(codecDef, sr) };
-        const bitrateKbps = Number(cfg?.bitrateKbps ?? codecDef.defaults?.bitrateKbps);
-        if (Number.isFinite(bitrateKbps) && bitrateKbps > 0) encCfg.bitrate = Math.trunc(bitrateKbps * 1000);
-        encoderOk = !!(await AudioEncoder.isConfigSupported(encCfg)).supported;
-      } catch (e) {
-        encoderOk = false;
-      }
-    }
-    if (codecDef.softwareDecoder) {
-      decoderOk = true;
-    } else {
-      try {
-        const decCfg = buildDecoderConfig(codecDef, sr);
-        decoderOk = !!(await AudioDecoder.isConfigSupported(decCfg)).supported;
-      } catch (e) {
-        decoderOk = false;
-      }
-    }
-    const result = { encoder: encoderOk, decoder: decoderOk };
+    const result = await audioEngine.getCodecSupport(codecId, sr, cfg);
     codecSupportCache.set(key, result);
     return result;
   }
@@ -2508,7 +2241,7 @@ import {
     }
     if (inputGainEl) inputGainEl.value = String(nextGain);
     if (gainValueEl) gainValueEl.textContent = formatGain(nextGain);
-    if (applyWorklet && workletNode) workletNode.port.postMessage({ type: 'config', gain: nextGain });
+    if (applyWorklet) audioEngine.setInputGain(nextGain);
     if (persist) {
       storage.set({
         [getSettingsStorageKey(activeCodecId)]: settings,
@@ -2766,380 +2499,28 @@ import {
   }
 
   async function startAudioCapture() {
-    if (testPlatform?.flags?.skipAudioCapture) {
-      dashboardState.micActive = false;
-      dashboardState.audioTxActive = false;
-      updateStatusDashboard();
-      log('audio capture skipped in test mode');
-      return;
-    }
-    try {
-      ac = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: Number(sampleRateEl?.value) || 48000 });
-      targetSampleRate = ac.sampleRate;
-      const frameMs = Number(frameMsEl?.value) || 20;
-      samplesPerFrame = Math.max(1, Math.round(frameMs * targetSampleRate / 1000));
-
-      if (!masterGain) {
-        masterGain = new GainNode(ac, { gain: 1 });
-        masterGain.connect(ac.destination);
-      }
-      let codecDef = getCodecConfig(activeCodecId);
-      let softwareEncode = !!codecDef.softwareEncoder;
-      let useHeader = codecDef.useHeader !== false;
-      let dataType = codecDef.dataType || TYPE_AUDIO_OPUS;
-      await ac.audioWorklet.addModule(new URL('./capture-processor.js', window.location.href).toString());
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: 1, noiseSuppression: false, echoCancellation: false, autoGainControl: false, sampleRate: targetSampleRate },
-        video: false
-      });
-      micStream = stream;
-
-      if (!softwareEncode) {
-        encoder = new AudioEncoder({
-          output: (chunk) => {
-            const payload = packEncodedChunk(chunk, useHeader);
-            if (debugEnabled) verifyLocally(chunk);
-            let config = {
-              type: 'sendData',
-              dataType,
-              data: base64FromUint8(payload),
-              isBase64: true,
-              doStats: true,
-              timestamp: Math.trunc(chunk.timestamp ?? performance.now() * 1000) // microseconds
-            }
-            if (dataType == TYPE_AUDIO_PCM) config.doGzip = true;
-            dispatchOutgoingAudio(config);
-          },
-          error: (e) => console.error('Encoder error:', e)
-        });
-        let encoderConfig = buildEncoderConfig(codecDef, targetSampleRate);
-        const bitrateKbps = Number(settings.bitrateKbps);
-        if (Number.isFinite(bitrateKbps) && bitrateKbps > 0) {
-          encoderConfig.bitrate = Math.trunc(bitrateKbps * 1000);
-        } else if (codecDef.id === 'opus') {
-          encoderConfig.bitrate = 32000;
-        }
-        try {
-          encoder.configure(encoderConfig);
-        } catch (e) {
-          console.warn(`Encoder configure failed for codec ${codecDef.id}, falling back to ${DEFAULT_CODEC}:`, e);
-          activeCodecId = DEFAULT_CODEC;
-          codecDef = getCodecConfig(activeCodecId);
-          softwareEncode = !!codecDef.softwareEncoder;
-          useHeader = codecDef.useHeader !== false;
-          dataType = codecDef.dataType || TYPE_AUDIO_OPUS;
-          const fallbackDef = codecDef;
-          encoderConfig = buildEncoderConfig(fallbackDef, targetSampleRate);
-          encoderConfig.bitrate = 32000;
-          if (codecSelect) codecSelect.value = activeCodecId;
-          encoder.configure(encoderConfig);
-        }
-      } else {
-        encoder = null;
-      }
-
-      micSource = ac.createMediaStreamSource(stream);
-      workletNode = new AudioWorkletNode(ac, 'capture-processor', { processorOptions: { frameSamples: samplesPerFrame, gain: inputGain } });
-      workletNode.port.onmessage = (ev) => {
-        const d = ev.data || {};
-        if (d.type === 'frame' && d.buf) {
-          const i16 = new Int16Array(d.buf);
-          if (micMeterEl && typeof d.peak === 'number') micMeterEl.value = d.peak;
-
-          if (softwareEncode) {
-            const timestampUs = Math.trunc(performance.now() * 1000);
-            const durationUs = Math.trunc(samplesPerFrame * 1000000 / targetSampleRate);
-            let encoded;
-            if (codecDef.id === 'g711a') {
-              encoded = encodeALaw(i16);
-            } else if (codecDef.id === 'g711u') {
-              encoded = encodeMuLaw(i16);
-            } else {
-              encoded = new Uint8Array(i16.buffer.slice(i16.byteOffset, i16.byteOffset + i16.byteLength));
-            }
-            const payload = useHeader ? packPayloadWithHeader(encoded, timestampUs, durationUs) : encoded;
-            dispatchOutgoingAudio({
-              type: 'sendData',
-              dataType,
-              data: base64FromUint8(payload),
-              isBase64: true,
-              doStats: true,
-              timestamp: timestampUs
-            });
-            return;
-          }
-
-          // Convert Int16 → Float32 for encoder
-          const f32 = new Float32Array(i16.length);
-          for (let i = 0; i < i16.length; i++) f32[i] = i16[i] / 32768;
-
-          const audioData = new AudioData({
-            format: 'f32',
-            sampleRate: targetSampleRate,
-            numberOfFrames: f32.length,
-            numberOfChannels: 1,
-            timestamp: performance.now() * 1000,
-            data: f32
-          });
-          encoder.encode(audioData);
-        }
-      };
-      micSource.connect(workletNode);
-      const silentSink = new GainNode(ac, { gain: 0 });
-      workletNode.connect(silentSink).connect(ac.destination);
-      dashboardState.micActive = true;
-      updateStatusDashboard();
-      log(`audio capture started @ ${targetSampleRate} Hz, frame ${samplesPerFrame} samples`);
-    } catch (e) {
-      log('AudioWorklet path failed, will fallback: ' + e.message);
-      try { ac?.close(); } catch {}
-      ac = null; workletNode = null; micSource = null;
-      dashboardState.micActive = false;
-      updateStatusDashboard();
-    }
-  }
-  async function initDecoder(peerKey, codecId) {
-    if (!peerKey) return null;
-    const decoderKey = getDecoderKey(peerKey, codecId);
-    if (decoders.has(decoderKey)) return decoders.get(decoderKey);
-
-    const codecDef = getCodecConfig(codecId);
-    if (codecDef.softwareDecoder) return null;
-    const decoder = new AudioDecoder({
-      output: (audioData) => {
-        handleDecodedAudio(peerKey, audioData);
-      },
-      error: e => console.error('Decoder error:', e)
-    });
-
-    let decoderConfig = buildDecoderConfig(codecDef, targetSampleRate);
-    try {
-      decoder.configure(decoderConfig);
-    } catch (e) {
-      console.warn(`Decoder configure failed for codec ${codecDef.id}, falling back to ${DEFAULT_CODEC}:`, e);
-      const fallbackDef = getCodecConfig(DEFAULT_CODEC);
-      decoderConfig = buildDecoderConfig(fallbackDef, targetSampleRate);
-      decoder.configure(decoderConfig);
-    }
-    decoders.set(decoderKey, decoder);
-    return decoder;
+    await audioEngine.startCapture();
   }
   function stopAudioCapture() {
-    try { workletNode?.disconnect(); } catch {}
-    try { micSource?.disconnect(); } catch {}
-    try { ac?.close(); } catch {}
-    micStream?.getTracks()?.forEach(t => t.stop());
-    workletNode = micSource = micStream = ac = null;
+    audioEngine.stopCapture();
     clearCommanderHoldState();
-    peerPlaybackTimes.clear();
-    decoders.forEach(d => { try { d.close(); } catch {} });
-    decoders.clear();
-    peerGains.forEach(g => { try { g.disconnect(); } catch {} });
-    peerGains.clear();
-    peerRoutingNodes.forEach(node => { try { node.disconnect(); } catch {} });
-    peerRoutingNodes.clear();
     peerMeters.clear();
-    peerMuteStates.clear();
     statusDashboard.clearAudioReceiveActivity();
-    masterGain = null;
-    dashboardState.micActive = false;
-    dashboardState.audioTxActive = false;
     updateStatusDashboard();
-    log('audio capture stopped');
-    PLAYBACK_HEADROOM = 0.05;
   }
   async function playAudio(peerKey, audio_base64, timestamp, dataType) {
-    if (!peerKey) {
-      console.warn('Received audio without peerKey, dropping frame');
-      return;
-    }
-    const codecDef = getCodecByDataType(Number(dataType));
-    const codecId = codecDef.id;
-    const useHeader = codecDef.useHeader !== false;
-    if (!ac) {
-      ac = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: Number(sampleRateEl?.value) || 48000 });
-      targetSampleRate = ac.sampleRate;
-    }
-    if (!masterGain) {
-      masterGain = new GainNode(ac, { gain: 1 });
-      masterGain.connect(ac.destination);
-    }
-    await initDecoder(peerKey, codecId);
-
-    const audio = base64ToUint8(audio_base64);
-    let hasHeader = useHeader && audio.length >= AUDIO_HEADER_SIZE;
-    let chunkType = 'key';
-    let chunkTimestamp = timestamp || performance.now() * 1000;
-    let chunkDuration = undefined;
-    let frameData = audio;
-
-    if (hasHeader) {
-      const view = new DataView(audio.buffer, audio.byteOffset, AUDIO_HEADER_SIZE);
-      const typeByte = view.getUint8(0);
-      chunkType = typeByte === 1 ? 'delta' : 'key';
-      chunkTimestamp = Number(view.getBigUint64(1));
-      chunkDuration = view.getUint32(9);
-      const expectedChecksum = view.getUint32(13);
-      const payload = audio.subarray(AUDIO_HEADER_SIZE);
-      const actualChecksum = checksum32(payload);
-      if (actualChecksum === expectedChecksum) {
-        frameData = payload;
-        debugCounters.recv++;
-        debugCounters.headerOk++;
-        recordRxFrame({ ts: chunkTimestamp, len: frameData.length, duration: chunkDuration, type: chunkType, header: 'ok' });
-      } else {
-        debugCounters.checksumMismatch++;
-        if (!unknownHeaderWarned) {
-          console.warn('Received audio without valid checksum header; falling back to legacy decode');
-          unknownHeaderWarned = true;
-        }
-        hasHeader = false;
-        frameData = audio;
-        chunkType = 'key';
-        chunkTimestamp = timestamp || performance.now() * 1000;
-        chunkDuration = undefined;
-        recordRxFrame({ ts: chunkTimestamp, len: frameData.length, duration: chunkDuration, type: chunkType, header: 'bad' });
-      }
-    } else if (useHeader) {
-      debugCounters.headerMissing++;
-      if (!unknownHeaderWarned) {
-        console.warn('Received audio payload too small for header; falling back to legacy decode');
-        unknownHeaderWarned = true;
-      }
-      recordRxFrame({ ts: chunkTimestamp, len: frameData.length, duration: chunkDuration, type: chunkType, header: 'missing' });
-    }
-
-    if (codecDef.softwareDecoder) {
-      let decodedFrames = null;
-      if (codecDef.id === 'g711a') {
-        decodedFrames = decodeALaw(frameData);
-      } else if (codecDef.id === 'g711u') {
-        decodedFrames = decodeMuLaw(frameData);
-      } else if (codecDef.id === 'pcm') {
-        const pcm = new Int16Array(frameData.buffer, frameData.byteOffset, Math.trunc(frameData.byteLength / 2));
-        const f32 = new Float32Array(pcm.length);
-        for (let i = 0; i < pcm.length; i++) f32[i] = pcm[i] / 32768;
-        decodedFrames = f32;
-      }
-      if (decodedFrames) {
-        schedulePcmFrames(peerKey, decodedFrames, codecDef.defaults?.sampleRate || targetSampleRate || 48000);
-      }
-      return;
-    }
-
-    const chunk = new EncodedAudioChunk({
-      type: chunkType,
-      timestamp: chunkTimestamp || performance.now() * 1000,
-      duration: chunkDuration || undefined,
-      data: frameData
-    });
-
-    const decoder = decoders.get(getDecoderKey(peerKey, codecId));
-    if (decoder) decoder.decode(chunk);
+    await audioEngine.playAudio(peerKey, audio_base64, timestamp, dataType);
   }
   function getPeerBaseGain(peerKey) {
     const p = activePeers.get(peerKey);
     const val = Number(p?.gain);
     return Number.isFinite(val) && val > 0 ? val : 1;
   }
-  function getOrCreatePeerRoutingNode(peerKey) {
-    if (!ac) return null;
-    if (peerRoutingNodes.has(peerKey)) return peerRoutingNodes.get(peerKey);
-    const routingNode = typeof ac.createStereoPanner === 'function'
-      ? ac.createStereoPanner()
-      : (typeof StereoPannerNode === 'function' ? new StereoPannerNode(ac) : null);
-    if (!routingNode) return null;
-    if (masterGain) {
-      routingNode.connect(masterGain);
-    } else {
-      routingNode.connect(ac.destination);
-    }
-    peerRoutingNodes.set(peerKey, routingNode);
-    return routingNode;
-  }
   function applyPeerAudioRouting(peerKey, mode = getOperatingMode()) {
-    const route = getPeerAudioRoute(peerKey, mode);
-    const routingNode = peerRoutingNodes.get(peerKey);
-    if (routingNode?.pan) {
-      routingNode.pan.value = getAudioRoutePanValue(route);
-    }
-    const row = document.getElementById(getPeerRowId(peerKey));
-    if (row) {
-      row.dataset.audioRoute = route;
-      row.title = `Audio route: ${getAudioRouteLabel(route)}`;
-    }
-    return route;
+    return audioEngine.applyPeerAudioRouting(peerKey, mode);
   }
   function applyActivePeerAudioRouting(mode = getOperatingMode()) {
-    for (const peerKey of activePeers.keys()) applyPeerAudioRouting(peerKey, mode);
-  }
-  function getPeerGain(peerKey) {
-    if (peerGains.has(peerKey)) return peerGains.get(peerKey);
-    const baseGain = getPeerBaseGain(peerKey);
-    const muted = !!peerMuteStates.get(peerKey);
-    const g = new GainNode(ac, { gain: muted ? 0 : baseGain });
-    const routingNode = getOrCreatePeerRoutingNode(peerKey);
-    if (routingNode) {
-      g.connect(routingNode);
-      applyPeerAudioRouting(peerKey);
-    } else if (masterGain) {
-      g.connect(masterGain);
-    } else {
-      g.connect(ac.destination);
-    }
-    peerGains.set(peerKey, g);
-    return g;
-  }
-  function schedulePcmFrames(peerKey, frames, sampleRateHint) {
-    let peak = 0;
-    for (let i = 0; i < frames.length; i++) {
-      const v = Math.abs(frames[i]);
-      if (v > peak) peak = v;
-    }
-    updatePeerMeter(peerKey, peak);
-
-    const effectiveSampleRate = Number.isFinite(sampleRateHint) && sampleRateHint > 0
-      ? sampleRateHint
-      : (targetSampleRate || 48000); // AudioData sampleRate is unreliable (often 0)
-    const frameDuration = Number.isFinite(frames.length / effectiveSampleRate) && effectiveSampleRate > 0
-      ? frames.length / effectiveSampleRate
-      : (samplesPerFrame / (targetSampleRate || 48000));
-
-    const buf = ac.createBuffer(1, frames.length, ac.sampleRate || targetSampleRate || 48000);
-    buf.copyToChannel(frames, 0);
-    const src = ac.createBufferSource();
-    src.buffer = buf;
-    const peerGain = getPeerGain(peerKey);
-    src.connect(peerGain);
-
-    const now = ac.currentTime;
-    let playbackTime = peerPlaybackTimes.get(peerKey);
-    if (!Number.isFinite(playbackTime) || playbackTime <= now || (playbackTime - now) > 1) {
-      playbackTime = now + PLAYBACK_HEADROOM;
-    }
-
-    const scheduledFor = playbackTime;
-    src.start(scheduledFor);
-    playbackTime += frameDuration;
-    peerPlaybackTimes.set(peerKey, playbackTime);
-    if (debugEnabled) {
-      audioDebug.schedule.push({
-        peerKey,
-        now,
-        scheduledFor,
-        delta: scheduledFor - now,
-        frameDuration,
-        sampleRate: sampleRateHint,
-        effectiveSampleRate
-      });
-      if (audioDebug.schedule.length > 50) audioDebug.schedule.shift();
-    }
-  }
-  function handleDecodedAudio(peerKey, audioData) {
-    const frames = new Float32Array(audioData.numberOfFrames * audioData.numberOfChannels);
-    audioData.copyTo(frames, { planeIndex: 0 });
-    audioData.close();
-    schedulePcmFrames(peerKey, frames, audioData.sampleRate);
+    audioEngine.applyActivePeerAudioRouting(mode, Array.from(activePeers.keys()));
   }
   function updatePeerMeter(peerKey, peak) {
     const meter = peerMeters.get(peerKey);
@@ -3147,17 +2528,13 @@ import {
     meter.value = Math.max(0, Math.min(1, peak || 0));
   }
   function togglePeerMute(peerKey) {
-    const next = !peerMuteStates.get(peerKey);
-    peerMuteStates.set(peerKey, next);
-    const gainNode = getPeerGain(peerKey);
-    gainNode.gain.value = next ? 0 : getPeerBaseGain(peerKey);
+    const next = audioEngine.togglePeerMute(peerKey);
     const btn = document.getElementById(getPeerMuteButtonId(peerKey));
     if (btn) {
       setMuteButtonVisual(btn, next);
       btn.classList.toggle('peer-muted', next);
     }
   }
-
   async function connect() {
     if (getOperatingMode() === OPERATING_MODES.MANAGED) {
       return;
@@ -3381,24 +2758,13 @@ import {
     if (peerModalGainEl) peerModalGainEl.value = peer.gain || defaults.inputGain;
     updatePeerGainLabel(peerModalGainValueEl, peerModalGainEl?.value);
     if (peerModalDeleteBtn) peerModalDeleteBtn.hidden = key === NEW_PEER_VALUE;
-    if (peerModalOtherFieldsEl) {
-      peerModalOtherFieldsEl.innerHTML = '';
-        if (key !== NEW_PEER_VALUE) {
-          for (const attr of Object.keys(peer)) {
-            if (['name','ip','port','sharedKey','gain'].includes(attr)) continue;
-          const row = document.createElement("div");
-          row.className = "other-row";
-          const delBtn = document.createElement("button");
-          delBtn.textContent = "Remove";
-          delBtn.onclick = () => { row.remove(); };
-          const label = document.createElement("span");
-          label.textContent = attr;
-          row.appendChild(delBtn);
-          row.appendChild(label);
-          peerModalOtherFieldsEl.appendChild(row);
-        }
-      }
-    }
+    renderPeerModalOtherFields({
+      document,
+      container: peerModalOtherFieldsEl,
+      peer,
+      selectionKey: key,
+      newPeerValue: NEW_PEER_VALUE
+    });
   }
   async function savePeerFromModal() {
     const selection = peerModalSelectEl?.value || NEW_PEER_VALUE;
@@ -3526,20 +2892,7 @@ import {
     const row = document.getElementById(getPeerRowId(key));
     if (row) row.remove();
     peerMeters.delete(key);
-    peerPlaybackTimes.delete(key);
-    peerMuteStates.delete(key);
-    const gainNode = peerGains.get(key);
-    if (gainNode) { try { gainNode.disconnect(); } catch {} }
-    peerGains.delete(key);
-    const routingNode = peerRoutingNodes.get(key);
-    if (routingNode) { try { routingNode.disconnect(); } catch {} }
-    peerRoutingNodes.delete(key);
-    for (const [decKey, decoder] of decoders.entries()) {
-      if (decKey.endsWith(`::${key}`)) {
-        try { decoder.close(); } catch {}
-        decoders.delete(decKey);
-      }
-    }
+    audioEngine.removePeer(key);
     if (options.sendHostUpdate ?? dashboardState.nativeHostConnected) {
       const peerCopy = structuredClone(allPeers.find(p => `${p.ip}:${p.port}` === key)) || { ip: key.split(':')[0], port: Number(key.split(':')[1]) };
       const payload = buildHostPeerDeltaPayload(peerCopy, { remove: true });
@@ -3577,47 +2930,11 @@ import {
     updateSelfStat('selfLoss', summary.loss);
     queueAdminSnapshotPublish();
   }
-  function recordRxFrame(meta) {
-    if (!debugEnabled) return;
-    const entry = { ...meta, receivedAt: performance.now() };
-    audioDebug.rxFrames.push(entry);
-    if (audioDebug.rxFrames.length > 50) audioDebug.rxFrames.shift();
-  }
   function startDebugTimer() {
     if (debugTimer || !debugEnabled) return;
     debugTimer = setInterval(() => {
-      console.info('Audio debug counters', { ...debugCounters });
+      console.info('Audio debug counters', audioEngine.getDebugCounters());
     }, 2000);
-  }
-  function verifyLocally(chunk) {
-    try {
-      if (!debugDecoder) {
-        debugDecoder = new AudioDecoder({
-          output: (audioData) => audioData.close(),
-          error: (e) => console.error('Debug decode error:', e)
-        });
-        const codecDef = getCodecConfig(activeCodecId);
-        let debugConfig = buildDecoderConfig(codecDef, targetSampleRate);
-        try {
-          debugDecoder.configure(debugConfig);
-        } catch (e) {
-          console.warn(`Debug decoder configure failed for codec ${codecDef.id}, falling back to ${DEFAULT_CODEC}:`, e);
-          const fallbackDef = getCodecConfig(DEFAULT_CODEC);
-          debugConfig = buildDecoderConfig(fallbackDef, targetSampleRate);
-          debugDecoder.configure(debugConfig);
-        }
-      }
-      const encoded = new Uint8Array(chunk.byteLength);
-      chunk.copyTo(encoded);
-      debugDecoder.decode(new EncodedAudioChunk({
-        type: chunk.type,
-        timestamp: chunk.timestamp || 0,
-        duration: chunk.duration,
-        data: encoded
-      }));
-    } catch (e) {
-      console.error('Local encode/decode check failed:', e);
-    }
   }
   function log(line) {
     if (!debugEnabled) return;
@@ -3628,12 +2945,13 @@ import {
   }
   function setDebugEnabled(on) {
     debugEnabled = !!on;
+    audioEngine.setDebugEnabled(debugEnabled);
     if (toggleLogBtn) toggleLogBtn.textContent = on ? 'Stop log' : 'Start log';
     if (debugLogEl) debugLogEl.setAttribute('aria-live', on ? 'polite' : 'off');
     storage.set({ ['udp1492_debug_enabled']: debugEnabled });
     if (debugEnabled && !debugTimer) {
       startDebugTimer();
-      if (typeof window !== 'undefined') window.audioDebug = audioDebug;
+      if (typeof window !== 'undefined') window.audioDebug = audioEngine.getDebugState();
     } else if (!debugEnabled && debugTimer) {
       clearInterval(debugTimer);
       debugTimer = null;
@@ -3641,30 +2959,7 @@ import {
     log(`debug ${on ? 'ENABLED' : 'DISABLED'}`);
   }
   function playSound(type) {
-    if (testPlatform?.flags?.skipAudioCapture) return;
-    let ctx = new AudioContext();
-    let o = ctx.createOscillator();
-    let g = ctx.createGain();
-
-    if (type == "enter") {
-      o.type = 'sine';
-      o.frequency.setValueAtTime(880, ctx.currentTime);
-      o.frequency.linearRampToValueAtTime(660, ctx.currentTime + 0.15);
-      
-      g.gain.setValueAtTime(0.2, ctx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-    } else if (type == "exit"){
-      o.type = 'sine';
-      o.frequency.setValueAtTime(600, ctx.currentTime);
-      o.frequency.linearRampToValueAtTime(300, ctx.currentTime + 0.15);
-  
-      g.gain.setValueAtTime(0.15, ctx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
-    }
-    
-    o.connect(g).connect(ctx.destination);
-    o.start();
-    o.stop(ctx.currentTime + 0.3);
+    audioEngine.playSound(type);
   }
   function installTestHooks() {
     if (!testPlatform || typeof window === 'undefined') return;
