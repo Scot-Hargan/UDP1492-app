@@ -37,6 +37,16 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function openAdminWindow(appHarness) {
+  const { page, electronApp } = appHarness;
+  const adminWindowPromise = electronApp.waitForEvent('window');
+  await page.locator('#openAdminWindowBtn').click();
+  const adminPage = await adminWindowPromise;
+  await adminPage.waitForLoadState('domcontentloaded');
+  await expect(adminPage.locator('#adminTitle')).toHaveText('UDP 1492 Admin Surface');
+  return adminPage;
+}
+
 async function openManagedSession(page, displayName = 'Scot') {
   await page.locator('#operatingModeManaged').click();
   await page.locator('#managedDisplayNameInput').fill(displayName);
@@ -160,6 +170,49 @@ test('enforces protected seeded-channel passcodes against the real Worker', asyn
   await page.locator('#managedChannelList li').filter({ hasText: 'Bravo' }).locator('button').click();
   await expect(page.locator('#managedActiveChannel')).toHaveText('Bravo');
   await expect(page.locator('#managedJoinPasscodeInput')).toHaveValue('');
+});
+
+test('creates, updates, and deletes a managed channel against the real Worker from the admin surface', async ({ appHarness }) => {
+  const { page } = appHarness;
+  const createdName = `Ops ${Date.now().toString().slice(-6)}`;
+  const updatedName = `${createdName} Updated`;
+
+  await sleep(2600);
+  await openManagedSession(page);
+
+  const adminPage = await openAdminWindow(appHarness);
+  await expect(adminPage.locator('#adminChannelsList')).toContainText('Alpha');
+  await expect(adminPage.locator('#adminChannelsList')).toContainText('Bravo');
+
+  await adminPage.locator('#adminChannelEditorSelect').selectOption('');
+  await adminPage.locator('#adminChannelNameInput').fill(createdName);
+  await adminPage.locator('#adminChannelSecurityModeSelect').selectOption('passcode');
+  await adminPage.locator('#adminChannelPasscodeInput').fill('ops-secret');
+  await adminPage.locator('#adminChannelDescriptionInput').fill('Live backend protected channel');
+  await adminPage.locator('#adminChannelConcurrentAccessInput').uncheck();
+  await adminPage.locator('#adminChannelCreateBtn').click();
+
+  await expect(adminPage.locator('#adminChannelsList')).toContainText(createdName);
+  await expect(page.locator('#managedChannelList')).toContainText(createdName);
+
+  await adminPage.locator('#adminChannelEditorSelect').selectOption({ label: createdName });
+  await expect(adminPage.locator('#adminChannelConcurrentAccessInput')).not.toBeChecked();
+  await adminPage.locator('#adminChannelNameInput').fill(updatedName);
+  await adminPage.locator('#adminChannelSecurityModeSelect').selectOption('open');
+  await expect(adminPage.locator('#adminChannelPasscodeInput')).toBeDisabled();
+  await adminPage.locator('#adminChannelDescriptionInput').fill('Live backend updated channel');
+  await adminPage.locator('#adminChannelConcurrentAccessInput').check();
+  await adminPage.locator('#adminChannelSaveBtn').click();
+
+  await expect(adminPage.locator('#adminChannelsList')).toContainText(updatedName);
+  await expect(page.locator('#managedChannelList')).toContainText(updatedName);
+
+  await adminPage.locator('#adminChannelEditorSelect').selectOption({ label: updatedName });
+  await adminPage.locator('#adminChannelDeleteBtn').click();
+
+  await expect(adminPage.locator('#adminChannelsList')).not.toContainText(updatedName);
+  await expect(page.locator('#managedChannelList')).not.toContainText(updatedName);
+  await expect(page.locator('#managedIdentityMeta')).toContainText('Session ses_');
 });
 
 test('preserves the active Alpha membership when a protected replacement join is denied by the real Worker', async ({ appHarness }) => {
