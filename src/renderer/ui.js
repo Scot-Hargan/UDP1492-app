@@ -625,6 +625,18 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
     if (!ip || !Number.isFinite(port) || port <= 0) return '';
     return `${ip}:${port}`;
   }
+  function getEndpointKnowledgeKey(endpoint) {
+    const ip = typeof endpoint?.ip === 'string' ? endpoint.ip.trim() : '';
+    const port = Number.parseInt(String(endpoint?.port ?? ''), 10);
+    if (!ip || !Number.isFinite(port) || port <= 0) return '';
+    return `${ip}:${port}`;
+  }
+  function localKnowledgePeerHasEndpoint(peer, endpoint) {
+    const endpointKey = getEndpointKnowledgeKey(endpoint);
+    if (!endpointKey) return false;
+    if (peer?.manualPeerKey && peer.manualPeerKey === endpointKey) return true;
+    return Array.isArray(peer?.endpoints) && peer.endpoints.some((entry) => getEndpointKnowledgeKey(entry) === endpointKey);
+  }
   function buildManualKnowledgePeer(peer, existingPeer = {}) {
     const manualPeerKey = getManualPeerKey(peer);
     if (!manualPeerKey) return null;
@@ -665,6 +677,78 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
         && existingPeer.sources[0] === 'manual';
       if (isManualOnly && !retainedManualPeerIds.has(existingPeer.peerId)) continue;
       if (!retainedManualPeerIds.has(existingPeer.peerId)) nextPeers.push(existingPeer);
+    }
+    const nextStore = createDefaultLocalKnowledgeStore({
+      ...normalizedStore,
+      peers: nextPeers
+    });
+    const changed = JSON.stringify(nextStore) !== JSON.stringify(normalizedStore);
+    localKnowledge = nextStore;
+    return changed;
+  }
+  function getManagedKnowledgeEndpoints(peer, slotId, channelId, observedAt) {
+    return (Array.isArray(peer?.endpoints) ? peer.endpoints : [])
+      .filter((endpoint) => endpoint?.ip && Number.isFinite(Number(endpoint?.port)) && endpoint.registrationState !== 'invalid')
+      .map((endpoint) => ({
+        kind: typeof endpoint?.kind === 'string' && endpoint.kind.trim() ? endpoint.kind.trim() : 'unknown',
+        ip: String(endpoint.ip).trim(),
+        port: Number.parseInt(String(endpoint.port), 10),
+        source: 'managed',
+        channelId: typeof channelId === 'string' ? channelId : '',
+        slotId: typeof slotId === 'string' ? slotId : '',
+        firstSeenAt: observedAt,
+        lastSeenAt: observedAt,
+        lastConnectedAt: ''
+      }))
+      .filter((endpoint) => !!getEndpointKnowledgeKey(endpoint));
+  }
+  function buildManagedKnowledgePeer(peer, slotId, channelId, observedAt, existingPeer = {}) {
+    const endpoints = getManagedKnowledgeEndpoints(peer, slotId, channelId, observedAt);
+    const managedUserId = typeof peer?.userId === 'string' ? peer.userId.trim() : '';
+    const peerId = existingPeer?.peerId
+      || (managedUserId ? `managed:${managedUserId}` : '')
+      || (endpoints[0] ? `managed-endpoint:${getEndpointKnowledgeKey(endpoints[0])}` : '');
+    if (!peerId) return null;
+    const preserveManualDisplayName = Array.isArray(existingPeer?.sources) && existingPeer.sources.includes('manual') && existingPeer?.displayName;
+    return createDefaultLocalKnowledgePeer({
+      ...existingPeer,
+      peerId,
+      displayName: preserveManualDisplayName
+        ? existingPeer.displayName
+        : ((typeof peer?.displayName === 'string' && peer.displayName.trim()) || existingPeer?.displayName || peerId),
+      managedUserId: managedUserId || existingPeer?.managedUserId || '',
+      sources: dedupeLocalKnowledgeSources([...(existingPeer?.sources || []), 'managed']),
+      endpoints: mergeLocalKnowledgeEndpoints(existingPeer?.endpoints, endpoints),
+      firstSeenAt: existingPeer?.firstSeenAt || observedAt,
+      lastSeenAt: observedAt,
+      lastConnectedAt: existingPeer?.lastConnectedAt || ''
+    });
+  }
+  function retainManagedPeerKnowledge(slotId, resolvedPeers = [], options = {}) {
+    const normalizedStore = createDefaultLocalKnowledgeStore(localKnowledge);
+    const nextPeers = normalizedStore.peers.map((peer) => createDefaultLocalKnowledgePeer(peer));
+    const managedSlotId = sanitizeManagedSlotId(slotId);
+    const observedAt = typeof options?.observedAt === 'string' && options.observedAt ? options.observedAt : new Date().toISOString();
+    const channelId = typeof options?.channelId === 'string' ? options.channelId : (getManagedSlot(managedSlotId).channelId || '');
+    for (const peer of Array.isArray(resolvedPeers) ? resolvedPeers : []) {
+      const endpoints = getManagedKnowledgeEndpoints(peer, managedSlotId, channelId, observedAt);
+      const managedUserId = typeof peer?.userId === 'string' ? peer.userId.trim() : '';
+      if (!managedUserId && !endpoints.length) continue;
+      let existingIndex = -1;
+      if (managedUserId) {
+        existingIndex = nextPeers.findIndex((entry) => entry.managedUserId === managedUserId);
+      }
+      if (existingIndex < 0 && endpoints.length) {
+        existingIndex = nextPeers.findIndex((entry) => endpoints.some((endpoint) => localKnowledgePeerHasEndpoint(entry, endpoint)));
+      }
+      const existingPeer = existingIndex >= 0 ? nextPeers[existingIndex] : {};
+      const nextPeer = buildManagedKnowledgePeer(peer, managedSlotId, channelId, observedAt, existingPeer);
+      if (!nextPeer) continue;
+      if (existingIndex >= 0) {
+        nextPeers[existingIndex] = nextPeer;
+      } else {
+        nextPeers.push(nextPeer);
+      }
     }
     const nextStore = createDefaultLocalKnowledgeStore({
       ...normalizedStore,
@@ -2036,6 +2120,10 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
     });
   }
   async function handleManagedPeersRefreshed(slotId, resolvedPeers, options = {}) {
+    retainManagedPeerKnowledge(slotId, resolvedPeers, {
+      observedAt: getManagedSlot(slotId).lastPeerSyncAt || new Date().toISOString(),
+      channelId: getManagedSlot(slotId).channelId || ''
+    });
     reconcileManagedNatProbeTargets(slotId);
     if (options.runNatProbes) {
       await runManagedNatPeerProbes({

@@ -852,6 +852,56 @@ test.describe('peer fixture', () => {
     await expect(page.locator('#networkTable tbody')).not.toContainText('Peer One');
   });
 
+  test('retains managed peer observations in local knowledge without persisting managed session ids', async ({ appHarness }) => {
+    const { page, readStorage } = appHarness;
+    const { baseUrl } = await installManagedApiRoutes(page);
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+    await page.getByRole('button', { name: 'Join Selected' }).click();
+
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+
+    await expect.poll(async () => {
+      const peer = (await readStorage()).udp1492_local_knowledge_v1?.peers?.find((entry) => entry.managedUserId === 'usr_peer_01');
+      if (!peer) return null;
+      return {
+        peerId: peer.peerId,
+        displayName: peer.displayName,
+        managedUserId: peer.managedUserId,
+        manualPeerKey: peer.manualPeerKey,
+        sources: peer.sources,
+        endpoint: peer.endpoints?.find((endpoint) => endpoint.ip === '198.51.100.10' && endpoint.port === 1492) || null,
+        firstSeenAt: peer.firstSeenAt,
+        lastSeenAt: peer.lastSeenAt
+      };
+    }).toEqual({
+      peerId: 'managed:usr_peer_01',
+      displayName: 'Peer One',
+      managedUserId: 'usr_peer_01',
+      manualPeerKey: '',
+      sources: ['managed'],
+      endpoint: expect.objectContaining({
+        kind: 'public',
+        ip: '198.51.100.10',
+        port: 1492,
+        source: 'managed',
+        channelId: 'chn_alpha',
+        slotId: 'A',
+        firstSeenAt: '2026-04-16T19:25:05Z',
+        lastSeenAt: '2026-04-16T19:25:05Z',
+        lastConnectedAt: ''
+      }),
+      firstSeenAt: '2026-04-16T19:25:05Z',
+      lastSeenAt: '2026-04-16T19:25:05Z'
+    });
+
+    const storage = await readStorage();
+    expect(JSON.stringify(storage.udp1492_local_knowledge_v1)).not.toContain('ses_peer_01');
+  });
+
   test('renders the admin surface with channels, memberships, endpoints, and local stats', async ({ appHarness }) => {
     const { page } = appHarness;
     const { baseUrl } = await installManagedApiRoutes(page);

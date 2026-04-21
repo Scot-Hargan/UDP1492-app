@@ -253,7 +253,8 @@ export function createManagedController(deps) {
     await deps.persistAppState({
       includeLegacyLastPeers: true,
       includeManagedProfile: true,
-      includeManagedCache: true
+      includeManagedCache: true,
+      includeLocalKnowledge: true
     });
   }
 

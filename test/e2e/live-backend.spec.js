@@ -153,6 +153,58 @@ test('opens a managed session against the local Worker, joins a seeded channel, 
   await expect(page.locator('#managedActiveChannel')).toHaveText('Group A has no active membership');
 });
 
+test('retains managed peer observations from the real Worker without persisting peer session ids', async ({ appHarness }) => {
+  const { page, readStorage } = appHarness;
+  const managedBackendBaseUrl = 'http://127.0.0.1:8791';
+
+  await openManagedSession(page);
+  await page.getByRole('button', { name: 'Join Selected' }).click();
+  await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+
+  const peerSession = await openPeerSession(managedBackendBaseUrl, 'Retained Peer');
+  await joinPeerChannel(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha');
+  await sendPeerPresence(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha', {
+    kind: 'public',
+    ip: '198.51.100.44',
+    port: 1492
+  });
+
+  await page.locator('#managedRefreshPeersBtn').click();
+  await expect(page.locator('#networkTable tbody')).toContainText('Retained Peer');
+
+  await expect.poll(async () => {
+    const peer = (await readStorage()).udp1492_local_knowledge_v1?.peers?.find((entry) => entry.managedUserId === peerSession.identity.userId);
+    if (!peer) return null;
+    return {
+      displayName: peer.displayName,
+      managedUserId: peer.managedUserId,
+      manualPeerKey: peer.manualPeerKey,
+      sources: peer.sources,
+      endpoint: peer.endpoints?.find((endpoint) => endpoint.ip === '198.51.100.44' && endpoint.port === 1492) || null
+    };
+  }).toEqual({
+    displayName: 'Retained Peer',
+    managedUserId: peerSession.identity.userId,
+    manualPeerKey: '',
+    sources: ['managed'],
+    endpoint: expect.objectContaining({
+      kind: 'public',
+      ip: '198.51.100.44',
+      port: 1492,
+      source: 'managed',
+      channelId: 'chn_alpha',
+      slotId: 'A'
+    })
+  });
+
+  const storage = await readStorage();
+  expect(JSON.stringify(storage.udp1492_local_knowledge_v1)).not.toContain(peerSession.identity.sessionId);
+
+  await leavePeerChannel(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha');
+  await page.locator('#managedLeaveChannelBtn').click();
+  await expect(page.locator('#managedActiveChannel')).toHaveText('Group A has no active membership');
+});
+
 test('enforces protected seeded-channel passcodes against the real Worker', async ({ appHarness }) => {
   const { page } = appHarness;
 
