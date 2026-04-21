@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('udp1492', {
   getAdminState: () => ipcRenderer.invoke('udp1492:admin-state-get'),
   publishAdminState: (snapshot) => ipcRenderer.send('udp1492:admin-state-publish', snapshot),
   requestAdminRefresh: (request) => ipcRenderer.invoke('udp1492:admin-refresh-request', request),
+  requestAdminAction: (request) => ipcRenderer.invoke('udp1492:admin-action-request', request),
   onAdminState: (callback) => {
     const handler = (_event, payload) => callback(payload);
     ipcRenderer.on('udp1492:admin-state', handler);
@@ -27,6 +28,11 @@ contextBridge.exposeInMainWorld('udp1492', {
     const handler = (_event, payload) => callback(payload);
     ipcRenderer.on('udp1492:admin-refresh-request', handler);
     return () => ipcRenderer.removeListener('udp1492:admin-refresh-request', handler);
+  },
+  onAdminActionRequest: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('udp1492:admin-action-request', handler);
+    return () => ipcRenderer.removeListener('udp1492:admin-action-request', handler);
   },
   startHost: () => ipcRenderer.invoke('udp1492:host-start'),
   sendHostMessage,

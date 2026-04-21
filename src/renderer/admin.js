@@ -17,6 +17,20 @@
   const adminBackendMetaEl = $('#adminBackendMeta');
   const adminBackendCopyEl = $('#adminBackendCopy');
   const adminBackendFactsEl = $('#adminBackendFacts');
+  const adminChannelEditorMetaEl = $('#adminChannelEditorMeta');
+  const adminChannelEditorStatusEl = $('#adminChannelEditorStatus');
+  const adminChannelEditorErrorEl = $('#adminChannelEditorError');
+  const adminChannelEditorSelectEl = $('#adminChannelEditorSelect');
+  const adminChannelNameInputEl = $('#adminChannelNameInput');
+  const adminChannelSecurityModeSelectEl = $('#adminChannelSecurityModeSelect');
+  const adminChannelDescriptionInputEl = $('#adminChannelDescriptionInput');
+  const adminChannelNoteInputEl = $('#adminChannelNoteInput');
+  const adminChannelPasscodeInputEl = $('#adminChannelPasscodeInput');
+  const adminChannelConcurrentAccessInputEl = $('#adminChannelConcurrentAccessInput');
+  const adminChannelCreateBtn = $('#adminChannelCreateBtn');
+  const adminChannelSaveBtn = $('#adminChannelSaveBtn');
+  const adminChannelDeleteBtn = $('#adminChannelDeleteBtn');
+  const adminChannelResetBtn = $('#adminChannelResetBtn');
   const adminChannelsMetaEl = $('#adminChannelsMeta');
   const adminChannelsListEl = $('#adminChannelsList');
   const adminSlotsMetaEl = $('#adminSlotsMeta');
@@ -36,6 +50,8 @@
   const adminRefreshPeersBtn = $('#adminRefreshPeersBtn');
 
   let snapshot = null;
+  let editorSelectedChannelId = '';
+  let editorDirty = false;
 
   function formatTimestamp(value) {
     if (!value) return '';
@@ -79,14 +95,68 @@
       }));
   }
 
+  function getEditorChannels(nextSnapshot) {
+    return Array.isArray(nextSnapshot?.managed?.channels) ? nextSnapshot.managed.channels : [];
+  }
+
+  function getSelectedEditorChannel(nextSnapshot = snapshot) {
+    return getEditorChannels(nextSnapshot).find((channel) => channel.channelId === editorSelectedChannelId) || null;
+  }
+
+  function setEditorDirty(nextDirty) {
+    editorDirty = !!nextDirty;
+  }
+
+  function syncPasscodeFieldState() {
+    const protectedMode = adminChannelSecurityModeSelectEl?.value === 'passcode';
+    if (adminChannelPasscodeInputEl) {
+      adminChannelPasscodeInputEl.disabled = !protectedMode;
+      adminChannelPasscodeInputEl.placeholder = protectedMode
+        ? (editorSelectedChannelId ? 'Leave blank to keep the current passcode' : 'Required for protected channels')
+        : 'Open channels do not use passcodes';
+      if (!protectedMode) adminChannelPasscodeInputEl.value = '';
+    }
+  }
+
+  function applyEditorChannel(channel) {
+    const nextChannel = channel || null;
+    if (adminChannelEditorSelectEl) adminChannelEditorSelectEl.value = nextChannel?.channelId || '';
+    if (adminChannelNameInputEl) adminChannelNameInputEl.value = nextChannel?.name || '';
+    if (adminChannelSecurityModeSelectEl) adminChannelSecurityModeSelectEl.value = nextChannel?.securityMode === 'passcode' ? 'passcode' : 'open';
+    if (adminChannelDescriptionInputEl) adminChannelDescriptionInputEl.value = nextChannel?.description || '';
+    if (adminChannelNoteInputEl) adminChannelNoteInputEl.value = nextChannel?.note || '';
+    if (adminChannelPasscodeInputEl) adminChannelPasscodeInputEl.value = '';
+    if (adminChannelConcurrentAccessInputEl) adminChannelConcurrentAccessInputEl.checked = nextChannel?.concurrentAccessAllowed !== false;
+    syncPasscodeFieldState();
+    setEditorDirty(false);
+  }
+
   function setButtonBusyState(nextSnapshot) {
     const loadingAction = String(nextSnapshot?.adminSurface?.loadingAction || 'idle');
     const sessionOpen = !!nextSnapshot?.managed?.session?.sessionId;
     const joinedSlotCount = Number(nextSnapshot?.managed?.joinedSlotCount || 0);
     const busy = loadingAction !== 'idle';
+    const backendAdmin = nextSnapshot?.managed?.backendAdmin || {};
+    const canManageChannels = !!backendAdmin?.permissions?.canManageChannels;
+    const selectedChannel = getSelectedEditorChannel(nextSnapshot);
+    const protectedMode = adminChannelSecurityModeSelectEl?.value === 'passcode';
+    const nameValue = String(adminChannelNameInputEl?.value || '').trim();
+    const passcodeValue = String(adminChannelPasscodeInputEl?.value || '').trim();
     if (adminRefreshAllBtn) adminRefreshAllBtn.disabled = busy || !sessionOpen;
     if (adminRefreshChannelsBtn) adminRefreshChannelsBtn.disabled = busy || !sessionOpen;
     if (adminRefreshPeersBtn) adminRefreshPeersBtn.disabled = busy || joinedSlotCount === 0;
+    if (adminChannelEditorSelectEl) adminChannelEditorSelectEl.disabled = busy || !canManageChannels;
+    if (adminChannelNameInputEl) adminChannelNameInputEl.disabled = busy || !canManageChannels;
+    if (adminChannelSecurityModeSelectEl) adminChannelSecurityModeSelectEl.disabled = busy || !canManageChannels;
+    if (adminChannelDescriptionInputEl) adminChannelDescriptionInputEl.disabled = busy || !canManageChannels;
+    if (adminChannelNoteInputEl) adminChannelNoteInputEl.disabled = busy || !canManageChannels;
+    if (adminChannelConcurrentAccessInputEl) adminChannelConcurrentAccessInputEl.disabled = busy || !canManageChannels;
+    syncPasscodeFieldState();
+    if (adminChannelPasscodeInputEl) adminChannelPasscodeInputEl.disabled = adminChannelPasscodeInputEl.disabled || busy || !canManageChannels;
+    if (adminChannelCreateBtn) adminChannelCreateBtn.disabled = busy || !canManageChannels || !!selectedChannel || !nameValue || (protectedMode && !passcodeValue);
+    if (adminChannelSaveBtn) adminChannelSaveBtn.disabled = busy || !canManageChannels || !selectedChannel || !nameValue;
+    if (adminChannelDeleteBtn) adminChannelDeleteBtn.disabled = busy || !canManageChannels || !selectedChannel;
+    if (adminChannelResetBtn) adminChannelResetBtn.disabled = busy;
   }
 
   function renderEmptyState(message = 'Waiting for the main control window to publish an inspection snapshot.') {
@@ -107,6 +177,14 @@
       item.textContent = 'Backend-authored admin facts are not cached yet.';
       adminBackendFactsEl.appendChild(item);
     }
+    if (adminChannelEditorMetaEl) adminChannelEditorMetaEl.textContent = 'Read-only';
+    if (adminChannelEditorStatusEl) adminChannelEditorStatusEl.textContent = 'Open a managed operator session and refresh channels to enable bounded directory mutations.';
+    if (adminChannelEditorErrorEl) {
+      adminChannelEditorErrorEl.hidden = true;
+      adminChannelEditorErrorEl.textContent = '';
+    }
+    editorSelectedChannelId = '';
+    applyEditorChannel(null);
     if (adminChannelsMetaEl) adminChannelsMetaEl.textContent = 'No channels cached';
     if (adminChannelsListEl) {
       adminChannelsListEl.innerHTML = '';
@@ -166,6 +244,59 @@
       adminErrorTextEl.textContent = '';
     }
     setButtonBusyState(null);
+  }
+
+  function renderChannelEditor(nextSnapshot) {
+    const backendAdmin = nextSnapshot?.managed?.backendAdmin || {};
+    const permissions = backendAdmin?.permissions || {};
+    const channels = getEditorChannels(nextSnapshot);
+    const selectedChannel = getSelectedEditorChannel(nextSnapshot);
+    const canManageChannels = !!permissions.canManageChannels;
+    if (!selectedChannel && editorSelectedChannelId) {
+      editorSelectedChannelId = '';
+      applyEditorChannel(null);
+    }
+    if (!editorDirty && selectedChannel) {
+      applyEditorChannel(selectedChannel);
+    }
+    if (!editorDirty && !editorSelectedChannelId && !adminChannelNameInputEl?.value && !adminChannelDescriptionInputEl?.value && !adminChannelNoteInputEl?.value) {
+      applyEditorChannel(null);
+    }
+    if (adminChannelEditorSelectEl) {
+      const nextValue = editorSelectedChannelId;
+      adminChannelEditorSelectEl.innerHTML = '';
+      const createOption = document.createElement('option');
+      createOption.value = '';
+      createOption.textContent = 'Create New Channel';
+      adminChannelEditorSelectEl.appendChild(createOption);
+      for (const channel of channels) {
+        const option = document.createElement('option');
+        option.value = channel.channelId;
+        option.textContent = channel.name || channel.channelId;
+        adminChannelEditorSelectEl.appendChild(option);
+      }
+      adminChannelEditorSelectEl.value = channels.some((channel) => channel.channelId === nextValue) ? nextValue : '';
+    }
+    if (adminChannelEditorMetaEl) {
+      adminChannelEditorMetaEl.textContent = canManageChannels
+        ? `${channels.length} channel(s) editable`
+        : 'Read-only';
+    }
+    if (adminChannelEditorStatusEl) {
+      if (!canManageChannels) {
+        adminChannelEditorStatusEl.textContent = 'This session can read backend admin facts, but it does not currently have permission to mutate channels.';
+      } else if (selectedChannel) {
+        adminChannelEditorStatusEl.textContent = `${selectedChannel.name || selectedChannel.channelId} selected. Leave passcode blank to keep the current protected secret.`;
+      } else {
+        adminChannelEditorStatusEl.textContent = 'Create a new channel here. Protected channels require a passcode on creation.';
+      }
+    }
+    if (adminChannelEditorErrorEl) {
+      const showMutationError = String(nextSnapshot?.adminSurface?.lastAction || '').toLowerCase().includes('channel')
+        && !!String(nextSnapshot?.adminSurface?.errorMessage || '').trim();
+      adminChannelEditorErrorEl.hidden = !showMutationError;
+      adminChannelEditorErrorEl.textContent = showMutationError ? String(nextSnapshot?.adminSurface?.errorMessage || '') : '';
+    }
   }
 
   function renderBackendAdmin(nextSnapshot) {
@@ -491,7 +622,7 @@
       const loadingAction = String(snapshot?.adminSurface?.loadingAction || 'idle');
       adminRefreshStatusEl.textContent = loadingAction === 'idle'
         ? 'Read-only snapshot ready'
-        : `Refreshing ${loadingAction}`;
+        : (snapshot?.adminSurface?.activityLabel || `Refreshing ${loadingAction}`);
     }
     if (adminRefreshMetaEl) {
       const completedAt = formatTimestamp(snapshot?.adminSurface?.lastCompletedAt);
@@ -523,6 +654,7 @@
       adminTransportMetaEl.textContent = snapshot?.stats?.hostStatusSummary || 'Host bridge and transport status are not available yet.';
     }
     renderBackendAdmin(snapshot);
+    renderChannelEditor(snapshot);
     renderChannels(snapshot);
     renderSlots(snapshot);
     renderEndpoints(snapshot);
@@ -546,9 +678,73 @@
     }
   }
 
+  function buildChannelMutationPayload() {
+    return {
+      channelId: editorSelectedChannelId || null,
+      name: String(adminChannelNameInputEl?.value || '').trim(),
+      description: String(adminChannelDescriptionInputEl?.value || '').trim(),
+      note: String(adminChannelNoteInputEl?.value || '').trim(),
+      securityMode: adminChannelSecurityModeSelectEl?.value === 'passcode' ? 'passcode' : 'open',
+      concurrentAccessAllowed: !!adminChannelConcurrentAccessInputEl?.checked,
+      passcode: String(adminChannelPasscodeInputEl?.value || '').trim() || null
+    };
+  }
+
+  async function requestChannelMutation(action) {
+    try {
+      await platform.requestAdminAction({
+        action,
+        payload: buildChannelMutationPayload(),
+        source: 'admin-window'
+      });
+    } catch (error) {
+      render({
+        ...snapshot,
+        adminSurface: {
+          ...(snapshot?.adminSurface || {}),
+          errorMessage: error?.message || 'Failed to request admin action.',
+          loadingAction: 'idle',
+          activityLabel: '',
+          lastAction: 'Channel action failed'
+        }
+      });
+    }
+  }
+
   adminRefreshAllBtn?.addEventListener('click', () => { requestRefresh('all').catch((error) => console.error('admin refresh all error', error)); });
   adminRefreshChannelsBtn?.addEventListener('click', () => { requestRefresh('channels').catch((error) => console.error('admin refresh channels error', error)); });
   adminRefreshPeersBtn?.addEventListener('click', () => { requestRefresh('peers').catch((error) => console.error('admin refresh peers error', error)); });
+  adminChannelEditorSelectEl?.addEventListener('change', () => {
+    editorSelectedChannelId = adminChannelEditorSelectEl.value || '';
+    applyEditorChannel(getSelectedEditorChannel(snapshot));
+    render(snapshot);
+  });
+  for (const field of [
+    adminChannelNameInputEl,
+    adminChannelSecurityModeSelectEl,
+    adminChannelDescriptionInputEl,
+    adminChannelNoteInputEl,
+    adminChannelPasscodeInputEl,
+    adminChannelConcurrentAccessInputEl
+  ]) {
+    field?.addEventListener('input', () => {
+      setEditorDirty(true);
+      syncPasscodeFieldState();
+      setButtonBusyState(snapshot);
+    });
+    field?.addEventListener('change', () => {
+      setEditorDirty(true);
+      syncPasscodeFieldState();
+      setButtonBusyState(snapshot);
+    });
+  }
+  adminChannelCreateBtn?.addEventListener('click', () => { requestChannelMutation('create-channel').catch((error) => console.error('admin create channel error', error)); });
+  adminChannelSaveBtn?.addEventListener('click', () => { requestChannelMutation('update-channel').catch((error) => console.error('admin update channel error', error)); });
+  adminChannelDeleteBtn?.addEventListener('click', () => { requestChannelMutation('delete-channel').catch((error) => console.error('admin delete channel error', error)); });
+  adminChannelResetBtn?.addEventListener('click', () => {
+    applyEditorChannel(getSelectedEditorChannel(snapshot));
+    render(snapshot);
+  });
 
   platform.onAdminState((nextSnapshot) => {
     render(nextSnapshot);

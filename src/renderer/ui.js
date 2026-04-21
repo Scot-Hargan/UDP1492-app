@@ -87,6 +87,11 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
     CHANNELS: 'channels',
     PEERS: 'peers'
   });
+  const ADMIN_MUTATION_ACTIONS = Object.freeze({
+    CREATE_CHANNEL: 'create-channel',
+    UPDATE_CHANNEL: 'update-channel',
+    DELETE_CHANNEL: 'delete-channel'
+  });
   const NAT_DISCOVERY_STATES = Object.freeze({
     IDLE: 'idle',
     GATHERING: 'gathering',
@@ -615,6 +620,7 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
   function createDefaultAdminSurfaceState(seed = {}) {
     return {
       loadingAction: typeof seed?.loadingAction === 'string' ? seed.loadingAction : 'idle',
+      activityLabel: typeof seed?.activityLabel === 'string' ? seed.activityLabel : '',
       lastAction: typeof seed?.lastAction === 'string' ? seed.lastAction : '',
       errorMessage: typeof seed?.errorMessage === 'string' ? seed.errorMessage : '',
       lastRequestedAt: typeof seed?.lastRequestedAt === 'string' ? seed.lastRequestedAt : '',
@@ -1557,6 +1563,15 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
   async function handleManagedLeaveChannel() {
     return managedController.handleManagedLeaveChannel();
   }
+  async function createAdminChannel(input = {}) {
+    return managedController.createAdminChannel(input);
+  }
+  async function updateAdminChannel(input = {}) {
+    return managedController.updateAdminChannel(input);
+  }
+  async function deleteAdminChannel(input = {}) {
+    return managedController.deleteAdminChannel(input);
+  }
   function updateOperatingModeButtons() {
     const operatingMode = getOperatingMode();
     if (directModeBtn) {
@@ -1643,6 +1658,16 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
     if (action === ADMIN_REFRESH_ACTIONS.PEERS) return 'Peers';
     return 'All Data';
   }
+  function normalizeAdminMutationAction(value) {
+    if (value === ADMIN_MUTATION_ACTIONS.UPDATE_CHANNEL) return ADMIN_MUTATION_ACTIONS.UPDATE_CHANNEL;
+    if (value === ADMIN_MUTATION_ACTIONS.DELETE_CHANNEL) return ADMIN_MUTATION_ACTIONS.DELETE_CHANNEL;
+    return ADMIN_MUTATION_ACTIONS.CREATE_CHANNEL;
+  }
+  function formatAdminMutationActionLabel(action) {
+    if (action === ADMIN_MUTATION_ACTIONS.UPDATE_CHANNEL) return 'Channel Update';
+    if (action === ADMIN_MUTATION_ACTIONS.DELETE_CHANNEL) return 'Channel Delete';
+    return 'Channel Create';
+  }
   function getManagedJoinedSlotCount() {
     return getManagedSlotIds().filter((slotId) => !!getManagedSlot(slotId).channelId).length;
   }
@@ -1678,6 +1703,7 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
         note: channel.note || '',
         securityMode: channel.securityMode || 'open',
         requiresPasscode: channelRequiresPasscode(channel),
+        concurrentAccessAllowed: channel.concurrentAccessAllowed !== false,
         memberCount: Number(channel.memberCount) || 0,
         slotLabels,
         slotIntentLabels
@@ -1981,6 +2007,7 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
     const normalizedAction = normalizeAdminRefreshAction(action);
     const label = formatAdminRefreshActionLabel(normalizedAction);
     adminSurfaceState.loadingAction = normalizedAction;
+    adminSurfaceState.activityLabel = `Refreshing ${label}`;
     adminSurfaceState.lastAction = `Refreshing ${label}`;
     adminSurfaceState.errorMessage = '';
     adminSurfaceState.lastRequestedAt = new Date().toISOString();
@@ -2008,6 +2035,7 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
         await refreshAllManagedPeersForAdmin({ allowEmpty: true });
       }
       adminSurfaceState.loadingAction = 'idle';
+      adminSurfaceState.activityLabel = '';
       adminSurfaceState.lastAction = `${label} refreshed`;
       adminSurfaceState.errorMessage = '';
       adminSurfaceState.lastCompletedAt = new Date().toISOString();
@@ -2015,6 +2043,7 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
       queueAdminSnapshotPublish();
     } catch (error) {
       adminSurfaceState.loadingAction = 'idle';
+      adminSurfaceState.activityLabel = '';
       adminSurfaceState.lastAction = `${label} failed`;
       adminSurfaceState.errorMessage = error?.message || `Failed to refresh ${label.toLowerCase()}.`;
       adminSurfaceState.lastCompletedAt = new Date().toISOString();
@@ -2026,6 +2055,53 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
   async function handleAdminRefreshRequest(request = {}) {
     const action = normalizeAdminRefreshAction(request?.action);
     await performAdminRefresh(action, { source: request?.source || 'admin-window' });
+  }
+  async function performAdminMutation(request = {}) {
+    const action = normalizeAdminMutationAction(request?.action);
+    const label = formatAdminMutationActionLabel(action);
+    const payload = request?.payload && typeof request.payload === 'object' ? request.payload : {};
+    adminSurfaceState.loadingAction = action;
+    adminSurfaceState.activityLabel = `Applying ${label}`;
+    adminSurfaceState.lastAction = `Applying ${label}`;
+    adminSurfaceState.errorMessage = '';
+    adminSurfaceState.lastRequestedAt = new Date().toISOString();
+    adminSurfaceState.lastCompletedAt = '';
+    renderManagedShell();
+    queueAdminSnapshotPublish();
+    try {
+      if (!getManagedSession().sessionId) {
+        throw new Error('Open a managed session before performing admin actions.');
+      }
+      if (action === ADMIN_MUTATION_ACTIONS.CREATE_CHANNEL) {
+        await createAdminChannel(payload);
+      } else if (action === ADMIN_MUTATION_ACTIONS.UPDATE_CHANNEL) {
+        await updateAdminChannel(payload);
+      } else {
+        await deleteAdminChannel(payload);
+      }
+      adminSurfaceState.loadingAction = 'idle';
+      adminSurfaceState.activityLabel = '';
+      adminSurfaceState.lastAction = `${label} complete`;
+      adminSurfaceState.errorMessage = '';
+      adminSurfaceState.lastCompletedAt = new Date().toISOString();
+      renderManagedShell();
+      queueAdminSnapshotPublish();
+    } catch (error) {
+      adminSurfaceState.loadingAction = 'idle';
+      adminSurfaceState.activityLabel = '';
+      adminSurfaceState.lastAction = `${label} failed`;
+      adminSurfaceState.errorMessage = error?.message || `Failed to apply ${label.toLowerCase()}.`;
+      adminSurfaceState.lastCompletedAt = new Date().toISOString();
+      renderManagedShell();
+      queueAdminSnapshotPublish();
+      throw error;
+    }
+  }
+  async function handleAdminActionRequest(request = {}) {
+    await performAdminMutation({
+      action: request?.action,
+      payload: request?.payload || {}
+    });
   }
   function getCommanderStatusText() {
     if (getOperatingMode() !== OPERATING_MODES.MANAGED) {
@@ -3065,6 +3141,13 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
         platform.onAdminRefreshRequest((request) => {
           handleAdminRefreshRequest(request).catch((error) => {
             console.error('admin refresh request error', error);
+          });
+        });
+      }
+      if (typeof platform?.onAdminActionRequest === 'function') {
+        platform.onAdminActionRequest((request) => {
+          handleAdminActionRequest(request).catch((error) => {
+            console.error('admin action request error', error);
           });
         });
       }

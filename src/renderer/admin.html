@@ -81,6 +81,59 @@
     <section class="admin-card">
       <div class="managed-card-header">
         <div>
+          <p class="managed-card-label">Directory Controls</p>
+          <h2>Channel Editor</h2>
+        </div>
+        <span id="adminChannelEditorMeta" class="managed-inline-status">Read-only</span>
+      </div>
+      <p id="adminChannelEditorStatus" class="managed-card-copy">Open a managed operator session and refresh channels to enable bounded directory mutations.</p>
+      <div class="admin-form-grid">
+        <label class="admin-field admin-form-full">
+          <span>Channel</span>
+          <select id="adminChannelEditorSelect">
+            <option value="">Create New Channel</option>
+          </select>
+        </label>
+        <label class="admin-field">
+          <span>Name</span>
+          <input id="adminChannelNameInput" type="text" maxlength="80" placeholder="Operations" />
+        </label>
+        <label class="admin-field">
+          <span>Security</span>
+          <select id="adminChannelSecurityModeSelect">
+            <option value="open">Open</option>
+            <option value="passcode">Protected</option>
+          </select>
+        </label>
+        <label class="admin-field admin-form-full">
+          <span>Description</span>
+          <textarea id="adminChannelDescriptionInput" rows="3" maxlength="280" placeholder="Operator-managed channel description"></textarea>
+        </label>
+        <label class="admin-field admin-form-full">
+          <span>Note</span>
+          <input id="adminChannelNoteInput" type="text" maxlength="280" placeholder="Optional operator note" />
+        </label>
+        <label class="admin-field">
+          <span>Passcode</span>
+          <input id="adminChannelPasscodeInput" type="password" maxlength="128" placeholder="Required for protected channels" />
+        </label>
+        <label class="admin-checkbox-field">
+          <input id="adminChannelConcurrentAccessInput" type="checkbox" checked />
+          <span>Allow concurrent access</span>
+        </label>
+      </div>
+      <div class="admin-form-actions">
+        <button id="adminChannelCreateBtn" class="primary" type="button">Create Channel</button>
+        <button id="adminChannelSaveBtn" class="secondary" type="button">Save Changes</button>
+        <button id="adminChannelDeleteBtn" class="secondary" type="button">Delete Channel</button>
+        <button id="adminChannelResetBtn" class="secondary" type="button">Reset Form</button>
+      </div>
+      <p id="adminChannelEditorError" class="managed-error" hidden></p>
+    </section>
+
+    <section class="admin-card">
+      <div class="managed-card-header">
+        <div>
           <p class="managed-card-label">Endpoint State</p>
           <h2>Resolved Endpoints</h2>
         </div>

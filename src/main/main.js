@@ -669,6 +669,13 @@ app.whenReady().then(async () => {
     mainWindow.webContents.send('udp1492:admin-refresh-request', request || {});
     return { ok: true };
   });
+  ipcMain.handle('udp1492:admin-action-request', async (_event, request) => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      throw new Error('Main window is unavailable.');
+    }
+    mainWindow.webContents.send('udp1492:admin-action-request', request || {});
+    return { ok: true };
+  });
   ipcMain.on('udp1492:admin-state-publish', (event, snapshot) => {
     if (!mainWindow || event.sender !== mainWindow.webContents) return;
     latestAdminState = snapshot && typeof snapshot === 'object' ? snapshot : null;

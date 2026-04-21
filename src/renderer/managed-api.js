@@ -290,6 +290,28 @@ function normalizeLeaveResponse(payload, fallbackChannelId) {
   };
 }
 
+function normalizeAdminChannelMutationResponse(payload) {
+  const root = assertObject(payload, 'Managed backend returned an invalid admin channel response.');
+  const channel = normalizeChannel(root.channel);
+  if (!channel) {
+    throw new ManagedApiError('Managed backend returned an invalid admin channel response.', {
+      code: 'managed_response_invalid',
+      details: root
+    });
+  }
+  return {
+    channel
+  };
+}
+
+function normalizeAdminDeleteChannelResponse(payload) {
+  const root = assertObject(payload, 'Managed backend returned an invalid channel delete response.');
+  return {
+    deleted: boolOr(root.deleted, false),
+    channelId: stringOrEmpty(root.channelId).trim()
+  };
+}
+
 function buildPath(pathname, query = {}) {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
@@ -444,6 +466,24 @@ export function createManagedApiClient({
       return requestJson('/api/admin/summary', {
         query: { sessionId }
       }).then(normalizeAdminSummaryResponse);
+    },
+    createAdminChannel(payload) {
+      return requestJson('/api/admin/channels/create', {
+        method: 'POST',
+        body: payload
+      }).then(normalizeAdminChannelMutationResponse);
+    },
+    updateAdminChannel(payload) {
+      return requestJson('/api/admin/channels/update', {
+        method: 'POST',
+        body: payload
+      }).then(normalizeAdminChannelMutationResponse);
+    },
+    deleteAdminChannel(payload) {
+      return requestJson('/api/admin/channels/delete', {
+        method: 'POST',
+        body: payload
+      }).then(normalizeAdminDeleteChannelResponse);
     },
     joinChannel(channelId, payload) {
       return requestJson(`/api/channels/${encodeURIComponent(channelId)}/join`, {
