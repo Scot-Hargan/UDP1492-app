@@ -533,3 +533,53 @@ Phase 11 is now implemented and documented. The controlling contract for this ph
 - members may read backend-authored admin summaries but remain read-only
 - only operators may mutate channel catalog state or protected-channel secrets
 - protected-channel passcodes are stored server-side as salted one-way hashes, not plaintext
+
+## Phase 12 Planning Constraints
+
+Phase 12 should treat the existing local storage surface as the starting point, not as legacy clutter to replace blindly.
+
+Current local durable inputs already in use are:
+
+- `udp1492_peers` for manual direct peers
+- `udp1492_last_peers` for direct recency
+- `udp1492_managed_profile` for managed identity/profile facts
+- `udp1492_managed_cache` for backend-authored directory/admin cache facts
+
+Current managed facts that are still mostly ephemeral are:
+
+- resolved managed peers
+- reusable managed endpoints
+- successful managed observations that could help later direct/private operation
+
+The recommended Phase 12 direction is:
+
+1. add one bounded retained-knowledge store instead of a second overlapping persistence model
+2. bootstrap that store from existing manual/direct keys
+3. enrich it with managed observations after peer refresh and successful use
+4. reuse retained facts in bounded direct-mode flows only after provenance and merge rules are stable
+
+Recommended retained-knowledge boundaries:
+
+- keep it local-first
+- store reusable non-secret facts only
+- do not persist passcodes
+- do not persist backend-only live session or membership state as durable authority
+- make provenance explicit so manual/operator-entered knowledge is not silently overwritten by managed observations
+
+Recommended first schema target:
+
+- storage key `udp1492_local_knowledge_v1`
+- versioned top-level object
+- peer-centric records with:
+  - stable local `peerId`
+  - optional `managedUserId`
+  - display/provenance fields
+  - reusable endpoint observations
+  - bounded first-seen / last-seen / last-connected timestamps
+
+Recommended merge rules:
+
+- manual direct-peer edits outrank managed observations for trusted operator-entered fields
+- managed observations may add identities and endpoints when they do not destroy manual intent
+- endpoint dedupe should rely on stable reusable facts like `kind + ip + port`
+- direct-success timestamps may enrich usefulness without changing provenance
