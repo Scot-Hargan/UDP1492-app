@@ -564,6 +564,12 @@ The first bounded direct-mode reuse path should stay explicit and operator-drive
 - prefill the existing peer editor from retained knowledge rather than auto-activating those endpoints
 - merge the resulting manual import back into the retained record when the endpoint matches
 
+The first bounded inspection/maintenance path should stay local and conservative:
+
+- expose retained peer records in the admin surface before building a broader contact-management UI
+- show provenance, endpoint observations, and bounded timestamps directly from the local retained store
+- allow operators to forget retained-only entries locally, while keeping manual-linked records under the existing direct peer editor flow
+
 Recommended retained-knowledge boundaries:
 
 - keep it local-first

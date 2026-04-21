@@ -205,6 +205,41 @@ test('retains managed peer observations from the real Worker without persisting 
   await expect(page.locator('#managedActiveChannel')).toHaveText('Group A has no active membership');
 });
 
+test('shows retained knowledge in the admin surface and forgets retained-only peers learned from the real Worker', async ({ appHarness }) => {
+  const { page, readStorage } = appHarness;
+  const managedBackendBaseUrl = 'http://127.0.0.1:8791';
+
+  await openManagedSession(page);
+  await page.getByRole('button', { name: 'Join Selected' }).click();
+  await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+
+  const peerSession = await openPeerSession(managedBackendBaseUrl, 'Forgettable Peer');
+  await joinPeerChannel(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha');
+  await sendPeerPresence(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha', {
+    kind: 'public',
+    ip: '198.51.100.46',
+    port: 1492
+  });
+
+  await page.locator('#managedRefreshPeersBtn').click();
+  await expect(page.locator('#networkTable tbody')).toContainText('Forgettable Peer');
+
+  const adminPage = await openAdminWindow(appHarness);
+  const retainedPeerItem = adminPage.locator('#adminKnowledgeList .managed-list-item').filter({ hasText: 'Forgettable Peer' });
+  await expect(retainedPeerItem).toContainText('managed');
+  await expect(retainedPeerItem).toContainText('198.51.100.46:1492');
+  await retainedPeerItem.getByRole('button', { name: 'Forget Local Copy' }).click();
+
+  await expect(adminPage.locator('#adminKnowledgeList')).not.toContainText('Forgettable Peer');
+  await expect(page.locator('#networkTable tbody')).toContainText('Forgettable Peer');
+  await expect.poll(async () => {
+    const storage = await readStorage();
+    return !!storage.udp1492_local_knowledge_v1?.peers?.some((peer) => peer.managedUserId === peerSession.identity.userId);
+  }).toBe(false);
+
+  await leavePeerChannel(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha');
+});
+
 test('imports a retained managed peer into the direct peer list after a real managed refresh', async ({ appHarness }) => {
   const { page, readStorage } = appHarness;
   const managedBackendBaseUrl = 'http://127.0.0.1:8791';

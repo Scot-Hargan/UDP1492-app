@@ -37,6 +37,9 @@
   const adminSlotsGridEl = $('#adminSlotsGrid');
   const adminEndpointsMetaEl = $('#adminEndpointsMeta');
   const adminEndpointTableBodyEl = $('#adminEndpointTable tbody');
+  const adminKnowledgeMetaEl = $('#adminKnowledgeMeta');
+  const adminKnowledgeCopyEl = $('#adminKnowledgeCopy');
+  const adminKnowledgeListEl = $('#adminKnowledgeList');
   const adminNatMetaEl = $('#adminNatMeta');
   const adminNatStatusEl = $('#adminNatStatus');
   const adminNatSummaryEl = $('#adminNatSummary');
@@ -209,6 +212,15 @@
       const row = document.createElement('tr');
       row.innerHTML = '<td colspan="8">No resolved endpoints have been published yet.</td>';
       adminEndpointTableBodyEl.appendChild(row);
+    }
+    if (adminKnowledgeMetaEl) adminKnowledgeMetaEl.textContent = 'No retained peers';
+    if (adminKnowledgeCopyEl) adminKnowledgeCopyEl.textContent = 'Retained peer knowledge is local-first and stores reusable non-secret facts only.';
+    if (adminKnowledgeListEl) {
+      adminKnowledgeListEl.innerHTML = '';
+      const item = document.createElement('li');
+      item.className = 'managed-list-item';
+      item.textContent = 'No retained peer knowledge has been learned yet.';
+      adminKnowledgeListEl.appendChild(item);
     }
     if (adminNatMetaEl) adminNatMetaEl.textContent = 'No candidate data';
     if (adminNatStatusEl) adminNatStatusEl.textContent = 'Idle';
@@ -451,6 +463,99 @@
     }
   }
 
+  function renderRetainedKnowledge(nextSnapshot) {
+    const retainedKnowledge = nextSnapshot?.retainedKnowledge || {};
+    const peers = Array.isArray(retainedKnowledge.peers) ? retainedKnowledge.peers : [];
+    const busy = String(nextSnapshot?.adminSurface?.loadingAction || 'idle') !== 'idle';
+    if (adminKnowledgeMetaEl) {
+      adminKnowledgeMetaEl.textContent = peers.length
+        ? `${Number(retainedKnowledge.peerCount) || peers.length} peer(s) | ${Number(retainedKnowledge.endpointCount) || 0} endpoint(s)`
+        : 'No retained peers';
+    }
+    if (adminKnowledgeCopyEl) {
+      adminKnowledgeCopyEl.textContent = peers.length
+        ? `${Number(retainedKnowledge.managedCount) || 0} managed-linked | ${Number(retainedKnowledge.manualCount) || 0} manual-linked | ${Number(retainedKnowledge.retainedOnlyCount) || 0} retained-only deletable`
+        : 'Retained peer knowledge is local-first and stores reusable non-secret facts only.';
+    }
+    if (!adminKnowledgeListEl) return;
+    adminKnowledgeListEl.innerHTML = '';
+    if (!peers.length) {
+      const item = document.createElement('li');
+      item.className = 'managed-list-item';
+      item.textContent = 'No retained peer knowledge has been learned yet.';
+      adminKnowledgeListEl.appendChild(item);
+      return;
+    }
+    for (const peer of peers) {
+      const item = document.createElement('li');
+      item.className = 'managed-list-item';
+      const header = document.createElement('div');
+      header.className = 'managed-list-item-header';
+      const summary = document.createElement('div');
+      const titleRow = document.createElement('div');
+      titleRow.className = 'managed-list-title';
+      const title = document.createElement('strong');
+      title.textContent = peer.displayName || peer.peerId || 'Unknown retained peer';
+      titleRow.appendChild(title);
+      for (const source of Array.isArray(peer.sources) ? peer.sources : []) {
+        const badge = document.createElement('span');
+        badge.className = 'managed-badge';
+        badge.textContent = source;
+        titleRow.appendChild(badge);
+      }
+      if (peer.manualPeerKey) {
+        const linkedBadge = document.createElement('span');
+        linkedBadge.className = 'managed-badge';
+        linkedBadge.textContent = 'Direct linked';
+        titleRow.appendChild(linkedBadge);
+      }
+      const detail = document.createElement('span');
+      const detailParts = [];
+      if (peer.managedUserId) detailParts.push(`Managed ${peer.managedUserId}`);
+      if (peer.manualPeerKey) detailParts.push(`Manual ${peer.manualPeerKey}`);
+      detailParts.push(`${Number(peer.endpointCount) || 0} endpoint(s)`);
+      detail.textContent = detailParts.join(' | ');
+      summary.append(titleRow, detail);
+      const forgetButton = document.createElement('button');
+      forgetButton.type = 'button';
+      forgetButton.className = 'secondary';
+      forgetButton.dataset.peerId = peer.peerId || '';
+      forgetButton.dataset.action = 'forget-retained-peer';
+      forgetButton.textContent = peer.canForget ? 'Forget Local Copy' : 'Manual Link';
+      forgetButton.disabled = busy || !peer.canForget;
+      header.append(summary, forgetButton);
+      item.appendChild(header);
+
+      for (const endpoint of Array.isArray(peer.endpoints) ? peer.endpoints : []) {
+        const endpointMeta = document.createElement('div');
+        endpointMeta.className = 'managed-list-meta';
+        const endpointBadge = document.createElement('span');
+        endpointBadge.className = 'managed-badge';
+        endpointBadge.textContent = endpoint.source || endpoint.kind || 'endpoint';
+        const endpointCopy = document.createElement('span');
+        const endpointParts = [`${endpoint.ip}:${endpoint.port}`];
+        if (endpoint.kind) endpointParts.push(endpoint.kind);
+        if (endpoint.channelId) endpointParts.push(endpoint.channelId);
+        if (endpoint.slotId) endpointParts.push(`Group ${endpoint.slotId}`);
+        endpointCopy.textContent = endpointParts.join(' | ');
+        endpointMeta.append(endpointBadge, endpointCopy);
+        item.appendChild(endpointMeta);
+      }
+
+      const note = document.createElement('p');
+      note.className = 'managed-list-note';
+      const noteParts = [];
+      if (peer.firstSeenAt) noteParts.push(`First seen ${formatTimestamp(peer.firstSeenAt)}`);
+      if (peer.lastSeenAt) noteParts.push(`Last seen ${formatTimestamp(peer.lastSeenAt)}`);
+      if (peer.lastConnectedAt) noteParts.push(`Last connected ${formatTimestamp(peer.lastConnectedAt)}`);
+      note.textContent = noteParts.length
+        ? noteParts.join(' | ')
+        : 'No retained timestamps recorded yet.';
+      item.appendChild(note);
+      adminKnowledgeListEl.appendChild(item);
+    }
+  }
+
   function renderStats(nextSnapshot) {
     const stats = nextSnapshot?.stats || {};
     const metrics = [
@@ -658,6 +763,7 @@
     renderChannels(snapshot);
     renderSlots(snapshot);
     renderEndpoints(snapshot);
+    renderRetainedKnowledge(snapshot);
     renderNat(snapshot);
     renderStats(snapshot);
     setButtonBusyState(snapshot);
@@ -711,6 +817,27 @@
     }
   }
 
+  async function requestRetainedKnowledgeMutation(peerId) {
+    try {
+      await platform.requestAdminAction({
+        action: 'forget-retained-peer',
+        payload: { peerId },
+        source: 'admin-window'
+      });
+    } catch (error) {
+      render({
+        ...snapshot,
+        adminSurface: {
+          ...(snapshot?.adminSurface || {}),
+          errorMessage: error?.message || 'Failed to forget the retained peer locally.',
+          loadingAction: 'idle',
+          activityLabel: '',
+          lastAction: 'Retained peer action failed'
+        }
+      });
+    }
+  }
+
   adminRefreshAllBtn?.addEventListener('click', () => { requestRefresh('all').catch((error) => console.error('admin refresh all error', error)); });
   adminRefreshChannelsBtn?.addEventListener('click', () => { requestRefresh('channels').catch((error) => console.error('admin refresh channels error', error)); });
   adminRefreshPeersBtn?.addEventListener('click', () => { requestRefresh('peers').catch((error) => console.error('admin refresh peers error', error)); });
@@ -744,6 +871,12 @@
   adminChannelResetBtn?.addEventListener('click', () => {
     applyEditorChannel(getSelectedEditorChannel(snapshot));
     render(snapshot);
+  });
+  adminKnowledgeListEl?.addEventListener('click', (event) => {
+    const button = event.target instanceof Element ? event.target.closest('button[data-action="forget-retained-peer"]') : null;
+    const peerId = button?.getAttribute('data-peer-id') || '';
+    if (!peerId || button?.hasAttribute('disabled')) return;
+    requestRetainedKnowledgeMutation(peerId).catch((error) => console.error('admin forget retained peer error', error));
   });
 
   platform.onAdminState((nextSnapshot) => {

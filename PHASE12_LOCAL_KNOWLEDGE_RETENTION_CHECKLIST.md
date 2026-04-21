@@ -186,6 +186,7 @@ The most defensible Phase 12 path is:
 - expose retained knowledge in a bounded UI
 - show provenance and last-seen/last-connected facts
 - support minimal maintenance controls only after the merge model is proven
+- a defensible first maintenance action is forgetting retained-only entries locally while leaving manual-linked entries to the direct peer editor
 
 ## Explicit Non-Goals
 

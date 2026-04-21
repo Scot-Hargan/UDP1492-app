@@ -902,6 +902,33 @@ test.describe('peer fixture', () => {
     expect(JSON.stringify(storage.udp1492_local_knowledge_v1)).not.toContain('ses_peer_01');
   });
 
+  test('shows retained knowledge in the admin surface and forgets retained-only peers locally', async ({ appHarness }) => {
+    const { page, readStorage } = appHarness;
+    const { baseUrl } = await installManagedApiRoutes(page);
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+    await page.getByRole('button', { name: 'Join Selected' }).click();
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+
+    const adminPage = await openAdminWindow(appHarness);
+    const retainedPeerItem = adminPage.locator('#adminKnowledgeList .managed-list-item').filter({ hasText: 'Peer One' });
+    await expect(retainedPeerItem).toContainText('managed');
+    await expect(retainedPeerItem).toContainText('198.51.100.10:1492');
+    await expect(retainedPeerItem.getByRole('button', { name: 'Forget Local Copy' })).toBeEnabled();
+
+    await retainedPeerItem.getByRole('button', { name: 'Forget Local Copy' }).click();
+    await expect(adminPage.locator('#adminKnowledgeList')).not.toContainText('Peer One');
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+
+    await expect.poll(async () => {
+      const storage = await readStorage();
+      return !!storage.udp1492_local_knowledge_v1?.peers?.some((peer) => peer.managedUserId === 'usr_peer_01');
+    }).toBe(false);
+  });
+
   test('imports a retained managed peer into the direct peer list from the selector', async ({ appHarness }) => {
     const { page, readStorage } = appHarness;
     const { baseUrl } = await installManagedApiRoutes(page);
@@ -955,6 +982,11 @@ test.describe('peer fixture', () => {
       manualPeerKey: '198.51.100.10:1492',
       managedUserId: 'usr_peer_01'
     });
+
+    const adminPage = await openAdminWindow(appHarness);
+    const retainedPeerItem = adminPage.locator('#adminKnowledgeList .managed-list-item').filter({ hasText: 'Peer One' });
+    await expect(retainedPeerItem).toContainText('Direct linked');
+    await expect(retainedPeerItem.getByRole('button', { name: 'Manual Link' })).toBeDisabled();
 
     const storage = await readStorage();
     expect(JSON.stringify(storage.udp1492_local_knowledge_v1)).not.toContain('ses_peer_01');

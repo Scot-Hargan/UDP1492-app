@@ -92,7 +92,8 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
   const ADMIN_MUTATION_ACTIONS = Object.freeze({
     CREATE_CHANNEL: 'create-channel',
     UPDATE_CHANNEL: 'update-channel',
-    DELETE_CHANNEL: 'delete-channel'
+    DELETE_CHANNEL: 'delete-channel',
+    FORGET_RETAINED_PEER: 'forget-retained-peer'
   });
   const NAT_DISCOVERY_STATES = Object.freeze({
     IDLE: 'idle',
@@ -1842,6 +1843,31 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
   async function deleteAdminChannel(input = {}) {
     return managedController.deleteAdminChannel(input);
   }
+  async function forgetRetainedKnowledgePeer(input = {}) {
+    const peerId = typeof input?.peerId === 'string' ? input.peerId.trim() : '';
+    if (!peerId) {
+      throw new Error('Choose a retained peer before requesting local deletion.');
+    }
+    const normalizedStore = createDefaultLocalKnowledgeStore(localKnowledge);
+    const targetPeer = normalizedStore.peers.find((peer) => peer.peerId === peerId);
+    if (!targetPeer) {
+      throw new Error('The selected retained peer is no longer available.');
+    }
+    if (Array.isArray(targetPeer.sources) && targetPeer.sources.includes('manual')) {
+      throw new Error('This retained entry is linked to a saved direct peer. Remove the manual peer first if you want to forget it locally.');
+    }
+    localKnowledge = createDefaultLocalKnowledgeStore({
+      ...normalizedStore,
+      peers: normalizedStore.peers.filter((peer) => peer.peerId !== peerId)
+    });
+    await storage.set({
+      [LOCAL_KNOWLEDGE_STORAGE_KEY]: localKnowledge
+    });
+    refreshPeerSelects(peerListEl?.value || NEW_PEER_VALUE, peerModalSelectEl?.value || NEW_PEER_VALUE);
+    renderManagedShell();
+    queueAdminSnapshotPublish();
+    return localKnowledge;
+  }
   function updateOperatingModeButtons() {
     const operatingMode = getOperatingMode();
     if (directModeBtn) {
@@ -1929,11 +1955,13 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
     return 'All Data';
   }
   function normalizeAdminMutationAction(value) {
+    if (value === ADMIN_MUTATION_ACTIONS.FORGET_RETAINED_PEER) return ADMIN_MUTATION_ACTIONS.FORGET_RETAINED_PEER;
     if (value === ADMIN_MUTATION_ACTIONS.UPDATE_CHANNEL) return ADMIN_MUTATION_ACTIONS.UPDATE_CHANNEL;
     if (value === ADMIN_MUTATION_ACTIONS.DELETE_CHANNEL) return ADMIN_MUTATION_ACTIONS.DELETE_CHANNEL;
     return ADMIN_MUTATION_ACTIONS.CREATE_CHANNEL;
   }
   function formatAdminMutationActionLabel(action) {
+    if (action === ADMIN_MUTATION_ACTIONS.FORGET_RETAINED_PEER) return 'Retained Peer Forget';
     if (action === ADMIN_MUTATION_ACTIONS.UPDATE_CHANNEL) return 'Channel Update';
     if (action === ADMIN_MUTATION_ACTIONS.DELETE_CHANNEL) return 'Channel Delete';
     return 'Channel Create';
@@ -2026,6 +2054,59 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
       }
     }
     return rows.sort((left, right) => `${left.slotId}:${left.displayName}:${left.ip}:${left.port}`.localeCompare(`${right.slotId}:${right.displayName}:${right.ip}:${right.port}`));
+  }
+  function buildAdminRetainedKnowledgeSnapshot() {
+    const normalizedStore = createDefaultLocalKnowledgeStore(localKnowledge);
+    const peers = normalizedStore.peers
+      .map((peer) => {
+        const endpoints = Array.isArray(peer?.endpoints)
+          ? peer.endpoints
+              .map((endpoint) => ({
+                kind: endpoint?.kind || 'unknown',
+                ip: endpoint?.ip || '',
+                port: Number(endpoint?.port) || 0,
+                source: endpoint?.source || '',
+                channelId: endpoint?.channelId || '',
+                slotId: endpoint?.slotId || '',
+                firstSeenAt: endpoint?.firstSeenAt || '',
+                lastSeenAt: endpoint?.lastSeenAt || '',
+                lastConnectedAt: endpoint?.lastConnectedAt || ''
+              }))
+              .filter((endpoint) => endpoint.ip && endpoint.port > 0)
+          : [];
+        const latestSeenAt = [peer?.lastSeenAt || '', ...endpoints.map((endpoint) => endpoint.lastSeenAt || '')]
+          .filter(Boolean)
+          .sort()
+          .slice(-1)[0] || '';
+        return {
+          peerId: peer.peerId,
+          displayName: peer.displayName || peer.peerId,
+          managedUserId: peer.managedUserId || '',
+          manualPeerKey: peer.manualPeerKey || '',
+          sources: Array.isArray(peer.sources) ? [...peer.sources] : [],
+          firstSeenAt: peer.firstSeenAt || '',
+          lastSeenAt: peer.lastSeenAt || '',
+          lastConnectedAt: peer.lastConnectedAt || '',
+          endpointCount: endpoints.length,
+          latestSeenAt,
+          canForget: !(Array.isArray(peer.sources) && peer.sources.includes('manual')),
+          endpoints: endpoints.sort((left, right) => `${left.source}:${left.kind}:${left.ip}:${left.port}`.localeCompare(`${right.source}:${right.kind}:${right.ip}:${right.port}`))
+        };
+      })
+      .sort((left, right) => {
+        const leftKey = `${left.latestSeenAt || left.lastConnectedAt || ''}|${left.displayName}|${left.peerId}`;
+        const rightKey = `${right.latestSeenAt || right.lastConnectedAt || ''}|${right.displayName}|${right.peerId}`;
+        return rightKey.localeCompare(leftKey);
+      });
+    return {
+      version: normalizedStore.version,
+      peerCount: peers.length,
+      managedCount: peers.filter((peer) => peer.sources.includes('managed')).length,
+      manualCount: peers.filter((peer) => peer.sources.includes('manual')).length,
+      retainedOnlyCount: peers.filter((peer) => peer.canForget).length,
+      endpointCount: peers.reduce((sum, peer) => sum + peer.endpointCount, 0),
+      peers
+    };
   }
   function buildLocalNatCandidatesFromRuntime() {
     return dedupeNatCandidates(buildManagedLocalCandidates({
@@ -2234,6 +2315,7 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
         commanderSummary: getCommanderStatusText(),
         hostStatusSummary: buildAdminHostStatusSummary()
       },
+      retainedKnowledge: buildAdminRetainedKnowledgeSnapshot(),
       adminSurface: createDefaultAdminSurfaceState(adminSurfaceState)
     };
   }
@@ -2343,10 +2425,12 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
     renderManagedShell();
     queueAdminSnapshotPublish();
     try {
-      if (!getManagedSession().sessionId) {
+      if (action !== ADMIN_MUTATION_ACTIONS.FORGET_RETAINED_PEER && !getManagedSession().sessionId) {
         throw new Error('Open a managed session before performing admin actions.');
       }
-      if (action === ADMIN_MUTATION_ACTIONS.CREATE_CHANNEL) {
+      if (action === ADMIN_MUTATION_ACTIONS.FORGET_RETAINED_PEER) {
+        await forgetRetainedKnowledgePeer(payload);
+      } else if (action === ADMIN_MUTATION_ACTIONS.CREATE_CHANNEL) {
         await createAdminChannel(payload);
       } else if (action === ADMIN_MUTATION_ACTIONS.UPDATE_CHANNEL) {
         await updateAdminChannel(payload);
