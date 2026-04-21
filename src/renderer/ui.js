@@ -57,6 +57,7 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
   const APP_STATE_V2_STORAGE_KEY = 'udp1492_app_state_v2';
   const MANAGED_PROFILE_STORAGE_KEY = 'udp1492_managed_profile';
   const MANAGED_CACHE_STORAGE_KEY = 'udp1492_managed_cache';
+  const LOCAL_KNOWLEDGE_STORAGE_KEY = 'udp1492_local_knowledge_v1';
   const NEW_PEER_VALUE = '__new__';
   const OPERATING_MODES = Object.freeze({
     DIRECT: 'direct',
@@ -317,6 +318,7 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
   let appState = createDefaultAppStateV2();
   let managedProfile = createDefaultManagedProfile();
   let managedCache = createDefaultManagedCache();
+  let localKnowledge = createDefaultLocalKnowledgeStore();
   let managedJoinPasscodes = createDefaultManagedJoinPasscodes();
   let managedResolvedPeers = createDefaultManagedResolvedPeers();
   let natRuntime = createDefaultNatRuntimeState();
@@ -554,6 +556,123 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
       adminSummary: createDefaultManagedAdminSummary(seed.adminSummary),
       lastUpdatedAt: typeof seed.lastUpdatedAt === 'string' ? seed.lastUpdatedAt : null
     };
+  }
+  function dedupeLocalKnowledgeSources(values = []) {
+    const sources = [];
+    const seen = new Set();
+    for (const value of Array.isArray(values) ? values : []) {
+      const source = typeof value === 'string' ? value.trim() : '';
+      if (!source || seen.has(source)) continue;
+      seen.add(source);
+      sources.push(source);
+    }
+    return sources;
+  }
+  function normalizeLocalKnowledgeEndpoint(seed = {}, existing = null) {
+    const ip = typeof seed?.ip === 'string' ? seed.ip.trim() : '';
+    const port = Number.parseInt(String(seed?.port ?? ''), 10);
+    if (!ip || !Number.isFinite(port) || port <= 0) return null;
+    return {
+      kind: typeof seed?.kind === 'string' && seed.kind.trim() ? seed.kind.trim() : (existing?.kind || 'unknown'),
+      ip,
+      port,
+      source: typeof seed?.source === 'string' && seed.source.trim() ? seed.source.trim() : (existing?.source || ''),
+      channelId: typeof seed?.channelId === 'string' ? seed.channelId : (existing?.channelId || ''),
+      slotId: typeof seed?.slotId === 'string' ? seed.slotId : (existing?.slotId || ''),
+      firstSeenAt: typeof seed?.firstSeenAt === 'string' ? seed.firstSeenAt : (existing?.firstSeenAt || ''),
+      lastSeenAt: typeof seed?.lastSeenAt === 'string' ? seed.lastSeenAt : (existing?.lastSeenAt || ''),
+      lastConnectedAt: typeof seed?.lastConnectedAt === 'string' ? seed.lastConnectedAt : (existing?.lastConnectedAt || '')
+    };
+  }
+  function mergeLocalKnowledgeEndpoints(existing = [], incoming = []) {
+    const merged = new Map();
+    for (const candidate of [...(Array.isArray(existing) ? existing : []), ...(Array.isArray(incoming) ? incoming : [])]) {
+      const normalized = normalizeLocalKnowledgeEndpoint(candidate, merged.get(`${candidate?.kind || 'unknown'}:${candidate?.ip || ''}:${candidate?.port || ''}`));
+      if (!normalized) continue;
+      const key = `${normalized.kind}:${normalized.ip}:${normalized.port}`;
+      const previous = merged.get(key);
+      merged.set(key, normalizeLocalKnowledgeEndpoint(normalized, previous));
+    }
+    return Array.from(merged.values());
+  }
+  function createDefaultLocalKnowledgePeer(seed = {}) {
+    return {
+      peerId: typeof seed?.peerId === 'string' ? seed.peerId : '',
+      displayName: typeof seed?.displayName === 'string' ? seed.displayName : '',
+      managedUserId: typeof seed?.managedUserId === 'string' ? seed.managedUserId : '',
+      manualPeerKey: typeof seed?.manualPeerKey === 'string' ? seed.manualPeerKey : '',
+      sources: dedupeLocalKnowledgeSources(seed?.sources),
+      endpoints: mergeLocalKnowledgeEndpoints([], seed?.endpoints),
+      firstSeenAt: typeof seed?.firstSeenAt === 'string' ? seed.firstSeenAt : '',
+      lastSeenAt: typeof seed?.lastSeenAt === 'string' ? seed.lastSeenAt : '',
+      lastConnectedAt: typeof seed?.lastConnectedAt === 'string' ? seed.lastConnectedAt : ''
+    };
+  }
+  function createDefaultLocalKnowledgeStore(seed = {}) {
+    return {
+      version: 1,
+      peers: Array.isArray(seed?.peers)
+        ? seed.peers
+            .filter((peer) => peer && typeof peer === 'object')
+            .map((peer) => createDefaultLocalKnowledgePeer(peer))
+            .filter((peer) => !!peer.peerId)
+        : []
+    };
+  }
+  function getManualPeerKey(peer) {
+    const ip = typeof peer?.ip === 'string' ? peer.ip.trim() : '';
+    const port = Number.parseInt(String(peer?.port ?? ''), 10);
+    if (!ip || !Number.isFinite(port) || port <= 0) return '';
+    return `${ip}:${port}`;
+  }
+  function buildManualKnowledgePeer(peer, existingPeer = {}) {
+    const manualPeerKey = getManualPeerKey(peer);
+    if (!manualPeerKey) return null;
+    return createDefaultLocalKnowledgePeer({
+      ...existingPeer,
+      peerId: existingPeer?.peerId || `manual:${manualPeerKey}`,
+      displayName: (typeof peer?.name === 'string' && peer.name.trim()) || existingPeer?.displayName || manualPeerKey,
+      manualPeerKey,
+      sources: dedupeLocalKnowledgeSources([...(existingPeer?.sources || []), 'manual']),
+      endpoints: mergeLocalKnowledgeEndpoints(existingPeer?.endpoints, [{
+        kind: 'direct',
+        ip: typeof peer?.ip === 'string' ? peer.ip.trim() : '',
+        port: Number.parseInt(String(peer?.port ?? ''), 10),
+        source: 'manual',
+        channelId: '',
+        slotId: ''
+      }])
+    });
+  }
+  function syncLocalKnowledgeFromManualPeers(peers = allPeers) {
+    const normalizedStore = createDefaultLocalKnowledgeStore(localKnowledge);
+    const existingByPeerId = new Map(normalizedStore.peers.map((peer) => [peer.peerId, peer]));
+    const nextPeers = [];
+    const retainedManualPeerIds = new Set();
+    for (const peer of Array.isArray(peers) ? peers : []) {
+      const manualPeerKey = getManualPeerKey(peer);
+      if (!manualPeerKey) continue;
+      const peerId = `manual:${manualPeerKey}`;
+      retainedManualPeerIds.add(peerId);
+      const mergedPeer = buildManualKnowledgePeer(peer, existingByPeerId.get(peerId) || {});
+      if (mergedPeer) nextPeers.push(mergedPeer);
+      existingByPeerId.delete(peerId);
+    }
+    for (const existingPeer of normalizedStore.peers) {
+      const isManualOnly = existingPeer.manualPeerKey
+        && existingPeer.peerId === `manual:${existingPeer.manualPeerKey}`
+        && existingPeer.sources.length === 1
+        && existingPeer.sources[0] === 'manual';
+      if (isManualOnly && !retainedManualPeerIds.has(existingPeer.peerId)) continue;
+      if (!retainedManualPeerIds.has(existingPeer.peerId)) nextPeers.push(existingPeer);
+    }
+    const nextStore = createDefaultLocalKnowledgeStore({
+      ...normalizedStore,
+      peers: nextPeers
+    });
+    const changed = JSON.stringify(nextStore) !== JSON.stringify(normalizedStore);
+    localKnowledge = nextStore;
+    return changed;
   }
   function createDefaultManagedJoinPasscodes(seed = {}) {
     return {
@@ -1434,6 +1553,9 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
     }
     if (options.includeManagedCache) {
       payload[MANAGED_CACHE_STORAGE_KEY] = managedCache;
+    }
+    if (options.includeLocalKnowledge) {
+      payload[LOCAL_KNOWLEDGE_STORAGE_KEY] = localKnowledge;
     }
     await storage.set(payload);
   }
@@ -2754,6 +2876,7 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
       'udp1492_debug_enabled',
       INPUT_GAIN_STORAGE_KEY,
       SELECTED_CODEC_STORAGE_KEY,
+      LOCAL_KNOWLEDGE_STORAGE_KEY,
       ...settingsKeys,
       ...gainKeys
     ]);
@@ -2813,6 +2936,8 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
         });
     managedProfile = createDefaultManagedProfile(got[MANAGED_PROFILE_STORAGE_KEY]);
     managedCache = createDefaultManagedCache(got[MANAGED_CACHE_STORAGE_KEY]);
+    localKnowledge = createDefaultLocalKnowledgeStore(got[LOCAL_KNOWLEDGE_STORAGE_KEY]);
+    const localKnowledgeChanged = syncLocalKnowledgeFromManualPeers(allPeers);
     if (!getManagedSlotIntent(GROUP_SLOT_IDS.A) && managedProfile.preferredChannelId) {
       setManagedSlotIntent(GROUP_SLOT_IDS.A, managedProfile.preferredChannelId);
     }
@@ -2820,11 +2945,12 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
     syncManagedSlotRuntimeState(GROUP_SLOT_IDS.B);
     renderManagedShell();
     await syncTransportPeerRows({ sendHostUpdate: false });
-    if (needsAppStateNormalization || !got[MANAGED_PROFILE_STORAGE_KEY] || !got[MANAGED_CACHE_STORAGE_KEY]) {
+    if (needsAppStateNormalization || !got[MANAGED_PROFILE_STORAGE_KEY] || !got[MANAGED_CACHE_STORAGE_KEY] || !got[LOCAL_KNOWLEDGE_STORAGE_KEY] || localKnowledgeChanged) {
       await persistAppState({
         includeLegacyLastPeers: true,
         includeManagedProfile: true,
-        includeManagedCache: true
+        includeManagedCache: true,
+        includeLocalKnowledge: true
       });
     }
     if (shouldAttemptManagedResume()) {
@@ -2947,6 +3073,8 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
     }
 
     const peerPayload = { udp1492_peers: allPeers };
+    syncLocalKnowledgeFromManualPeers(allPeers);
+    peerPayload[LOCAL_KNOWLEDGE_STORAGE_KEY] = localKnowledge;
     if (getOperatingMode() === OPERATING_MODES.DIRECT) {
       rememberDirectPeerSelection();
       peerPayload[APP_STATE_V2_STORAGE_KEY] = appState;
@@ -2965,15 +3093,20 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
     }
     if (activePeers.has(key)) deactivatePeer(key);
     allPeers = allPeers.filter(p => `${p.ip}:${p.port}` !== key);
+    syncLocalKnowledgeFromManualPeers(allPeers);
     if (getOperatingMode() === OPERATING_MODES.DIRECT) {
       rememberDirectPeerSelection();
       storage.set({
         udp1492_peers: allPeers,
         [APP_STATE_V2_STORAGE_KEY]: appState,
-        udp1492_last_peers: dedupePeerKeys(appState?.direct?.activePeerKeys)
+        udp1492_last_peers: dedupePeerKeys(appState?.direct?.activePeerKeys),
+        [LOCAL_KNOWLEDGE_STORAGE_KEY]: localKnowledge
       });
     } else {
-      storage.set({ udp1492_peers: allPeers });
+      storage.set({
+        udp1492_peers: allPeers,
+        [LOCAL_KNOWLEDGE_STORAGE_KEY]: localKnowledge
+      });
     }
     refreshPeerSelects(NEW_PEER_VALUE, NEW_PEER_VALUE);
     closePeerModal(true);

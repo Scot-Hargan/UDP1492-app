@@ -527,6 +527,7 @@ test('launches with default persisted settings', async ({ appHarness }) => {
   });
   expect(storage.udp1492_managed_profile).toMatchObject({ version: 1 });
   expect(storage.udp1492_managed_cache).toMatchObject({ version: 1, channels: [] });
+  expect(storage.udp1492_local_knowledge_v1).toMatchObject({ version: 1, peers: [] });
 });
 
 test('quits the app when the main window is closed', async ({ appHarness }) => {
@@ -571,11 +572,21 @@ test('persists a newly created peer across restart', async ({ appHarness }) => {
     return {
       peersPersisted: !!savedStorage.udp1492_peers?.some((peer) => peer.name === 'Persist Test'),
       lastPeerPersisted: Array.isArray(savedStorage.udp1492_last_peers)
-        && savedStorage.udp1492_last_peers.includes('198.51.100.42:1492')
+        && savedStorage.udp1492_last_peers.includes('198.51.100.42:1492'),
+      knowledgePersisted: !!savedStorage.udp1492_local_knowledge_v1?.peers?.some((peer) => {
+        return peer.peerId === 'manual:198.51.100.42:1492'
+          && peer.displayName === 'Persist Test'
+          && peer.manualPeerKey === '198.51.100.42:1492'
+          && Array.isArray(peer.sources)
+          && peer.sources.includes('manual')
+          && Array.isArray(peer.endpoints)
+          && peer.endpoints.some((endpoint) => endpoint.ip === '198.51.100.42' && endpoint.port === 1492 && endpoint.source === 'manual');
+      })
     };
   }).toEqual({
     peersPersisted: true,
-    lastPeerPersisted: true
+    lastPeerPersisted: true,
+    knowledgePersisted: true
   });
 
   const relaunchedPage = await relaunch();
@@ -637,6 +648,49 @@ test.describe('peer fixture', () => {
     await expect(page.locator('#gainValue')).toHaveText('1.33x');
     await expect(page.locator('#peerList')).toContainText('Alpha');
     await expect(page.locator('#networkTable tbody')).toContainText('Alpha');
+  });
+
+  test('bootstraps retained local knowledge from saved manual peers without copying shared secrets', async ({ appHarness }) => {
+    const { readStorage } = appHarness;
+
+    const storage = await readStorage();
+    expect(storage.udp1492_local_knowledge_v1).toMatchObject({
+      version: 1,
+      peers: expect.arrayContaining([
+        expect.objectContaining({
+          peerId: 'manual:203.0.113.10:1492',
+          displayName: 'Alpha',
+          manualPeerKey: '203.0.113.10:1492',
+          managedUserId: '',
+          sources: ['manual'],
+          endpoints: expect.arrayContaining([
+            expect.objectContaining({
+              kind: 'direct',
+              ip: '203.0.113.10',
+              port: 1492,
+              source: 'manual'
+            })
+          ])
+        }),
+        expect.objectContaining({
+          peerId: 'manual:203.0.113.11:1492',
+          displayName: 'Bravo',
+          manualPeerKey: '203.0.113.11:1492',
+          managedUserId: '',
+          sources: ['manual'],
+          endpoints: expect.arrayContaining([
+            expect.objectContaining({
+              kind: 'direct',
+              ip: '203.0.113.11',
+              port: 1492,
+              source: 'manual'
+            })
+          ])
+        })
+      ])
+    });
+    expect(JSON.stringify(storage.udp1492_local_knowledge_v1)).not.toContain('abc123');
+    expect(JSON.stringify(storage.udp1492_local_knowledge_v1)).not.toContain('def456');
   });
 
   test('persists AppStateV2 migration and managed mode selection', async ({ appHarness }) => {
