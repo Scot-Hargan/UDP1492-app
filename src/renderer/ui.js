@@ -1411,14 +1411,19 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
   function getNatLocalCandidates(slotId = getActiveManagedSlotId()) {
     return dedupeNatCandidates(getNatSlotState(slotId).localCandidates);
   }
+  function getManagedListenPort() {
+    const listenPort = Number(settings.localPort);
+    return Number.isFinite(listenPort) && listenPort > 0 ? listenPort : 0;
+  }
   function getManagedPresenceEndpoints() {
+    const listenPort = getManagedListenPort();
     return buildManagedPresenceEndpoints({
-      localPort: settings.localPort,
+      localPort: listenPort || settings.localPort,
       runtimeConfig: getManagedRuntimeConfig(),
       additionalEndpoints: getNatPublicCandidates(getActiveManagedSlotId()).map((candidate) => ({
         kind: candidate.kind,
         ip: candidate.ip,
-        port: candidate.port
+        port: listenPort || candidate.port
       }))
     });
   }
@@ -1646,9 +1651,14 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
     const endpoints = Array.isArray(peer?.endpoints) ? peer.endpoints : [];
     const readyEndpoints = endpoints.filter((endpoint) => endpoint?.ip && Number.isFinite(Number(endpoint?.port)) && endpoint.registrationState !== 'invalid');
     if (!readyEndpoints.length) return null;
-    return readyEndpoints.find((endpoint) => endpoint.kind === 'public')
-      || readyEndpoints.find((endpoint) => endpoint.kind === 'local')
-      || readyEndpoints[0];
+    const listenPort = getManagedListenPort();
+    const transportReadyEndpoints = listenPort
+      ? readyEndpoints.filter((endpoint) => Number(endpoint.port) === listenPort)
+      : readyEndpoints;
+    if (!transportReadyEndpoints.length) return null;
+    return transportReadyEndpoints.find((endpoint) => endpoint.kind === 'public')
+      || transportReadyEndpoints.find((endpoint) => endpoint.kind === 'local')
+      || transportReadyEndpoints[0];
   }
   function adaptResolvedPeerToTransportPeer(peer) {
     const endpoint = pickManagedEndpoint(peer);

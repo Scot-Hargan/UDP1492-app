@@ -852,6 +852,73 @@ test.describe('peer fixture', () => {
     await expect(page.locator('#networkTable tbody')).not.toContainText('Peer One');
   });
 
+  test('ignores remapped public ports and only adapts managed peers on the chosen listen port', async ({ appHarness }) => {
+    const { page, getSentHostMessages } = appHarness;
+    const { baseUrl } = await installManagedApiRoutes(page, {
+      peersResponses: {
+        chn_alpha: {
+          channelId: 'chn_alpha',
+          peers: [
+            {
+              userId: 'usr_peer_01',
+              sessionId: 'ses_peer_01',
+              channelId: 'chn_alpha',
+              displayName: 'Peer One',
+              connectionState: 'idle',
+              endpoints: [
+                {
+                  endpointId: 'end_public_bad_port',
+                  kind: 'public',
+                  ip: '198.51.100.10',
+                  port: 62000,
+                  registrationState: 'ready',
+                  lastValidatedAt: '2026-04-16T19:25:00Z'
+                },
+                {
+                  endpointId: 'end_local_listen_port',
+                  kind: 'local',
+                  ip: '10.0.0.25',
+                  port: 1492,
+                  registrationState: 'ready',
+                  lastValidatedAt: '2026-04-16T19:25:00Z'
+                }
+              ]
+            }
+          ],
+          resolvedAt: '2026-04-16T19:25:05Z'
+        }
+      }
+    });
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+    await page.getByRole('button', { name: 'Join Selected' }).click();
+
+    await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+    await expect.poll(async () => getAudioRoutingSnapshot(page)).toEqual([
+      expect.objectContaining({
+        peerKey: '10.0.0.25:1492',
+        owningSlots: ['A'],
+        route: 'left',
+        routeLabel: 'Left ear'
+      })
+    ]);
+    await expect.poll(async () => {
+      const configureMessages = (await getSentHostMessages())
+        .filter((message) => message.type === 'configure')
+        .filter((message) => Array.isArray(message.peers) && message.peers.some((peer) => peer.name === 'Peer One'));
+      const configureMessage = configureMessages[configureMessages.length - 1] || null;
+      if (!configureMessage) return null;
+      return configureMessage.peers.find((peer) => peer.name === 'Peer One') || null;
+    }).toEqual(expect.objectContaining({
+      ip: '10.0.0.25',
+      port: 1492
+    }));
+  });
+
   test('retains managed peer observations in local knowledge without persisting managed session ids', async ({ appHarness }) => {
     const { page, readStorage } = appHarness;
     const { baseUrl } = await installManagedApiRoutes(page);
@@ -1221,7 +1288,7 @@ test.describe('peer fixture', () => {
       }
     });
 
-    test('publishes mapped public NAT candidates to presence and exposes them in the admin surface', async ({ appHarness }) => {
+    test('publishes advisory public NAT addresses on the chosen listen port and exposes them in the admin surface', async ({ appHarness }) => {
       const { page } = appHarness;
       const presenceRequests = [];
       const { baseUrl } = await installManagedApiRoutes(page, { presenceRequests });
@@ -1259,7 +1326,7 @@ test.describe('peer fixture', () => {
       expect(presenceRequests).toHaveLength(1);
       expect(presenceRequests[0].payload.endpoints).toEqual([
         { kind: 'local', ip: '10.0.0.25', port: 1492 },
-        { kind: 'public', ip: '198.51.100.77', port: 62000 }
+        { kind: 'public', ip: '198.51.100.77', port: 1492 }
       ]);
 
       const adminPage = await openAdminWindow(appHarness);
