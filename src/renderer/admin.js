@@ -13,6 +13,10 @@
   const adminSessionMetaEl = $('#adminSessionMeta');
   const adminTransportStatusEl = $('#adminTransportStatus');
   const adminTransportMetaEl = $('#adminTransportMeta');
+  const adminBackendStatusEl = $('#adminBackendStatus');
+  const adminBackendMetaEl = $('#adminBackendMeta');
+  const adminBackendCopyEl = $('#adminBackendCopy');
+  const adminBackendFactsEl = $('#adminBackendFacts');
   const adminChannelsMetaEl = $('#adminChannelsMeta');
   const adminChannelsListEl = $('#adminChannelsList');
   const adminSlotsMetaEl = $('#adminSlotsMeta');
@@ -93,6 +97,16 @@
     if (adminSessionMetaEl) adminSessionMetaEl.textContent = 'Managed session data has not been opened yet.';
     if (adminTransportStatusEl) adminTransportStatusEl.textContent = '0 active transport peers';
     if (adminTransportMetaEl) adminTransportMetaEl.textContent = 'Transport and peer-health summary will appear here.';
+    if (adminBackendStatusEl) adminBackendStatusEl.textContent = 'No backend summary';
+    if (adminBackendMetaEl) adminBackendMetaEl.textContent = 'Unavailable';
+    if (adminBackendCopyEl) adminBackendCopyEl.textContent = 'Refresh channels or all data to request backend-authored admin facts.';
+    if (adminBackendFactsEl) {
+      adminBackendFactsEl.innerHTML = '';
+      const item = document.createElement('li');
+      item.className = 'managed-list-item';
+      item.textContent = 'Backend-authored admin facts are not cached yet.';
+      adminBackendFactsEl.appendChild(item);
+    }
     if (adminChannelsMetaEl) adminChannelsMetaEl.textContent = 'No channels cached';
     if (adminChannelsListEl) {
       adminChannelsListEl.innerHTML = '';
@@ -152,6 +166,50 @@
       adminErrorTextEl.textContent = '';
     }
     setButtonBusyState(null);
+  }
+
+  function renderBackendAdmin(nextSnapshot) {
+    const backendAdmin = nextSnapshot?.managed?.backendAdmin || {};
+    const viewer = backendAdmin?.viewer || {};
+    const directory = backendAdmin?.directory || {};
+    const permissions = backendAdmin?.permissions || {};
+    const roleLabel = String(viewer.role || '').trim() || 'member';
+    const canRead = !!permissions.canReadAdminSummary;
+    const observedAt = formatTimestamp(directory.observedAt);
+
+    if (adminBackendStatusEl) {
+      adminBackendStatusEl.textContent = canRead
+        ? `${roleLabel} session`
+        : 'Summary unavailable';
+    }
+    if (adminBackendMetaEl) {
+      adminBackendMetaEl.textContent = canRead
+        ? `${Number(directory.activeSessionCount) || 0} session(s) | ${Number(directory.activeChannelCount) || 0} active channel(s)`
+        : 'Unavailable';
+    }
+    if (adminBackendCopyEl) {
+      adminBackendCopyEl.textContent = canRead
+        ? `${viewer.displayName || viewer.userId || viewer.sessionId || 'Operator'} can read backend-authored admin facts${observedAt ? ` | observed ${observedAt}` : ''}`
+        : String(backendAdmin?.errorMessage || 'This session does not currently have permission to read backend admin facts.');
+    }
+    if (!adminBackendFactsEl) return;
+    adminBackendFactsEl.innerHTML = '';
+    const facts = canRead
+      ? [
+          `${Number(directory.channelCount) || 0} channel(s) | ${Number(directory.protectedChannelCount) || 0} protected | ${Number(directory.openChannelCount) || 0} open`,
+          `${Number(directory.activeMemberCount) || 0} joined member(s) | ${Number(directory.onlineMemberCount) || 0} online | ${Number(directory.readyEndpointCount) || 0} ready endpoint(s)`,
+          `${Number(directory.joinedSlotCount) || 0} joined slot(s) | ${Number(directory.activeOperatorSessionCount) || 0} operator session(s) | ${Number(directory.activeMemberSessionCount) || 0} member session(s)`,
+          `Permissions | channels ${permissions.canManageChannels ? 'yes' : 'no'} | passcodes ${permissions.canManagePasscodes ? 'yes' : 'no'}`
+        ]
+      : [
+          String(backendAdmin?.errorMessage || 'Backend admin summary has not been granted to this session.')
+        ];
+    for (const fact of facts) {
+      const item = document.createElement('li');
+      item.className = 'managed-list-item';
+      item.textContent = fact;
+      adminBackendFactsEl.appendChild(item);
+    }
   }
 
   function renderChannels(nextSnapshot) {
@@ -464,6 +522,7 @@
     if (adminTransportMetaEl) {
       adminTransportMetaEl.textContent = snapshot?.stats?.hostStatusSummary || 'Host bridge and transport status are not available yet.';
     }
+    renderBackendAdmin(snapshot);
     renderChannels(snapshot);
     renderSlots(snapshot);
     renderEndpoints(snapshot);

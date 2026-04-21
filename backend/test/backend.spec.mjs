@@ -36,6 +36,16 @@ async function openSession(displayName, options = {}) {
   return payload;
 }
 
+async function requestAdminChannel(action, body) {
+  return requestJson(`/api/admin/channels/${action}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+}
+
 describe("1492 backend core managed API", () => {
   it("opens a session and lists the seeded channels", async () => {
     const opened = await openSession("Scot");
@@ -82,6 +92,286 @@ describe("1492 backend core managed API", () => {
     expect(payload.identity.sessionId).toBe(opened.identity.sessionId);
     expect(payload.identity.displayName).toBe("Scot Two");
   });
+
+  it("assigns operator access to the first active session and gates admin summaries", async () => {
+    await sleep(3200);
+
+    const operator = await openSession("Operator One", {
+      requestedUserId: "usr_operator_one"
+    });
+    const member = await openSession("Member One", {
+      requestedUserId: "usr_member_one"
+    });
+
+    expect(operator.identity.role).toBe("operator");
+    expect(member.identity.role).toBe("member");
+
+    const summary = await requestJson(
+      `/api/admin/summary?sessionId=${encodeURIComponent(operator.identity.sessionId)}`
+    );
+    expect(summary.response.status).toBe(200);
+    expect(summary.payload.viewer).toMatchObject({
+      sessionId: operator.identity.sessionId,
+      userId: "usr_operator_one",
+      role: "operator"
+    });
+    expect(summary.payload.permissions).toMatchObject({
+      canReadAdminSummary: true,
+      canManageChannels: true,
+      canManagePasscodes: true
+    });
+
+    const denied = await requestJson(
+      `/api/admin/summary?sessionId=${encodeURIComponent(member.identity.sessionId)}`
+    );
+    expect(denied.response.status).toBe(403);
+    expect(denied.payload.code).toBe("managed_admin_forbidden");
+  });
+
+  it("lets an operator create, update, and delete a managed channel while members are forbidden", async () => {
+    await sleep(3200);
+
+    const operator = await openSession("Directory Operator", {
+      requestedUserId: "usr_directory_operator"
+    });
+    const member = await openSession("Directory Member", {
+      requestedUserId: "usr_directory_member"
+    });
+
+    const forbiddenCreate = await requestAdminChannel("create", {
+      sessionId: member.identity.sessionId,
+      channelId: "chn_member_forbidden",
+      name: "Forbidden",
+      description: "Should not work",
+      note: "",
+      securityMode: "open",
+      concurrentAccessAllowed: true
+    });
+    expect(forbiddenCreate.response.status).toBe(403);
+    expect(forbiddenCreate.payload.code).toBe("managed_admin_forbidden");
+
+    const created = await requestAdminChannel("create", {
+      sessionId: operator.identity.sessionId,
+      channelId: "chn_ops_create",
+      name: "Ops Create",
+      description: "Created by operator",
+      note: "Initial note",
+      securityMode: "open",
+      concurrentAccessAllowed: false
+    });
+    expect(created.response.status).toBe(201);
+    expect(created.payload.channel).toMatchObject({
+      channelId: "chn_ops_create",
+      name: "Ops Create",
+      description: "Created by operator",
+      note: "Initial note",
+      securityMode: "open",
+      requiresPasscode: false,
+      concurrentAccessAllowed: false
+    });
+
+    const updated = await requestAdminChannel("update", {
+      sessionId: operator.identity.sessionId,
+      channelId: "chn_ops_create",
+      name: "Ops Updated",
+      description: "Updated by operator",
+      note: "Updated note",
+      securityMode: "open",
+      concurrentAccessAllowed: true
+    });
+    expect(updated.response.status).toBe(200);
+    expect(updated.payload.channel).toMatchObject({
+      channelId: "chn_ops_create",
+      name: "Ops Updated",
+      description: "Updated by operator",
+      note: "Updated note",
+      securityMode: "open",
+      requiresPasscode: false,
+      concurrentAccessAllowed: true
+    });
+
+    const listed = await requestJson(
+      `/api/channels?sessionId=${encodeURIComponent(operator.identity.sessionId)}`
+    );
+    expect(listed.response.status).toBe(200);
+    expect(listed.payload.channels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          channelId: "chn_ops_create",
+          name: "Ops Updated"
+        })
+      ])
+    );
+
+    const deleted = await requestAdminChannel("delete", {
+      sessionId: operator.identity.sessionId,
+      channelId: "chn_ops_create"
+    });
+    expect(deleted.response.status).toBe(200);
+    expect(deleted.payload).toMatchObject({
+      deleted: true,
+      channelId: "chn_ops_create"
+    });
+  }, 15000);
+
+  it("creates protected channels without exposing plaintext storage and enforces their passcodes on join", async () => {
+    await sleep(3200);
+
+    const operator = await openSession("Protected Operator", {
+      requestedUserId: "usr_protected_operator"
+    });
+
+    const created = await requestAdminChannel("create", {
+      sessionId: operator.identity.sessionId,
+      channelId: "chn_protected_ops",
+      name: "Protected Ops",
+      description: "Protected operator-managed channel",
+      note: "hashed secret",
+      securityMode: "passcode",
+      passcode: "ops-secret",
+      concurrentAccessAllowed: true
+    });
+    expect(created.response.status).toBe(201);
+    expect(created.payload.channel).toMatchObject({
+      channelId: "chn_protected_ops",
+      securityMode: "passcode",
+      requiresPasscode: true
+    });
+    expect(created.payload.channel).not.toHaveProperty("passcode");
+
+    const listed = await requestJson(
+      `/api/channels?sessionId=${encodeURIComponent(operator.identity.sessionId)}`
+    );
+    expect(listed.response.status).toBe(200);
+    const protectedChannel = listed.payload.channels.find((channel) => channel.channelId === "chn_protected_ops");
+    expect(protectedChannel).toMatchObject({
+      channelId: "chn_protected_ops",
+      requiresPasscode: true,
+      securityMode: "passcode"
+    });
+    expect(protectedChannel).not.toHaveProperty("passcode");
+
+    const missing = await requestJson("/api/channels/chn_protected_ops/join", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: operator.identity.sessionId,
+        slotId: "A",
+        passcode: null
+      })
+    });
+    expect(missing.response.status).toBe(403);
+    expect(missing.payload.code).toBe("managed_passcode_required");
+
+    const wrong = await requestJson("/api/channels/chn_protected_ops/join", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: operator.identity.sessionId,
+        slotId: "A",
+        passcode: "wrong-secret"
+      })
+    });
+    expect(wrong.response.status).toBe(403);
+    expect(wrong.payload.code).toBe("managed_passcode_invalid");
+
+    const joined = await requestJson("/api/channels/chn_protected_ops/join", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: operator.identity.sessionId,
+        slotId: "A",
+        passcode: "ops-secret"
+      })
+    });
+    expect(joined.response.status).toBe(200);
+    expect(joined.payload.membership).toMatchObject({
+      channelId: "chn_protected_ops",
+      membershipState: "joined"
+    });
+
+    const left = await requestJson("/api/channels/chn_protected_ops/leave", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: operator.identity.sessionId,
+        slotId: "A"
+      })
+    });
+    expect(left.response.status).toBe(200);
+
+    const deleted = await requestAdminChannel("delete", {
+      sessionId: operator.identity.sessionId,
+      channelId: "chn_protected_ops"
+    });
+    expect(deleted.response.status).toBe(200);
+  }, 15000);
+
+  it("refuses to delete channels that still have active members", async () => {
+    await sleep(3200);
+
+    const operator = await openSession("Delete Guard Operator", {
+      requestedUserId: "usr_delete_guard_operator"
+    });
+
+    const created = await requestAdminChannel("create", {
+      sessionId: operator.identity.sessionId,
+      channelId: "chn_delete_guard",
+      name: "Delete Guard",
+      description: "Delete guard test",
+      note: "",
+      securityMode: "open",
+      concurrentAccessAllowed: true
+    });
+    expect(created.response.status).toBe(201);
+
+    const joined = await requestJson("/api/channels/chn_delete_guard/join", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: operator.identity.sessionId,
+        slotId: "A",
+        passcode: null
+      })
+    });
+    expect(joined.response.status).toBe(200);
+
+    const deniedDelete = await requestAdminChannel("delete", {
+      sessionId: operator.identity.sessionId,
+      channelId: "chn_delete_guard"
+    });
+    expect(deniedDelete.response.status).toBe(409);
+    expect(deniedDelete.payload.code).toBe("managed_channel_delete_active");
+
+    const left = await requestJson("/api/channels/chn_delete_guard/leave", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: operator.identity.sessionId,
+        slotId: "A"
+      })
+    });
+    expect(left.response.status).toBe(200);
+
+    const deleted = await requestAdminChannel("delete", {
+      sessionId: operator.identity.sessionId,
+      channelId: "chn_delete_guard"
+    });
+    expect(deleted.response.status).toBe(200);
+    expect(deleted.payload.deleted).toBe(true);
+  }, 15000);
 
   it("enforces protected-channel passcodes", async () => {
     const opened = await openSession("Scot");
@@ -645,6 +935,131 @@ describe("1492 backend core managed API", () => {
       expect.arrayContaining([
         expect.objectContaining({ channelId: "chn_alpha", memberCount: initialAlphaCount + 1 }),
         expect.objectContaining({ channelId: "chn_bravo", memberCount: initialBravoCount })
+      ])
+    );
+  });
+
+  it("reports backend-authored admin summary facts for live sessions, memberships, and endpoints", async () => {
+    await sleep(3200);
+
+    const operator = await openSession("Summary Operator", {
+      requestedUserId: "usr_summary_operator"
+    });
+    const member = await openSession("Summary Member", {
+      requestedUserId: "usr_summary_member"
+    });
+
+    const operatorJoin = await requestJson("/api/channels/chn_alpha/join", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: operator.identity.sessionId,
+        slotId: "A",
+        passcode: null
+      })
+    });
+    expect(operatorJoin.response.status).toBe(200);
+
+    const memberJoin = await requestJson("/api/channels/chn_alpha/join", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: member.identity.sessionId,
+        slotId: "B",
+        passcode: null
+      })
+    });
+    expect(memberJoin.response.status).toBe(200);
+
+    const memberPresence = await requestJson("/api/channels/chn_alpha/presence", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: member.identity.sessionId,
+        slotId: "B",
+        onlineState: "online",
+        endpoints: [
+          {
+            kind: "public",
+            ip: "198.51.100.50",
+            port: 1492
+          }
+        ]
+      })
+    });
+    expect(memberPresence.response.status).toBe(200);
+
+    const summary = await requestJson(
+      `/api/admin/summary?sessionId=${encodeURIComponent(operator.identity.sessionId)}`
+    );
+    expect(summary.response.status).toBe(200);
+    expect(summary.payload.directory).toMatchObject({
+      channelCount: 2,
+      protectedChannelCount: 1,
+      openChannelCount: 1,
+      activeSessionCount: 2,
+      activeOperatorSessionCount: 1,
+      activeMemberSessionCount: 1,
+      joinedSlotCount: 2,
+      activeChannelCount: 1,
+      activeMemberCount: 2,
+      onlineMemberCount: 1,
+      readyEndpointCount: 1
+    });
+    expect(summary.payload.channels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          channelId: "chn_alpha",
+          memberCount: 2,
+          onlineMemberCount: 1,
+          readyEndpointCount: 1
+        }),
+        expect.objectContaining({
+          channelId: "chn_bravo",
+          memberCount: 0,
+          onlineMemberCount: 0,
+          readyEndpointCount: 0
+        })
+      ])
+    );
+
+    const memberLeave = await requestJson("/api/channels/chn_alpha/leave", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        sessionId: member.identity.sessionId,
+        slotId: "B"
+      })
+    });
+    expect(memberLeave.response.status).toBe(200);
+
+    const afterLeave = await requestJson(
+      `/api/admin/summary?sessionId=${encodeURIComponent(operator.identity.sessionId)}`
+    );
+    expect(afterLeave.response.status).toBe(200);
+    expect(afterLeave.payload.directory).toMatchObject({
+      joinedSlotCount: 1,
+      activeChannelCount: 1,
+      activeMemberCount: 1,
+      onlineMemberCount: 0,
+      readyEndpointCount: 0
+    });
+    expect(afterLeave.payload.channels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          channelId: "chn_alpha",
+          memberCount: 1,
+          onlineMemberCount: 0,
+          readyEndpointCount: 0
+        })
       ])
     );
   });

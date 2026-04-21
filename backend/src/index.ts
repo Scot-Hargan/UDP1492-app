@@ -17,6 +17,8 @@ interface JsonObject {
   [key: string]: JsonValue;
 }
 
+type SessionRole = "operator" | "member";
+
 export interface Env {
   CHANNEL_DO: DurableObjectNamespace<ChannelDOManagedV2>;
   DIRECTORY_DO: DurableObjectNamespace<DirectoryDOManagedV2>;
@@ -30,6 +32,7 @@ interface SessionRecord {
   userId: string;
   displayName: string;
   expiresAt: string;
+  role: SessionRole;
 }
 
 interface SlotMembershipRecord {
@@ -46,6 +49,12 @@ interface ChannelConfig {
   securityMode: "open" | "passcode";
   requiresPasscode: boolean;
   concurrentAccessAllowed: boolean;
+}
+
+interface StoredChannelConfig extends ChannelConfig {
+  passcodeHash: string;
+  passcodeSalt: string;
+  hasPasscodeSecret: boolean;
   passcode?: string;
 }
 
@@ -68,7 +77,29 @@ interface PresenceRegistration {
   lastValidatedAt: string;
 }
 
-const DEFAULT_CHANNELS: ChannelConfig[] = [
+interface SessionPermissions {
+  canReadAdminSummary: boolean;
+  canManageChannels: boolean;
+  canManagePasscodes: boolean;
+}
+
+interface ChannelAdminSummary {
+  memberCount: number;
+  onlineMemberCount: number;
+  readyEndpointCount: number;
+  lastPresenceAt: string;
+}
+
+interface PasscodeSecret {
+  passcodeHash: string;
+  passcodeSalt: string;
+}
+
+interface SeedChannelConfig extends ChannelConfig {
+  passcode?: string;
+}
+
+const DEFAULT_CHANNELS: SeedChannelConfig[] = [
   {
     channelId: "chn_alpha",
     name: "Alpha",
@@ -108,8 +139,32 @@ function positiveIntegerOrNull(value: unknown): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function booleanFromUnknown(value: unknown, fallback = false): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "1" || normalized === "yes") return true;
+    if (normalized === "false" || normalized === "0" || normalized === "no") return false;
+  }
+  return fallback;
+}
+
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function normalizeSessionRole(value: unknown): SessionRole {
+  return value === "operator" ? "operator" : "member";
+}
+
+function buildPermissionsForRole(role: SessionRole): SessionPermissions {
+  const canManage = role === "operator";
+  return {
+    canReadAdminSummary: canManage,
+    canManageChannels: canManage,
+    canManagePasscodes: canManage
+  };
 }
 
 function addMs(iso: string, ms: number): string {
@@ -151,6 +206,106 @@ function buildUserId(): string {
 function buildEndpointId(slotId: string, kind: string, ip: string, port: number): string {
   const sanitizedIp = ip.replace(/[^a-zA-Z0-9]/g, "_");
   return `end_${slotId}_${kind}_${sanitizedIp}_${port}`;
+}
+
+function buildChannelId(): string {
+  return `chn_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+}
+
+function sanitizeChannelId(value: unknown): string {
+  const channelId = stringOrEmpty(value).trim().toLowerCase();
+  if (!channelId) return "";
+  if (!/^chn_[a-z0-9_]{3,48}$/.test(channelId)) {
+    throw new HttpError("Channel identifiers must start with chn_ and use lowercase letters, numbers, or underscores.", {
+      status: 400,
+      code: "managed_channel_id_invalid"
+    });
+  }
+  return channelId;
+}
+
+function sanitizeChannelName(value: unknown): string {
+  const name = stringOrEmpty(value).trim();
+  if (!name) {
+    throw new HttpError("Channel name is required.", {
+      status: 400,
+      code: "managed_channel_name_required"
+    });
+  }
+  if (name.length > 80) {
+    throw new HttpError("Channel name must be 80 characters or fewer.", {
+      status: 400,
+      code: "managed_channel_name_invalid"
+    });
+  }
+  return name;
+}
+
+function sanitizeShortTextField(value: unknown, field: "description" | "note", maxLength: number): string {
+  const text = stringOrEmpty(value).trim();
+  if (text.length > maxLength) {
+    throw new HttpError(`Channel ${field} must be ${maxLength} characters or fewer.`, {
+      status: 400,
+      code: `managed_channel_${field}_invalid`
+    });
+  }
+  return text;
+}
+
+function sanitizeSecurityMode(value: unknown): "open" | "passcode" {
+  return stringOrEmpty(value).trim().toLowerCase() === "passcode" ? "passcode" : "open";
+}
+
+function sanitizePasscodeInput(value: unknown): string {
+  const passcode = stringOrEmpty(value).trim();
+  if (!passcode) return "";
+  if (passcode.length < 4 || passcode.length > 128) {
+    throw new HttpError("Protected channel passcodes must be between 4 and 128 characters.", {
+      status: 400,
+      code: "managed_passcode_invalid"
+    });
+  }
+  return passcode;
+}
+
+function toHex(bytes: ArrayBuffer): string {
+  return Array.from(new Uint8Array(bytes))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function buildPasscodeMaterial(passcode: string, salt: string): Uint8Array {
+  return new TextEncoder().encode(`${salt}:${passcode}`);
+}
+
+async function hashPasscode(passcode: string, salt: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", buildPasscodeMaterial(passcode, salt));
+  return toHex(digest);
+}
+
+async function createPasscodeSecret(passcode: string): Promise<PasscodeSecret> {
+  const saltBytes = new Uint8Array(16);
+  crypto.getRandomValues(saltBytes);
+  const passcodeSalt = toHex(saltBytes.buffer);
+  return {
+    passcodeSalt,
+    passcodeHash: await hashPasscode(passcode, passcodeSalt)
+  };
+}
+
+function secureEqual(left: string, right: string): boolean {
+  if (left.length !== right.length) return false;
+  let mismatch = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    mismatch |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return mismatch === 0;
+}
+
+async function verifyPasscodeSecret(passcode: string, channel: StoredChannelConfig): Promise<boolean> {
+  if (!channel.hasPasscodeSecret || !channel.passcodeHash || !channel.passcodeSalt) return false;
+  const candidateHash = await hashPasscode(passcode, channel.passcodeSalt);
+  return secureEqual(candidateHash, channel.passcodeHash);
 }
 
 function parseJsonText(text: string): unknown {
@@ -281,7 +436,7 @@ export class DirectoryDOManagedV2 extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
-      this.initializeSchema();
+      await this.initializeSchema();
     });
   }
 
@@ -293,7 +448,7 @@ export class DirectoryDOManagedV2 extends DurableObject<Env> {
     return getSessionTtlMs(this.env);
   }
 
-  initializeSchema(): void {
+  async initializeSchema(): Promise<void> {
     this.ctx.storage.sql.exec(`
       CREATE TABLE IF NOT EXISTS channels (
         channel_id TEXT PRIMARY KEY,
@@ -303,7 +458,14 @@ export class DirectoryDOManagedV2 extends DurableObject<Env> {
         security_mode TEXT NOT NULL DEFAULT 'open',
         requires_passcode INTEGER NOT NULL DEFAULT 0,
         concurrent_access_allowed INTEGER NOT NULL DEFAULT 1,
+        passcode_hash TEXT NOT NULL DEFAULT '',
+        passcode_salt TEXT NOT NULL DEFAULT '',
         passcode TEXT NOT NULL DEFAULT ''
+      );
+
+      CREATE TABLE IF NOT EXISTS directory_state (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS sessions (
@@ -312,6 +474,7 @@ export class DirectoryDOManagedV2 extends DurableObject<Env> {
         display_name TEXT NOT NULL,
         client_version TEXT NOT NULL DEFAULT '',
         mode TEXT NOT NULL DEFAULT 'managed',
+        role TEXT NOT NULL DEFAULT 'member',
         created_at TEXT NOT NULL,
         expires_at TEXT NOT NULL,
         last_seen_at TEXT NOT NULL
@@ -326,7 +489,31 @@ export class DirectoryDOManagedV2 extends DurableObject<Env> {
       );
     `);
 
+    if (!this.hasTableColumn("sessions", "role")) {
+      this.ctx.storage.sql.exec(
+        `ALTER TABLE sessions
+         ADD COLUMN role TEXT NOT NULL DEFAULT 'member'`
+      );
+    }
+
+    if (!this.hasTableColumn("channels", "passcode_hash")) {
+      this.ctx.storage.sql.exec(
+        `ALTER TABLE channels
+         ADD COLUMN passcode_hash TEXT NOT NULL DEFAULT ''`
+      );
+    }
+
+    if (!this.hasTableColumn("channels", "passcode_salt")) {
+      this.ctx.storage.sql.exec(
+        `ALTER TABLE channels
+         ADD COLUMN passcode_salt TEXT NOT NULL DEFAULT ''`
+      );
+    }
+
     for (const channel of DEFAULT_CHANNELS) {
+      const secret = channel.requiresPasscode && channel.passcode
+        ? await createPasscodeSecret(channel.passcode)
+        : { passcodeHash: "", passcodeSalt: "" };
       this.ctx.storage.sql.exec(
         `INSERT OR IGNORE INTO channels (
           channel_id,
@@ -336,8 +523,10 @@ export class DirectoryDOManagedV2 extends DurableObject<Env> {
           security_mode,
           requires_passcode,
           concurrent_access_allowed,
+          passcode_hash,
+          passcode_salt,
           passcode
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         channel.channelId,
         channel.name,
         channel.description,
@@ -345,9 +534,43 @@ export class DirectoryDOManagedV2 extends DurableObject<Env> {
         channel.securityMode,
         channel.requiresPasscode ? 1 : 0,
         channel.concurrentAccessAllowed ? 1 : 0,
-        channel.passcode || ""
+        secret.passcodeHash,
+        secret.passcodeSalt,
+        ""
       );
     }
+
+    await this.backfillLegacyPasscodes();
+  }
+
+  hasTableColumn(tableName: string, columnName: string): boolean {
+    const rows = this.ctx.storage.sql
+      .exec<{ name: string }>(`PRAGMA table_info(${tableName})`)
+      .toArray();
+    return rows.some((row) => row.name === columnName);
+  }
+
+  getDirectoryStateValue(key: string): string {
+    const rows = this.ctx.storage.sql
+      .exec<{ value: string }>(
+        `SELECT value
+         FROM directory_state
+         WHERE key = ?`,
+        key
+      )
+      .toArray();
+    return rows[0]?.value || "";
+  }
+
+  setDirectoryStateValue(key: string, value: string): void {
+    this.ctx.storage.sql.exec(
+      `INSERT INTO directory_state (key, value)
+       VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET
+         value = excluded.value`,
+      key,
+      value
+    );
   }
 
   cleanupExpiredSessions(now = nowIso()): void {
@@ -371,8 +594,9 @@ export class DirectoryDOManagedV2 extends DurableObject<Env> {
         user_id: string;
         display_name: string;
         expires_at: string;
+        role: string;
       }>(
-        `SELECT session_id, user_id, display_name, expires_at
+        `SELECT session_id, user_id, display_name, expires_at, role
          FROM sessions
          WHERE session_id = ?`,
         sessionId
@@ -384,11 +608,51 @@ export class DirectoryDOManagedV2 extends DurableObject<Env> {
       sessionId: row.session_id,
       userId: row.user_id,
       displayName: row.display_name,
-      expiresAt: row.expires_at
+      expiresAt: row.expires_at,
+      role: normalizeSessionRole(row.role)
     };
   }
 
-  getChannelRow(channelId: string): ChannelConfig | null {
+  async backfillLegacyPasscodes(): Promise<void> {
+    const rows = this.ctx.storage.sql
+      .exec<{
+        channel_id: string;
+        passcode: string;
+        passcode_hash: string;
+        passcode_salt: string;
+        requires_passcode: number;
+      }>(
+        `SELECT channel_id, passcode, passcode_hash, passcode_salt, requires_passcode
+         FROM channels`
+      )
+      .toArray();
+    for (const row of rows) {
+      const legacyPasscode = stringOrEmpty(row.passcode);
+      const hasHash = !!stringOrEmpty(row.passcode_hash) && !!stringOrEmpty(row.passcode_salt);
+      if (!row.requires_passcode || !legacyPasscode || hasHash) {
+        if (legacyPasscode && hasHash) {
+          this.ctx.storage.sql.exec(
+            `UPDATE channels
+             SET passcode = ''
+             WHERE channel_id = ?`,
+            row.channel_id
+          );
+        }
+        continue;
+      }
+      const secret = await createPasscodeSecret(legacyPasscode);
+      this.ctx.storage.sql.exec(
+        `UPDATE channels
+         SET passcode_hash = ?, passcode_salt = ?, passcode = ''
+         WHERE channel_id = ?`,
+        secret.passcodeHash,
+        secret.passcodeSalt,
+        row.channel_id
+      );
+    }
+  }
+
+  getChannelRow(channelId: string): StoredChannelConfig | null {
     const rows = this.ctx.storage.sql
       .exec<{
         channel_id: string;
@@ -398,9 +662,11 @@ export class DirectoryDOManagedV2 extends DurableObject<Env> {
         security_mode: string;
         requires_passcode: number;
         concurrent_access_allowed: number;
+        passcode_hash: string;
+        passcode_salt: string;
         passcode: string;
       }>(
-        `SELECT channel_id, name, description, note, security_mode, requires_passcode, concurrent_access_allowed, passcode
+        `SELECT channel_id, name, description, note, security_mode, requires_passcode, concurrent_access_allowed, passcode_hash, passcode_salt, passcode
          FROM channels
          WHERE channel_id = ?`,
         channelId
@@ -416,11 +682,14 @@ export class DirectoryDOManagedV2 extends DurableObject<Env> {
       securityMode: row.security_mode === "passcode" ? "passcode" : "open",
       requiresPasscode: !!row.requires_passcode,
       concurrentAccessAllowed: !!row.concurrent_access_allowed,
+      passcodeHash: row.passcode_hash || "",
+      passcodeSalt: row.passcode_salt || "",
+      hasPasscodeSecret: !!row.passcode_hash && !!row.passcode_salt,
       passcode: row.passcode || undefined
     };
   }
 
-  listChannelRows(): ChannelConfig[] {
+  listChannelRows(): StoredChannelConfig[] {
     const rows = this.ctx.storage.sql
       .exec<{
         channel_id: string;
@@ -430,9 +699,11 @@ export class DirectoryDOManagedV2 extends DurableObject<Env> {
         security_mode: string;
         requires_passcode: number;
         concurrent_access_allowed: number;
+        passcode_hash: string;
+        passcode_salt: string;
         passcode: string;
       }>(
-        `SELECT channel_id, name, description, note, security_mode, requires_passcode, concurrent_access_allowed, passcode
+        `SELECT channel_id, name, description, note, security_mode, requires_passcode, concurrent_access_allowed, passcode_hash, passcode_salt, passcode
          FROM channels
          ORDER BY name ASC`
       )
@@ -445,8 +716,42 @@ export class DirectoryDOManagedV2 extends DurableObject<Env> {
       securityMode: row.security_mode === "passcode" ? "passcode" : "open",
       requiresPasscode: !!row.requires_passcode,
       concurrentAccessAllowed: !!row.concurrent_access_allowed,
+      passcodeHash: row.passcode_hash || "",
+      passcodeSalt: row.passcode_salt || "",
+      hasPasscodeSecret: !!row.passcode_hash && !!row.passcode_salt,
       passcode: row.passcode || undefined
     }));
+  }
+
+  hasActiveSessionForUserId(userId: string, now = nowIso()): boolean {
+    if (!userId) return false;
+    const rows = this.ctx.storage.sql
+      .exec<{ count: number }>(
+        `SELECT COUNT(*) AS count
+         FROM sessions
+         WHERE user_id = ?
+           AND expires_at >= ?`,
+        userId,
+        now
+      )
+      .toArray();
+    return Number(rows[0]?.count) > 0;
+  }
+
+  resolveSessionRole(userId: string, now = nowIso()): SessionRole {
+    const operatorUserId = this.getDirectoryStateValue("operator_user_id");
+    if (!operatorUserId) {
+      this.setDirectoryStateValue("operator_user_id", userId);
+      return "operator";
+    }
+    if (operatorUserId === userId) {
+      return "operator";
+    }
+    if (!this.hasActiveSessionForUserId(operatorUserId, now)) {
+      this.setDirectoryStateValue("operator_user_id", userId);
+      return "operator";
+    }
+    return "member";
   }
 
   validateSession(sessionId: string): SessionRecord {
@@ -478,6 +783,147 @@ export class DirectoryDOManagedV2 extends DurableObject<Env> {
       ...session,
       expiresAt: nextExpiresAt
     };
+  }
+
+  requireOperatorSession(sessionId: string): SessionRecord {
+    const session = this.validateSession(sessionId);
+    if (session.role !== "operator") {
+      throw new HttpError("This managed session does not have permission to perform admin operations.", {
+        status: 403,
+        code: "managed_admin_forbidden",
+        details: {
+          requiredRole: "operator",
+          actualRole: session.role
+        }
+      });
+    }
+    return session;
+  }
+
+  getChannelCount(): number {
+    const rows = this.ctx.storage.sql
+      .exec<{ count: number }>(
+        `SELECT COUNT(*) AS count
+         FROM channels`
+      )
+      .toArray();
+    return Number(rows[0]?.count) || 0;
+  }
+
+  async getChannelMemberCount(channelId: string): Promise<number> {
+    const id = this.env.CHANNEL_DO.idFromName(channelId);
+    const stub = this.env.CHANNEL_DO.get(id);
+    try {
+      const result = await fetchStubJson<ChannelCountResponse>(
+        stub,
+        "https://channel/internal/member-count"
+      );
+      return Number(result.memberCount) || 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  parseAdminChannelInput(body: Record<string, unknown>, existingChannel?: StoredChannelConfig | null): {
+    channelId: string;
+    name: string;
+    description: string;
+    note: string;
+    securityMode: "open" | "passcode";
+    requiresPasscode: boolean;
+    concurrentAccessAllowed: boolean;
+    passcode: string;
+  } {
+    const channelId = sanitizeChannelId(body.channelId) || existingChannel?.channelId || buildChannelId();
+    const securityMode = sanitizeSecurityMode(body.securityMode ?? existingChannel?.securityMode);
+    const requiresPasscode = securityMode === "passcode";
+    const passcode = sanitizePasscodeInput(body.passcode);
+    return {
+      channelId,
+      name: sanitizeChannelName(body.name ?? existingChannel?.name),
+      description: sanitizeShortTextField(body.description ?? existingChannel?.description, "description", 280),
+      note: sanitizeShortTextField(body.note ?? existingChannel?.note, "note", 280),
+      securityMode,
+      requiresPasscode,
+      concurrentAccessAllowed: booleanFromUnknown(
+        body.concurrentAccessAllowed,
+        existingChannel?.concurrentAccessAllowed ?? true
+      ),
+      passcode
+    };
+  }
+
+  async upsertChannelRecord(input: {
+    channelId: string;
+    name: string;
+    description: string;
+    note: string;
+    securityMode: "open" | "passcode";
+    requiresPasscode: boolean;
+    concurrentAccessAllowed: boolean;
+    passcode: string;
+  }, existingChannel?: StoredChannelConfig | null): Promise<StoredChannelConfig> {
+    const nextChannel = existingChannel || null;
+    let passcodeHash = nextChannel?.passcodeHash || "";
+    let passcodeSalt = nextChannel?.passcodeSalt || "";
+
+    if (input.requiresPasscode) {
+      if (input.passcode) {
+        const secret = await createPasscodeSecret(input.passcode);
+        passcodeHash = secret.passcodeHash;
+        passcodeSalt = secret.passcodeSalt;
+      } else if (!passcodeHash || !passcodeSalt) {
+        throw new HttpError("Protected channels require a passcode when first created.", {
+          status: 400,
+          code: "managed_passcode_required"
+        });
+      }
+    } else {
+      passcodeHash = "";
+      passcodeSalt = "";
+    }
+
+    this.ctx.storage.sql.exec(
+      `INSERT INTO channels (
+        channel_id,
+        name,
+        description,
+        note,
+        security_mode,
+        requires_passcode,
+        concurrent_access_allowed,
+        passcode_hash,
+        passcode_salt,
+        passcode
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '')
+      ON CONFLICT(channel_id) DO UPDATE SET
+        name = excluded.name,
+        description = excluded.description,
+        note = excluded.note,
+        security_mode = excluded.security_mode,
+        requires_passcode = excluded.requires_passcode,
+        concurrent_access_allowed = excluded.concurrent_access_allowed,
+        passcode_hash = excluded.passcode_hash,
+        passcode_salt = excluded.passcode_salt,
+        passcode = ''`,
+      input.channelId,
+      input.name,
+      input.description,
+      input.note,
+      input.securityMode,
+      input.requiresPasscode ? 1 : 0,
+      input.concurrentAccessAllowed ? 1 : 0,
+      passcodeHash,
+      passcodeSalt
+    );
+    const stored = this.getChannelRow(input.channelId);
+    if (!stored) {
+      throw new HttpError("Managed channel could not be persisted.", {
+        status: 500,
+        code: "managed_channel_persist_failed"
+      });
+    }
+    return stored;
   }
 
   getSlotMembership(sessionId: string, slotId: string): SlotMembershipRecord | null {
@@ -590,12 +1036,14 @@ export class DirectoryDOManagedV2 extends DurableObject<Env> {
           identity: {
             userId: resumed.userId,
             sessionId: resumeSessionId,
-            displayName
+            displayName,
+            role: resumed.role
           },
           session: {
             openedAt: now,
             expiresAt: nextExpiresAt,
-            heartbeatIntervalMs: this.getHeartbeatIntervalMs()
+            heartbeatIntervalMs: this.getHeartbeatIntervalMs(),
+            permissions: buildPermissionsForRole(resumed.role)
           }
         });
       }
@@ -603,6 +1051,7 @@ export class DirectoryDOManagedV2 extends DurableObject<Env> {
 
     const sessionId = buildSessionId();
     const userId = requestedUserId || buildUserId();
+    const role = this.resolveSessionRole(userId, now);
     this.ctx.storage.sql.exec(
       `INSERT INTO sessions (
         session_id,
@@ -610,15 +1059,17 @@ export class DirectoryDOManagedV2 extends DurableObject<Env> {
         display_name,
         client_version,
         mode,
+        role,
         created_at,
         expires_at,
         last_seen_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       sessionId,
       userId,
       displayName,
       clientVersion,
       mode,
+      role,
       now,
       nextExpiresAt,
       now
@@ -628,12 +1079,14 @@ export class DirectoryDOManagedV2 extends DurableObject<Env> {
       identity: {
         userId,
         sessionId,
-        displayName
+        displayName,
+        role
       },
       session: {
         openedAt: now,
         expiresAt: nextExpiresAt,
-        heartbeatIntervalMs: this.getHeartbeatIntervalMs()
+        heartbeatIntervalMs: this.getHeartbeatIntervalMs(),
+        permissions: buildPermissionsForRole(role)
       }
     });
   }
@@ -667,7 +1120,198 @@ export class DirectoryDOManagedV2 extends DurableObject<Env> {
     const sessionId = url.searchParams.get("sessionId") || "";
     const session = this.validateSession(sessionId);
     return jsonResponse({
-      session
+      session: {
+        ...session,
+        permissions: buildPermissionsForRole(session.role)
+      }
+    });
+  }
+
+  async handleGetAdminSummary(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const sessionId = url.searchParams.get("sessionId") || "";
+    const viewer = this.requireOperatorSession(sessionId);
+    const observedAt = nowIso();
+    this.cleanupExpiredSessions(observedAt);
+
+    const channels = this.listChannelRows();
+    const channelSummaries = await Promise.all(channels.map(async (channel) => {
+      const id = this.env.CHANNEL_DO.idFromName(channel.channelId);
+      const stub = this.env.CHANNEL_DO.get(id);
+      try {
+        const summary = await fetchStubJson<ChannelAdminSummary>(
+          stub,
+          "https://channel/internal/admin-summary"
+        );
+        return {
+          channelId: channel.channelId,
+          memberCount: Number(summary.memberCount) || 0,
+          onlineMemberCount: Number(summary.onlineMemberCount) || 0,
+          readyEndpointCount: Number(summary.readyEndpointCount) || 0,
+          lastPresenceAt: stringOrEmpty(summary.lastPresenceAt)
+        };
+      } catch {
+        return {
+          channelId: channel.channelId,
+          memberCount: 0,
+          onlineMemberCount: 0,
+          readyEndpointCount: 0,
+          lastPresenceAt: ""
+        };
+      }
+    }));
+
+    const sessionStats = this.ctx.storage.sql
+      .exec<{
+        active_session_count: number;
+        active_operator_session_count: number;
+        active_member_session_count: number;
+      }>(
+        `SELECT
+           COUNT(*) AS active_session_count,
+           SUM(CASE WHEN role = 'operator' THEN 1 ELSE 0 END) AS active_operator_session_count,
+           SUM(CASE WHEN role = 'member' THEN 1 ELSE 0 END) AS active_member_session_count
+         FROM sessions
+         WHERE expires_at >= ?`,
+        observedAt
+      )
+      .toArray()[0];
+
+    const membershipStats = this.ctx.storage.sql
+      .exec<{
+        joined_slot_count: number;
+      }>(
+        `SELECT COUNT(*) AS joined_slot_count
+         FROM slot_memberships`
+      )
+      .toArray()[0];
+
+    const summaryByChannelId = new Map(channelSummaries.map((summary) => [summary.channelId, summary]));
+    const activeMemberCount = channelSummaries.reduce((sum, channel) => sum + channel.memberCount, 0);
+    const onlineMemberCount = channelSummaries.reduce((sum, channel) => sum + channel.onlineMemberCount, 0);
+    const readyEndpointCount = channelSummaries.reduce((sum, channel) => sum + channel.readyEndpointCount, 0);
+    const activeChannelCount = channelSummaries.filter((channel) => channel.memberCount > 0).length;
+
+    return jsonResponse({
+      viewer: {
+        sessionId: viewer.sessionId,
+        userId: viewer.userId,
+        displayName: viewer.displayName,
+        role: viewer.role
+      },
+      permissions: buildPermissionsForRole(viewer.role),
+      directory: {
+        channelCount: channels.length,
+        protectedChannelCount: channels.filter((channel) => channel.requiresPasscode).length,
+        openChannelCount: channels.filter((channel) => !channel.requiresPasscode).length,
+        activeSessionCount: Number(sessionStats?.active_session_count) || 0,
+        activeOperatorSessionCount: Number(sessionStats?.active_operator_session_count) || 0,
+        activeMemberSessionCount: Number(sessionStats?.active_member_session_count) || 0,
+        joinedSlotCount: Number(membershipStats?.joined_slot_count) || 0,
+        activeChannelCount,
+        activeMemberCount,
+        onlineMemberCount,
+        readyEndpointCount,
+        sessionTtlMs: this.getSessionTtlMs(),
+        presenceTtlMs: getPresenceTtlMs(this.env),
+        observedAt
+      },
+      channels: channels.map((channel) => {
+        const summary = summaryByChannelId.get(channel.channelId);
+        return {
+          ...normalizeChannelForClient(channel, summary?.memberCount || 0),
+          onlineMemberCount: summary?.onlineMemberCount || 0,
+          readyEndpointCount: summary?.readyEndpointCount || 0,
+          lastPresenceAt: summary?.lastPresenceAt || ""
+        };
+      })
+    });
+  }
+
+  async handleCreateAdminChannel(request: Request): Promise<Response> {
+    const body = await readJsonBody(request);
+    const sessionId = stringOrEmpty(body.sessionId).trim();
+    this.requireOperatorSession(sessionId);
+
+    const parsed = this.parseAdminChannelInput(body, null);
+    if (this.getChannelRow(parsed.channelId)) {
+      throw new HttpError("Managed channel identifier already exists.", {
+        status: 409,
+        code: "managed_channel_conflict"
+      });
+    }
+
+    const stored = await this.upsertChannelRecord(parsed);
+    return jsonResponse({
+      channel: normalizeChannelForClient(stored, await this.getChannelMemberCount(stored.channelId))
+    }, 201);
+  }
+
+  async handleUpdateAdminChannel(request: Request): Promise<Response> {
+    const body = await readJsonBody(request);
+    const sessionId = stringOrEmpty(body.sessionId).trim();
+    const channelId = sanitizeChannelId(body.channelId);
+    this.requireOperatorSession(sessionId);
+    const existing = this.getChannelRow(channelId);
+    if (!existing) {
+      throw new HttpError("Managed channel was not found.", {
+        status: 404,
+        code: "managed_channel_not_found"
+      });
+    }
+
+    const parsed = this.parseAdminChannelInput(body, existing);
+    if (parsed.channelId !== existing.channelId) {
+      throw new HttpError("Managed channel identifiers cannot be changed after creation.", {
+        status: 400,
+        code: "managed_channel_id_immutable"
+      });
+    }
+
+    const stored = await this.upsertChannelRecord(parsed, existing);
+    return jsonResponse({
+      channel: normalizeChannelForClient(stored, await this.getChannelMemberCount(stored.channelId))
+    });
+  }
+
+  async handleDeleteAdminChannel(request: Request): Promise<Response> {
+    const body = await readJsonBody(request);
+    const sessionId = stringOrEmpty(body.sessionId).trim();
+    const channelId = sanitizeChannelId(body.channelId);
+    this.requireOperatorSession(sessionId);
+    const existing = this.getChannelRow(channelId);
+    if (!existing) {
+      throw new HttpError("Managed channel was not found.", {
+        status: 404,
+        code: "managed_channel_not_found"
+      });
+    }
+    if (this.getChannelCount() <= 1) {
+      throw new HttpError("At least one managed channel must remain in the directory.", {
+        status: 409,
+        code: "managed_channel_delete_last_forbidden"
+      });
+    }
+    const memberCount = await this.getChannelMemberCount(channelId);
+    if (memberCount > 0) {
+      throw new HttpError("Channels with active members cannot be deleted.", {
+        status: 409,
+        code: "managed_channel_delete_active"
+      });
+    }
+    this.ctx.storage.sql.exec(
+      `DELETE FROM slot_memberships
+       WHERE channel_id = ?`,
+      channelId
+    );
+    this.ctx.storage.sql.exec(
+      `DELETE FROM channels
+       WHERE channel_id = ?`,
+      channelId
+    );
+    return jsonResponse({
+      deleted: true,
+      channelId
     });
   }
 
@@ -752,6 +1396,18 @@ export class DirectoryDOManagedV2 extends DurableObject<Env> {
       }
       if (request.method === "GET" && url.pathname === "/internal/session") {
         return await this.handleGetSession(request);
+      }
+      if (request.method === "GET" && url.pathname === "/internal/admin-summary") {
+        return await this.handleGetAdminSummary(request);
+      }
+      if (request.method === "POST" && url.pathname === "/internal/admin/channels/create") {
+        return await this.handleCreateAdminChannel(request);
+      }
+      if (request.method === "POST" && url.pathname === "/internal/admin/channels/update") {
+        return await this.handleUpdateAdminChannel(request);
+      }
+      if (request.method === "POST" && url.pathname === "/internal/admin/channels/delete") {
+        return await this.handleDeleteAdminChannel(request);
       }
       if (request.method === "GET" && url.pathname === "/internal/channel-config") {
         return await this.handleGetChannelConfig(request);
@@ -919,6 +1575,40 @@ export class ChannelDOManagedV2 extends DurableObject<Env> {
       .toArray();
     return jsonResponse({
       memberCount: Number(rows[0]?.count) || 0
+    });
+  }
+
+  async handleAdminSummary(): Promise<Response> {
+    const now = nowIso();
+    this.cleanupStaleState(now);
+    const cutoff = addMs(now, -this.getPresenceTtlMs());
+    const memberStats = this.ctx.storage.sql
+      .exec<{
+        member_count: number;
+        online_member_count: number;
+        last_presence_at: string | null;
+      }>(
+        `SELECT
+           COUNT(DISTINCT session_id) AS member_count,
+           COUNT(DISTINCT CASE WHEN online_state = 'online' THEN session_id END) AS online_member_count,
+           MAX(last_seen_at) AS last_presence_at
+         FROM memberships
+         WHERE membership_state = 'joined'
+           AND last_seen_at >= ?`,
+        cutoff
+      )
+      .toArray()[0];
+    const endpointStats = this.ctx.storage.sql
+      .exec<{ ready_endpoint_count: number }>(
+        `SELECT COUNT(*) AS ready_endpoint_count
+         FROM endpoints`
+      )
+      .toArray()[0];
+    return jsonResponse({
+      memberCount: Number(memberStats?.member_count) || 0,
+      onlineMemberCount: Number(memberStats?.online_member_count) || 0,
+      readyEndpointCount: Number(endpointStats?.ready_endpoint_count) || 0,
+      lastPresenceAt: memberStats?.last_presence_at || ""
     });
   }
 
@@ -1212,6 +1902,9 @@ export class ChannelDOManagedV2 extends DurableObject<Env> {
       if (request.method === "GET" && url.pathname === "/internal/member-count") {
         return await this.handleMemberCount();
       }
+      if (request.method === "GET" && url.pathname === "/internal/admin-summary") {
+        return await this.handleAdminSummary();
+      }
       if (request.method === "POST" && url.pathname === "/internal/join") {
         return await this.handleJoin(request);
       }
@@ -1263,9 +1956,9 @@ async function requireSession(env: Env, sessionId: string): Promise<SessionRecor
   return response.session;
 }
 
-async function requireChannel(env: Env, channelId: string): Promise<ChannelConfig> {
+async function requireChannel(env: Env, channelId: string): Promise<StoredChannelConfig> {
   const directory = getDirectoryStub(env);
-  const response = await fetchStubJson<{ channel: ChannelConfig }>(
+  const response = await fetchStubJson<{ channel: StoredChannelConfig }>(
     directory,
     `https://directory/internal/channel-config?channelId=${encodeURIComponent(channelId)}`
   );
@@ -1355,6 +2048,49 @@ export default {
         return jsonResponse(payload);
       }
 
+      if (request.method === "GET" && url.pathname === "/api/admin/summary") {
+        const sessionId = url.searchParams.get("sessionId") || "";
+        const directory = getDirectoryStub(env);
+        const payload = await fetchStubJson<JsonObject>(
+          directory,
+          `https://directory/internal/admin-summary?sessionId=${encodeURIComponent(sessionId)}`
+        );
+        return jsonResponse(payload);
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/admin/channels/create") {
+        const directory = getDirectoryStub(env);
+        const body = await request.text();
+        const payload = await fetchStubJson<JsonObject>(directory, "https://directory/internal/admin/channels/create", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body
+        });
+        return jsonResponse(payload, 201);
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/admin/channels/update") {
+        const directory = getDirectoryStub(env);
+        const body = await request.text();
+        const payload = await fetchStubJson<JsonObject>(directory, "https://directory/internal/admin/channels/update", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body
+        });
+        return jsonResponse(payload);
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/admin/channels/delete") {
+        const directory = getDirectoryStub(env);
+        const body = await request.text();
+        const payload = await fetchStubJson<JsonObject>(directory, "https://directory/internal/admin/channels/delete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body
+        });
+        return jsonResponse(payload);
+      }
+
       const channelMatch = url.pathname.match(/^\/api\/channels\/([^/]+)\/(join|presence|peers|leave)$/);
       if (channelMatch) {
         const channelId = decodeURIComponent(channelMatch[1]);
@@ -1368,16 +2104,26 @@ export default {
           const session = await requireSession(env, sessionId);
           const slotId = sanitizeSlotId(body.slotId);
           const providedPasscode = stringOrEmpty(body.passcode).trim();
-          if (channel.requiresPasscode && channel.passcode !== providedPasscode) {
-            throw new HttpError(
-              providedPasscode
-                ? "The supplied passcode is invalid for this channel."
-                : "This channel requires a passcode before you can join it.",
-              {
-                status: 403,
-                code: providedPasscode ? "managed_passcode_invalid" : "managed_passcode_required"
-              }
-            );
+          if (channel.requiresPasscode) {
+            if (!providedPasscode) {
+              throw new HttpError(
+                "This channel requires a passcode before you can join it.",
+                {
+                  status: 403,
+                  code: "managed_passcode_required"
+                }
+              );
+            }
+            const passcodeValid = await verifyPasscodeSecret(providedPasscode, channel);
+            if (!passcodeValid) {
+              throw new HttpError(
+                "The supplied passcode is invalid for this channel.",
+                {
+                  status: 403,
+                  code: "managed_passcode_invalid"
+                }
+              );
+            }
           }
           const previousMembership = await getSlotMembership(env, sessionId, slotId);
           const payload = await fetchStubJson<{ membership: MembershipResponse }>(

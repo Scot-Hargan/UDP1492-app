@@ -163,6 +163,45 @@ async function installManagedApiRoutes(page, options = {}) {
   const openSessionRequests = options.openSessionRequests || [];
   const joinRequests = options.joinRequests || [];
   const presenceRequests = options.presenceRequests || [];
+  const adminSummaryResponse = options.adminSummaryResponse || {
+    viewer: {
+      sessionId: openSessionResponse.identity.sessionId,
+      userId: openSessionResponse.identity.userId,
+      displayName: openSessionResponse.identity.displayName,
+      role: 'operator'
+    },
+    permissions: {
+      canReadAdminSummary: true,
+      canManageChannels: true,
+      canManagePasscodes: true
+    },
+    directory: {
+      channelCount: Array.isArray(channelsResponse.channels) ? channelsResponse.channels.length : 0,
+      protectedChannelCount: Array.isArray(channelsResponse.channels)
+        ? channelsResponse.channels.filter((channel) => channel.requiresPasscode).length
+        : 0,
+      openChannelCount: Array.isArray(channelsResponse.channels)
+        ? channelsResponse.channels.filter((channel) => !channel.requiresPasscode).length
+        : 0,
+      activeSessionCount: 1,
+      activeOperatorSessionCount: 1,
+      activeMemberSessionCount: 0,
+      joinedSlotCount: 1,
+      activeChannelCount: 1,
+      activeMemberCount: 1,
+      onlineMemberCount: 1,
+      readyEndpointCount: 1,
+      sessionTtlMs: 7200000,
+      presenceTtlMs: 45000,
+      observedAt: '2026-04-16T19:25:10Z'
+    },
+    channels: (Array.isArray(channelsResponse.channels) ? channelsResponse.channels : []).map((channel) => ({
+      ...channel,
+      onlineMemberCount: Number(channel.memberCount) ? 1 : 0,
+      readyEndpointCount: Number(channel.memberCount) ? 1 : 0,
+      lastPresenceAt: '2026-04-16T19:25:00Z'
+    }))
+  };
   const jsonHeaders = {
     'content-type': 'application/json',
     'access-control-allow-origin': '*',
@@ -192,6 +231,14 @@ async function installManagedApiRoutes(page, options = {}) {
         status: 200,
         headers: jsonHeaders,
         body: JSON.stringify(channelsResponse)
+      });
+      return;
+    }
+    if (url.pathname === '/api/admin/summary') {
+      await route.fulfill({
+        status: 200,
+        headers: jsonHeaders,
+        body: JSON.stringify(adminSummaryResponse)
       });
       return;
     }

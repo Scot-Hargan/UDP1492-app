@@ -437,6 +437,42 @@ export function createManagedController(deps) {
     const managedProfile = getManagedProfile();
     const managedCache = getManagedCache();
     const targetSlotId = normalizeSlotId(options.slotId || getActiveSlotId());
+    try {
+      managedCache.adminSummary = await api.getAdminSummary(managedSession.sessionId);
+    } catch (error) {
+      managedCache.adminSummary = {
+        available: false,
+        errorMessage: error?.message || 'Backend admin summary is not available for this session.',
+        viewer: {
+          sessionId: managedSession.sessionId || '',
+          userId: managedSession.userId || managedProfile.userId || '',
+          displayName: managedSession.displayName || managedProfile.displayName || '',
+          role: ''
+        },
+        permissions: {
+          canReadAdminSummary: false,
+          canManageChannels: false,
+          canManagePasscodes: false
+        },
+        directory: {
+          channelCount: 0,
+          protectedChannelCount: 0,
+          openChannelCount: 0,
+          activeSessionCount: 0,
+          activeOperatorSessionCount: 0,
+          activeMemberSessionCount: 0,
+          joinedSlotCount: 0,
+          activeChannelCount: 0,
+          activeMemberCount: 0,
+          onlineMemberCount: 0,
+          readyEndpointCount: 0,
+          sessionTtlMs: 0,
+          presenceTtlMs: 0,
+          observedAt: new Date().toISOString()
+        },
+        channels: []
+      };
+    }
     managedCache.channels = Array.isArray(response?.channels) ? response.channels.map((channel) => ({ ...channel })) : [];
     managedCache.lastUpdatedAt = response?.syncedAt || new Date().toISOString();
     if (!deps.getManagedSlotIntent(targetSlotId) && managedCache.channels[0]?.channelId) {

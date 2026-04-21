@@ -489,10 +489,64 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
       lastSessionId: typeof seed.lastSessionId === 'string' ? seed.lastSessionId : ''
     };
   }
+  function createDefaultManagedAdminSummary(seed = {}) {
+    const viewer = seed && typeof seed === 'object' ? seed.viewer || {} : {};
+    const permissions = seed && typeof seed === 'object' ? seed.permissions || {} : {};
+    const directory = seed && typeof seed === 'object' ? seed.directory || {} : {};
+    return {
+      available: !!seed?.available,
+      errorMessage: typeof seed?.errorMessage === 'string' ? seed.errorMessage : '',
+      viewer: {
+        sessionId: typeof viewer.sessionId === 'string' ? viewer.sessionId : '',
+        userId: typeof viewer.userId === 'string' ? viewer.userId : '',
+        displayName: typeof viewer.displayName === 'string' ? viewer.displayName : '',
+        role: typeof viewer.role === 'string' ? viewer.role : ''
+      },
+      permissions: {
+        canReadAdminSummary: !!permissions.canReadAdminSummary,
+        canManageChannels: !!permissions.canManageChannels,
+        canManagePasscodes: !!permissions.canManagePasscodes
+      },
+      directory: {
+        channelCount: Number.isFinite(Number(directory.channelCount)) ? Number(directory.channelCount) : 0,
+        protectedChannelCount: Number.isFinite(Number(directory.protectedChannelCount)) ? Number(directory.protectedChannelCount) : 0,
+        openChannelCount: Number.isFinite(Number(directory.openChannelCount)) ? Number(directory.openChannelCount) : 0,
+        activeSessionCount: Number.isFinite(Number(directory.activeSessionCount)) ? Number(directory.activeSessionCount) : 0,
+        activeOperatorSessionCount: Number.isFinite(Number(directory.activeOperatorSessionCount)) ? Number(directory.activeOperatorSessionCount) : 0,
+        activeMemberSessionCount: Number.isFinite(Number(directory.activeMemberSessionCount)) ? Number(directory.activeMemberSessionCount) : 0,
+        joinedSlotCount: Number.isFinite(Number(directory.joinedSlotCount)) ? Number(directory.joinedSlotCount) : 0,
+        activeChannelCount: Number.isFinite(Number(directory.activeChannelCount)) ? Number(directory.activeChannelCount) : 0,
+        activeMemberCount: Number.isFinite(Number(directory.activeMemberCount)) ? Number(directory.activeMemberCount) : 0,
+        onlineMemberCount: Number.isFinite(Number(directory.onlineMemberCount)) ? Number(directory.onlineMemberCount) : 0,
+        readyEndpointCount: Number.isFinite(Number(directory.readyEndpointCount)) ? Number(directory.readyEndpointCount) : 0,
+        sessionTtlMs: Number.isFinite(Number(directory.sessionTtlMs)) ? Number(directory.sessionTtlMs) : 0,
+        presenceTtlMs: Number.isFinite(Number(directory.presenceTtlMs)) ? Number(directory.presenceTtlMs) : 0,
+        observedAt: typeof directory.observedAt === 'string' ? directory.observedAt : ''
+      },
+      channels: Array.isArray(seed?.channels)
+        ? seed.channels
+            .filter((channel) => channel && typeof channel === 'object')
+            .map((channel) => ({
+              channelId: typeof channel.channelId === 'string' ? channel.channelId : '',
+              name: typeof channel.name === 'string' ? channel.name : '',
+              description: typeof channel.description === 'string' ? channel.description : '',
+              note: typeof channel.note === 'string' ? channel.note : '',
+              securityMode: typeof channel.securityMode === 'string' ? channel.securityMode : 'open',
+              requiresPasscode: !!channel.requiresPasscode,
+              concurrentAccessAllowed: channel.concurrentAccessAllowed !== false,
+              memberCount: Number.isFinite(Number(channel.memberCount)) ? Number(channel.memberCount) : 0,
+              onlineMemberCount: Number.isFinite(Number(channel.onlineMemberCount)) ? Number(channel.onlineMemberCount) : 0,
+              readyEndpointCount: Number.isFinite(Number(channel.readyEndpointCount)) ? Number(channel.readyEndpointCount) : 0,
+              lastPresenceAt: typeof channel.lastPresenceAt === 'string' ? channel.lastPresenceAt : ''
+            }))
+        : []
+    };
+  }
   function createDefaultManagedCache(seed = {}) {
     return {
       version: 1,
       channels: Array.isArray(seed.channels) ? seed.channels.filter((channel) => channel && typeof channel === 'object').map((channel) => ({ ...channel })) : [],
+      adminSummary: createDefaultManagedAdminSummary(seed.adminSummary),
       lastUpdatedAt: typeof seed.lastUpdatedAt === 'string' ? seed.lastUpdatedAt : null
     };
   }
@@ -1863,6 +1917,7 @@ import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from '.
         session: {
           ...structuredClone(getManagedSession())
         },
+        backendAdmin: structuredClone(createDefaultManagedAdminSummary(managedCache.adminSummary)),
         channels: buildAdminChannelSnapshot(),
         slots: buildAdminSlotSnapshot(),
         joinedSlotCount: getManagedJoinedSlotCount(),
