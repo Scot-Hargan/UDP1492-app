@@ -595,3 +595,32 @@ Recommended merge rules:
 - managed observations may add identities and endpoints when they do not destroy manual intent
 - endpoint dedupe should rely on stable reusable facts like `kind + ip + port`
 - direct-success timestamps may enrich usefulness without changing provenance
+
+## Phase 13 Planning Constraints
+
+Phase 13 should build on the now-shipped retained-knowledge layer instead of bypassing it with a backend-owned contact graph.
+
+Current concrete inputs available for Phase 13 are:
+
+- `udp1492_local_knowledge_v1` for retained peer and managed-identity observations
+- explicit direct-mode import of retained managed endpoints
+- admin inspection and bounded local forget controls for retained knowledge
+- managed session, directory, membership, and presence facts already exposed by the Worker
+
+The recommended Phase 13 direction is:
+
+1. keep the friend/contact roster local-first
+2. query the backend only for bounded live presence over explicitly chosen managed user IDs
+3. link friend entries to retained knowledge instead of duplicating endpoint authority
+4. keep actions operator-driven, provenance-visible, and coordination-only
+
+The first backend contract should prefer a bounded friend-presence lookup over:
+
+- `sessionId`
+- an explicit allow-list of `managedUserId` values
+
+The first desktop surface should prefer:
+
+- online/offline and last-seen facts
+- linkage to retained peers and retained endpoints
+- narrow jump paths into managed channels or direct import when those hints exist
