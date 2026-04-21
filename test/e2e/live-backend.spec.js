@@ -37,6 +37,16 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function openAdminWindow(appHarness) {
+  const { page, electronApp } = appHarness;
+  const adminWindowPromise = electronApp.waitForEvent('window');
+  await page.locator('#openAdminWindowBtn').click();
+  const adminPage = await adminWindowPromise;
+  await adminPage.waitForLoadState('domcontentloaded');
+  await expect(adminPage.locator('#adminTitle')).toHaveText('UDP 1492 Admin Surface');
+  return adminPage;
+}
+
 async function openManagedSession(page, displayName = 'Scot') {
   await page.locator('#operatingModeManaged').click();
   await page.locator('#managedDisplayNameInput').fill(displayName);
@@ -143,6 +153,158 @@ test('opens a managed session against the local Worker, joins a seeded channel, 
   await expect(page.locator('#managedActiveChannel')).toHaveText('Group A has no active membership');
 });
 
+test('retains managed peer observations from the real Worker without persisting peer session ids', async ({ appHarness }) => {
+  const { page, readStorage } = appHarness;
+  const managedBackendBaseUrl = 'http://127.0.0.1:8791';
+
+  await openManagedSession(page);
+  await page.getByRole('button', { name: 'Join Selected' }).click();
+  await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+
+  const peerSession = await openPeerSession(managedBackendBaseUrl, 'Retained Peer');
+  await joinPeerChannel(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha');
+  await sendPeerPresence(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha', {
+    kind: 'public',
+    ip: '198.51.100.44',
+    port: 1492
+  });
+
+  await page.locator('#managedRefreshPeersBtn').click();
+  await expect(page.locator('#networkTable tbody')).toContainText('Retained Peer');
+
+  await expect.poll(async () => {
+    const peer = (await readStorage()).udp1492_local_knowledge_v1?.peers?.find((entry) => entry.managedUserId === peerSession.identity.userId);
+    if (!peer) return null;
+    return {
+      displayName: peer.displayName,
+      managedUserId: peer.managedUserId,
+      manualPeerKey: peer.manualPeerKey,
+      sources: peer.sources,
+      endpoint: peer.endpoints?.find((endpoint) => endpoint.ip === '198.51.100.44' && endpoint.port === 1492) || null
+    };
+  }).toEqual({
+    displayName: 'Retained Peer',
+    managedUserId: peerSession.identity.userId,
+    manualPeerKey: '',
+    sources: ['managed'],
+    endpoint: expect.objectContaining({
+      kind: 'public',
+      ip: '198.51.100.44',
+      port: 1492,
+      source: 'managed',
+      channelId: 'chn_alpha',
+      slotId: 'A'
+    })
+  });
+
+  const storage = await readStorage();
+  expect(JSON.stringify(storage.udp1492_local_knowledge_v1)).not.toContain(peerSession.identity.sessionId);
+
+  await leavePeerChannel(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha');
+  await page.locator('#managedLeaveChannelBtn').click();
+  await expect(page.locator('#managedActiveChannel')).toHaveText('Group A has no active membership');
+});
+
+test('shows retained knowledge in the admin surface and forgets retained-only peers learned from the real Worker', async ({ appHarness }) => {
+  const { page, readStorage } = appHarness;
+  const managedBackendBaseUrl = 'http://127.0.0.1:8791';
+
+  await openManagedSession(page);
+  await page.getByRole('button', { name: 'Join Selected' }).click();
+  await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+
+  const peerSession = await openPeerSession(managedBackendBaseUrl, 'Forgettable Peer');
+  await joinPeerChannel(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha');
+  await sendPeerPresence(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha', {
+    kind: 'public',
+    ip: '198.51.100.46',
+    port: 1492
+  });
+
+  await page.locator('#managedRefreshPeersBtn').click();
+  await expect(page.locator('#networkTable tbody')).toContainText('Forgettable Peer');
+
+  const adminPage = await openAdminWindow(appHarness);
+  const retainedPeerItem = adminPage.locator('#adminKnowledgeList .managed-list-item').filter({ hasText: 'Forgettable Peer' });
+  await expect(retainedPeerItem).toContainText('managed');
+  await expect(retainedPeerItem).toContainText('198.51.100.46:1492');
+  await retainedPeerItem.getByRole('button', { name: 'Forget Local Copy' }).click();
+
+  await expect(adminPage.locator('#adminKnowledgeList')).not.toContainText('Forgettable Peer');
+  await expect(page.locator('#networkTable tbody')).toContainText('Forgettable Peer');
+  await expect.poll(async () => {
+    const storage = await readStorage();
+    return !!storage.udp1492_local_knowledge_v1?.peers?.some((peer) => peer.managedUserId === peerSession.identity.userId);
+  }).toBe(false);
+
+  await leavePeerChannel(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha');
+});
+
+test('imports a retained managed peer into the direct peer list after a real managed refresh', async ({ appHarness }) => {
+  const { page, readStorage } = appHarness;
+  const managedBackendBaseUrl = 'http://127.0.0.1:8791';
+
+  await openManagedSession(page);
+  await page.getByRole('button', { name: 'Join Selected' }).click();
+  await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+
+  const peerSession = await openPeerSession(managedBackendBaseUrl, 'Importable Peer');
+  await joinPeerChannel(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha');
+  await sendPeerPresence(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha', {
+    kind: 'public',
+    ip: '198.51.100.45',
+    port: 1492
+  });
+
+  await page.locator('#managedRefreshPeersBtn').click();
+  await expect(page.locator('#networkTable tbody')).toContainText('Importable Peer');
+
+  await page.locator('#operatingModeDirect').click();
+
+  const retainedOption = await page.locator('#peerList').evaluate((select) => {
+    const option = Array.from(select.options).find((entry) => {
+      const text = entry.textContent || '';
+      return text.includes('Retained: Importable Peer') && text.includes('198.51.100.45:1492');
+    });
+    return option ? { value: option.value, label: option.textContent || '' } : null;
+  });
+  expect(retainedOption).toBeTruthy();
+
+  await page.selectOption('#peerList', retainedOption.value);
+  await expect(page.locator('#peerModal')).toBeVisible();
+  await expect(page.locator('#peerModalName')).toHaveValue('Importable Peer');
+  await expect(page.locator('#peerModalIp')).toHaveValue('198.51.100.45');
+  await expect(page.locator('#peerModalPort')).toHaveValue('1492');
+
+  await page.locator('#peerModalSave').click();
+  await expect(page.locator('#networkTable tbody')).toContainText('Importable Peer');
+
+  await expect.poll(async () => {
+    const storage = await readStorage();
+    const matchingKnowledgePeers = (storage.udp1492_local_knowledge_v1?.peers || []).filter((peer) => {
+      return Array.isArray(peer.endpoints) && peer.endpoints.some((endpoint) => endpoint.ip === '198.51.100.45' && endpoint.port === 1492);
+    });
+    return {
+      peerPersisted: !!storage.udp1492_peers?.some((peer) => peer.name === 'Importable Peer' && peer.ip === '198.51.100.45' && peer.port === 1492),
+      knowledgePeerCount: matchingKnowledgePeers.length,
+      mergedSources: matchingKnowledgePeers[0]?.sources || [],
+      manualPeerKey: matchingKnowledgePeers[0]?.manualPeerKey || '',
+      managedUserId: matchingKnowledgePeers[0]?.managedUserId || ''
+    };
+  }).toEqual({
+    peerPersisted: true,
+    knowledgePeerCount: 1,
+    mergedSources: expect.arrayContaining(['managed', 'manual']),
+    manualPeerKey: '198.51.100.45:1492',
+    managedUserId: peerSession.identity.userId
+  });
+
+  const storage = await readStorage();
+  expect(JSON.stringify(storage.udp1492_local_knowledge_v1)).not.toContain(peerSession.identity.sessionId);
+
+  await leavePeerChannel(managedBackendBaseUrl, peerSession.identity.sessionId, 'chn_alpha');
+});
+
 test('enforces protected seeded-channel passcodes against the real Worker', async ({ appHarness }) => {
   const { page } = appHarness;
 
@@ -160,6 +322,88 @@ test('enforces protected seeded-channel passcodes against the real Worker', asyn
   await page.locator('#managedChannelList li').filter({ hasText: 'Bravo' }).locator('button').click();
   await expect(page.locator('#managedActiveChannel')).toHaveText('Bravo');
   await expect(page.locator('#managedJoinPasscodeInput')).toHaveValue('');
+});
+
+test('creates, updates, and deletes a managed channel against the real Worker from the admin surface', async ({ appHarness }) => {
+  const { page } = appHarness;
+  const createdName = `Ops ${Date.now().toString().slice(-6)}`;
+  const updatedName = `${createdName} Updated`;
+
+  await sleep(3200);
+  await openManagedSession(page);
+
+  const adminPage = await openAdminWindow(appHarness);
+  await expect(adminPage.locator('#adminChannelsList')).toContainText('Alpha');
+  await expect(adminPage.locator('#adminChannelsList')).toContainText('Bravo');
+
+  await adminPage.locator('#adminChannelEditorSelect').selectOption('');
+  await adminPage.locator('#adminChannelNameInput').fill(createdName);
+  await adminPage.locator('#adminChannelSecurityModeSelect').selectOption('passcode');
+  await adminPage.locator('#adminChannelPasscodeInput').fill('ops-secret');
+  await adminPage.locator('#adminChannelDescriptionInput').fill('Live backend protected channel');
+  await adminPage.locator('#adminChannelConcurrentAccessInput').uncheck();
+  await adminPage.locator('#adminChannelCreateBtn').click();
+
+  await expect(adminPage.locator('#adminChannelsList')).toContainText(createdName);
+  await expect(page.locator('#managedChannelList')).toContainText(createdName);
+
+  await adminPage.locator('#adminChannelEditorSelect').selectOption({ label: createdName });
+  await expect(adminPage.locator('#adminChannelConcurrentAccessInput')).not.toBeChecked();
+  await adminPage.locator('#adminChannelNameInput').fill(updatedName);
+  await adminPage.locator('#adminChannelSecurityModeSelect').selectOption('open');
+  await expect(adminPage.locator('#adminChannelPasscodeInput')).toBeDisabled();
+  await adminPage.locator('#adminChannelDescriptionInput').fill('Live backend updated channel');
+  await adminPage.locator('#adminChannelConcurrentAccessInput').check();
+  await adminPage.locator('#adminChannelSaveBtn').click();
+
+  await expect(adminPage.locator('#adminChannelsList')).toContainText(updatedName);
+  await expect(page.locator('#managedChannelList')).toContainText(updatedName);
+
+  await adminPage.locator('#adminChannelEditorSelect').selectOption({ label: updatedName });
+  await adminPage.locator('#adminChannelDeleteBtn').click();
+
+  await expect(adminPage.locator('#adminChannelsList')).not.toContainText(updatedName);
+  await expect(page.locator('#managedChannelList')).not.toContainText(updatedName);
+  await expect(page.locator('#managedIdentityMeta')).toContainText('Session ses_');
+});
+
+test('shows backend admin facts in read-only mode for member sessions against the real Worker', async ({ appHarness }) => {
+  const { page } = appHarness;
+  const managedBackendBaseUrl = 'http://127.0.0.1:8791';
+
+  await sleep(3200);
+  const operatorSession = await openPeerSession(managedBackendBaseUrl, 'Holding Operator');
+  expect(operatorSession.identity.role).toBe('operator');
+
+  await openManagedSession(page, 'Member Desktop');
+  await expect(page.locator('#managedIdentityMeta')).toContainText('Session ses_');
+
+  const adminPage = await openAdminWindow(appHarness);
+  await expect(adminPage.locator('#adminBackendStatus')).toHaveText('member session');
+  await expect(adminPage.locator('#adminBackendFacts')).toContainText('Permissions | channels no | passcodes no');
+  await expect(adminPage.locator('#adminChannelEditorMeta')).toHaveText('Read-only');
+  await expect(adminPage.locator('#adminChannelEditorStatus')).toContainText('does not currently have permission to mutate channels');
+  await expect(adminPage.locator('#adminChannelEditorSelect')).toBeDisabled();
+  await expect(adminPage.locator('#adminChannelCreateBtn')).toBeDisabled();
+  await expect(adminPage.locator('#adminChannelSaveBtn')).toBeDisabled();
+  await expect(adminPage.locator('#adminChannelDeleteBtn')).toBeDisabled();
+
+  const memberSessionId = await page.evaluate(() => window.udp1492AdminDebug?.getSnapshot?.()?.managed?.session?.sessionId || '');
+  expect(memberSessionId).toMatch(/^ses_/);
+
+  const forbiddenCreate = await requestManagedBackend(managedBackendBaseUrl, '/api/admin/channels/create', {
+    method: 'POST',
+    body: {
+      sessionId: memberSessionId,
+      name: 'Forbidden Member Channel',
+      description: 'Should fail',
+      note: '',
+      securityMode: 'open',
+      concurrentAccessAllowed: true
+    }
+  });
+  expect(forbiddenCreate.response.status).toBe(403);
+  expect(forbiddenCreate.payload.code).toBe('managed_admin_forbidden');
 });
 
 test('preserves the active Alpha membership when a protected replacement join is denied by the real Worker', async ({ appHarness }) => {
@@ -249,7 +493,7 @@ test('expires an idle managed session cleanly and resets the desktop state', asy
   const { page } = appHarness;
 
   await openManagedSession(page);
-  await sleep(2600);
+  await sleep(3200);
 
   await page.locator('#managedRefreshChannelsBtn').click();
   await expect(page.locator('#managedErrorText')).toContainText(/expired/i);

@@ -111,7 +111,7 @@ body[data-operating-mode="managed"] .direct-only {
 }
 
 .admin-overview-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-bottom: 14px;
 }
 
@@ -191,6 +191,61 @@ body[data-operating-mode="managed"] .direct-only {
 .admin-stat-copy {
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.admin-form-full {
+  grid-column: 1 / -1;
+}
+
+.admin-field {
+  display: grid;
+  gap: 6px;
+}
+
+.admin-field span {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.admin-field input,
+.admin-field textarea,
+.admin-field select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.admin-field textarea {
+  resize: vertical;
+}
+
+.admin-checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  color: var(--text-primary);
+}
+
+.admin-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
 }
 
 .header {
@@ -1352,6 +1407,7 @@ button.danger:hover {
 
   .admin-header,
   .admin-overview-grid,
+  .admin-form-grid,
   .admin-grid,
   .admin-nat-grid,
   .admin-stats-grid {

@@ -75,6 +75,19 @@ export function createManagedController(deps) {
     for (const slotId of getManagedSlotIds()) syncSlotChannelState(slotId);
   }
 
+  function pruneManagedIntents() {
+    const managedProfile = getManagedProfile();
+    for (const slotId of getManagedSlotIds()) {
+      const intendedChannelId = deps.getManagedSlotIntent(slotId);
+      if (!intendedChannelId) continue;
+      if (deps.findManagedChannel(intendedChannelId)) continue;
+      deps.setManagedSlotIntent(slotId, null);
+      if (slotId === 'A' && managedProfile.preferredChannelId === intendedChannelId) {
+        managedProfile.preferredChannelId = '';
+      }
+    }
+  }
+
   function clearSlotRuntimeState(slotId) {
     const slot = getManagedSlot(slotId);
     slot.channelId = '';
@@ -240,7 +253,8 @@ export function createManagedController(deps) {
     await deps.persistAppState({
       includeLegacyLastPeers: true,
       includeManagedProfile: true,
-      includeManagedCache: true
+      includeManagedCache: true,
+      includeLocalKnowledge: true
     });
   }
 
@@ -437,8 +451,45 @@ export function createManagedController(deps) {
     const managedProfile = getManagedProfile();
     const managedCache = getManagedCache();
     const targetSlotId = normalizeSlotId(options.slotId || getActiveSlotId());
+    try {
+      managedCache.adminSummary = await api.getAdminSummary(managedSession.sessionId);
+    } catch (error) {
+      managedCache.adminSummary = {
+        available: false,
+        errorMessage: error?.message || 'Backend admin summary is not available for this session.',
+        viewer: {
+          sessionId: managedSession.sessionId || '',
+          userId: managedSession.userId || managedProfile.userId || '',
+          displayName: managedSession.displayName || managedProfile.displayName || '',
+          role: ''
+        },
+        permissions: {
+          canReadAdminSummary: false,
+          canManageChannels: false,
+          canManagePasscodes: false
+        },
+        directory: {
+          channelCount: 0,
+          protectedChannelCount: 0,
+          openChannelCount: 0,
+          activeSessionCount: 0,
+          activeOperatorSessionCount: 0,
+          activeMemberSessionCount: 0,
+          joinedSlotCount: 0,
+          activeChannelCount: 0,
+          activeMemberCount: 0,
+          onlineMemberCount: 0,
+          readyEndpointCount: 0,
+          sessionTtlMs: 0,
+          presenceTtlMs: 0,
+          observedAt: new Date().toISOString()
+        },
+        channels: []
+      };
+    }
     managedCache.channels = Array.isArray(response?.channels) ? response.channels.map((channel) => ({ ...channel })) : [];
     managedCache.lastUpdatedAt = response?.syncedAt || new Date().toISOString();
+    pruneManagedIntents();
     if (!deps.getManagedSlotIntent(targetSlotId) && managedCache.channels[0]?.channelId) {
       deps.setManagedSlotIntent(targetSlotId, managedCache.channels[0].channelId);
       if (targetSlotId === 'A') managedProfile.preferredChannelId = managedCache.channels[0].channelId;
@@ -447,6 +498,57 @@ export function createManagedController(deps) {
     deps.renderManagedShell();
     await persistManagedState();
     return managedCache.channels;
+  }
+
+  async function createAdminChannel(input = {}) {
+    const managedSession = await ensureManagedSession();
+    const api = createManagedApi();
+    let response;
+    try {
+      response = await api.createAdminChannel({
+        sessionId: managedSession.sessionId,
+        ...input
+      });
+    } catch (error) {
+      if (await recoverManagedApiError(error, 'Managed channel creation failed.')) return null;
+      throw error;
+    }
+    await refreshManagedChannels({ slotId: getActiveSlotId() });
+    return response?.channel || null;
+  }
+
+  async function updateAdminChannel(input = {}) {
+    const managedSession = await ensureManagedSession();
+    const api = createManagedApi();
+    let response;
+    try {
+      response = await api.updateAdminChannel({
+        sessionId: managedSession.sessionId,
+        ...input
+      });
+    } catch (error) {
+      if (await recoverManagedApiError(error, 'Managed channel update failed.')) return null;
+      throw error;
+    }
+    await refreshManagedChannels({ slotId: getActiveSlotId() });
+    return response?.channel || null;
+  }
+
+  async function deleteAdminChannel(input = {}) {
+    const managedSession = await ensureManagedSession();
+    const api = createManagedApi();
+    let response;
+    try {
+      response = await api.deleteAdminChannel({
+        sessionId: managedSession.sessionId,
+        ...input
+      });
+    } catch (error) {
+      if (await recoverManagedApiError(error, 'Managed channel deletion failed.')) return null;
+      throw error;
+    }
+    await refreshManagedChannels({ slotId: getActiveSlotId() });
+    return response || null;
   }
 
   async function sendManagedPresence(slotId) {
@@ -703,6 +805,9 @@ export function createManagedController(deps) {
     refreshManagedChannels,
     sendManagedPresence,
     refreshManagedPeers,
+    createAdminChannel,
+    updateAdminChannel,
+    deleteAdminChannel,
     joinManagedChannel,
     leaveManagedChannel,
     handleManagedSessionOpen,

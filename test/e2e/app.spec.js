@@ -89,6 +89,23 @@ async function openAdminWindow(appHarness) {
 async function installManagedApiRoutes(page, options = {}) {
   const baseUrl = options.baseUrl || 'https://managed.example.test';
   const apiBaseUrl = buildManagedApiUrl(baseUrl, '/api');
+  const channelState = {
+    channels: Array.isArray(options.channelsResponse?.channels)
+      ? options.channelsResponse.channels.map((channel) => ({ ...channel }))
+      : [
+          {
+            channelId: 'chn_alpha',
+            name: 'Alpha',
+            description: 'Primary coordination channel',
+            securityMode: 'open',
+            requiresPasscode: false,
+            concurrentAccessAllowed: true,
+            memberCount: 4
+          }
+        ],
+    syncedAt: options.channelsResponse?.syncedAt || '2026-04-16T19:21:00Z',
+    observedAt: '2026-04-16T19:25:10Z'
+  };
   const openSessionResponse = options.openSessionResponse || {
     identity: {
       userId: 'usr_01',
@@ -100,20 +117,6 @@ async function installManagedApiRoutes(page, options = {}) {
       expiresAt: '2026-04-16T21:20:00Z',
       heartbeatIntervalMs: 15000
     }
-  };
-  const channelsResponse = options.channelsResponse || {
-    channels: [
-      {
-        channelId: 'chn_alpha',
-        name: 'Alpha',
-        description: 'Primary coordination channel',
-        securityMode: 'open',
-        requiresPasscode: false,
-        concurrentAccessAllowed: true,
-        memberCount: 4
-      }
-    ],
-    syncedAt: '2026-04-16T19:21:00Z'
   };
   const joinResponses = options.joinResponses || {
     chn_alpha: {
@@ -163,12 +166,112 @@ async function installManagedApiRoutes(page, options = {}) {
   const openSessionRequests = options.openSessionRequests || [];
   const joinRequests = options.joinRequests || [];
   const presenceRequests = options.presenceRequests || [];
+  const adminCreateRequests = options.adminCreateRequests || [];
+  const adminUpdateRequests = options.adminUpdateRequests || [];
+  const adminDeleteRequests = options.adminDeleteRequests || [];
+  const adminMutationErrors = options.adminMutationErrors || {};
   const jsonHeaders = {
     'content-type': 'application/json',
     'access-control-allow-origin': '*',
     'access-control-allow-methods': 'GET,POST,OPTIONS',
     'access-control-allow-headers': '*'
   };
+
+  function cloneChannel(channel) {
+    return {
+      ...channel,
+      requiresPasscode: channel.requiresPasscode !== false && channel.securityMode === 'passcode'
+        ? true
+        : !!channel.requiresPasscode,
+      concurrentAccessAllowed: channel.concurrentAccessAllowed !== false,
+      memberCount: Number(channel.memberCount) || 0
+    };
+  }
+
+  function touchChannelState() {
+    channelState.syncedAt = new Date().toISOString();
+    channelState.observedAt = channelState.syncedAt;
+  }
+
+  function buildChannelsResponse() {
+    return {
+      channels: channelState.channels.map((channel) => cloneChannel(channel)),
+      syncedAt: channelState.syncedAt
+    };
+  }
+
+  function buildAdminSummaryResponse() {
+    if (options.adminSummaryResponse) {
+      return JSON.parse(JSON.stringify(options.adminSummaryResponse));
+    }
+    const channels = channelState.channels.map((channel) => ({
+      ...cloneChannel(channel),
+      onlineMemberCount: Number(channel.memberCount) ? 1 : 0,
+      readyEndpointCount: Number(channel.memberCount) ? 1 : 0,
+      lastPresenceAt: '2026-04-16T19:25:00Z'
+    }));
+    return {
+      viewer: {
+        sessionId: openSessionResponse.identity.sessionId,
+        userId: openSessionResponse.identity.userId,
+        displayName: openSessionResponse.identity.displayName,
+        role: 'operator'
+      },
+      permissions: {
+        canReadAdminSummary: true,
+        canManageChannels: true,
+        canManagePasscodes: true
+      },
+      directory: {
+        channelCount: channels.length,
+        protectedChannelCount: channels.filter((channel) => channel.requiresPasscode).length,
+        openChannelCount: channels.filter((channel) => !channel.requiresPasscode).length,
+        activeSessionCount: 1,
+        activeOperatorSessionCount: 1,
+        activeMemberSessionCount: 0,
+        joinedSlotCount: 1,
+        activeChannelCount: Math.min(channels.length, 1),
+        activeMemberCount: 1,
+        onlineMemberCount: 1,
+        readyEndpointCount: 1,
+        sessionTtlMs: 7200000,
+        presenceTtlMs: 45000,
+        observedAt: channelState.observedAt
+      },
+      channels
+    };
+  }
+
+  function normalizeSecurityMode(value) {
+    return value === 'passcode' ? 'passcode' : 'open';
+  }
+
+  function createChannelIdFromName(name) {
+    const slug = String(name || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    const baseId = `chn_${slug || `channel_${channelState.channels.length + 1}`}`;
+    if (!channelState.channels.some((channel) => channel.channelId === baseId)) return baseId;
+    let suffix = 2;
+    while (channelState.channels.some((channel) => channel.channelId === `${baseId}_${suffix}`)) suffix += 1;
+    return `${baseId}_${suffix}`;
+  }
+
+  function createChannelFromPayload(payload = {}) {
+    const name = String(payload.name || '').trim() || `Channel ${channelState.channels.length + 1}`;
+    const securityMode = normalizeSecurityMode(payload.securityMode);
+    return {
+      channelId: createChannelIdFromName(name),
+      name,
+      description: String(payload.description || '').trim(),
+      note: String(payload.note || '').trim(),
+      securityMode,
+      requiresPasscode: securityMode === 'passcode',
+      concurrentAccessAllowed: payload.concurrentAccessAllowed !== false,
+      memberCount: 0
+    };
+  }
 
   await page.route(`${apiBaseUrl}/**`, async (route) => {
     const request = route.request();
@@ -191,7 +294,119 @@ async function installManagedApiRoutes(page, options = {}) {
       await route.fulfill({
         status: 200,
         headers: jsonHeaders,
-        body: JSON.stringify(channelsResponse)
+        body: JSON.stringify(buildChannelsResponse())
+      });
+      return;
+    }
+    if (url.pathname === '/api/admin/summary') {
+      await route.fulfill({
+        status: 200,
+        headers: jsonHeaders,
+        body: JSON.stringify(buildAdminSummaryResponse())
+      });
+      return;
+    }
+    if (url.pathname === '/api/admin/channels/create') {
+      const payload = JSON.parse(request.postData() || '{}');
+      adminCreateRequests.push({ payload });
+      if (adminMutationErrors.create) {
+        await route.fulfill({
+          status: adminMutationErrors.create.status || 400,
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            code: adminMutationErrors.create.code || 'admin_create_failed',
+            message: adminMutationErrors.create.message || 'Admin channel creation failed.'
+          })
+        });
+        return;
+      }
+      const channel = createChannelFromPayload(payload);
+      channelState.channels.push(channel);
+      touchChannelState();
+      await route.fulfill({
+        status: 200,
+        headers: jsonHeaders,
+        body: JSON.stringify({ channel: cloneChannel(channel) })
+      });
+      return;
+    }
+    if (url.pathname === '/api/admin/channels/update') {
+      const payload = JSON.parse(request.postData() || '{}');
+      adminUpdateRequests.push({ payload });
+      if (adminMutationErrors.update) {
+        await route.fulfill({
+          status: adminMutationErrors.update.status || 400,
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            code: adminMutationErrors.update.code || 'admin_update_failed',
+            message: adminMutationErrors.update.message || 'Admin channel update failed.'
+          })
+        });
+        return;
+      }
+      const channelId = String(payload.channelId || '').trim();
+      const channel = channelState.channels.find((entry) => entry.channelId === channelId);
+      if (!channel) {
+        await route.fulfill({
+          status: 404,
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            code: 'managed_channel_not_found',
+            message: 'Channel not found.'
+          })
+        });
+        return;
+      }
+      channel.name = String(payload.name || '').trim() || channel.name;
+      channel.description = String(payload.description || '').trim();
+      channel.note = String(payload.note || '').trim();
+      channel.securityMode = normalizeSecurityMode(payload.securityMode);
+      channel.requiresPasscode = channel.securityMode === 'passcode';
+      channel.concurrentAccessAllowed = payload.concurrentAccessAllowed !== false;
+      touchChannelState();
+      await route.fulfill({
+        status: 200,
+        headers: jsonHeaders,
+        body: JSON.stringify({ channel: cloneChannel(channel) })
+      });
+      return;
+    }
+    if (url.pathname === '/api/admin/channels/delete') {
+      const payload = JSON.parse(request.postData() || '{}');
+      adminDeleteRequests.push({ payload });
+      if (adminMutationErrors.delete) {
+        await route.fulfill({
+          status: adminMutationErrors.delete.status || 400,
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            code: adminMutationErrors.delete.code || 'admin_delete_failed',
+            message: adminMutationErrors.delete.message || 'Admin channel deletion failed.'
+          })
+        });
+        return;
+      }
+      const channelId = String(payload.channelId || '').trim();
+      const channelIndex = channelState.channels.findIndex((entry) => entry.channelId === channelId);
+      if (channelIndex < 0) {
+        await route.fulfill({
+          status: 404,
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            code: 'managed_channel_not_found',
+            message: 'Channel not found.'
+          })
+        });
+        return;
+      }
+      channelState.channels.splice(channelIndex, 1);
+      touchChannelState();
+      await route.fulfill({
+        status: 200,
+        headers: jsonHeaders,
+        body: JSON.stringify({
+          deleted: true,
+          channelId
+        })
       });
       return;
     }
@@ -270,7 +485,15 @@ async function installManagedApiRoutes(page, options = {}) {
     throw new Error(`Unhandled managed API request: ${request.method()} ${request.url()}`);
   });
 
-  return { baseUrl, openSessionRequests, joinRequests, presenceRequests };
+  return {
+    baseUrl,
+    openSessionRequests,
+    joinRequests,
+    presenceRequests,
+    adminCreateRequests,
+    adminUpdateRequests,
+    adminDeleteRequests
+  };
 }
 
 test('launches with default persisted settings', async ({ appHarness }) => {
@@ -304,6 +527,7 @@ test('launches with default persisted settings', async ({ appHarness }) => {
   });
   expect(storage.udp1492_managed_profile).toMatchObject({ version: 1 });
   expect(storage.udp1492_managed_cache).toMatchObject({ version: 1, channels: [] });
+  expect(storage.udp1492_local_knowledge_v1).toMatchObject({ version: 1, peers: [] });
 });
 
 test('quits the app when the main window is closed', async ({ appHarness }) => {
@@ -348,11 +572,21 @@ test('persists a newly created peer across restart', async ({ appHarness }) => {
     return {
       peersPersisted: !!savedStorage.udp1492_peers?.some((peer) => peer.name === 'Persist Test'),
       lastPeerPersisted: Array.isArray(savedStorage.udp1492_last_peers)
-        && savedStorage.udp1492_last_peers.includes('198.51.100.42:1492')
+        && savedStorage.udp1492_last_peers.includes('198.51.100.42:1492'),
+      knowledgePersisted: !!savedStorage.udp1492_local_knowledge_v1?.peers?.some((peer) => {
+        return peer.peerId === 'manual:198.51.100.42:1492'
+          && peer.displayName === 'Persist Test'
+          && peer.manualPeerKey === '198.51.100.42:1492'
+          && Array.isArray(peer.sources)
+          && peer.sources.includes('manual')
+          && Array.isArray(peer.endpoints)
+          && peer.endpoints.some((endpoint) => endpoint.ip === '198.51.100.42' && endpoint.port === 1492 && endpoint.source === 'manual');
+      })
     };
   }).toEqual({
     peersPersisted: true,
-    lastPeerPersisted: true
+    lastPeerPersisted: true,
+    knowledgePersisted: true
   });
 
   const relaunchedPage = await relaunch();
@@ -414,6 +648,49 @@ test.describe('peer fixture', () => {
     await expect(page.locator('#gainValue')).toHaveText('1.33x');
     await expect(page.locator('#peerList')).toContainText('Alpha');
     await expect(page.locator('#networkTable tbody')).toContainText('Alpha');
+  });
+
+  test('bootstraps retained local knowledge from saved manual peers without copying shared secrets', async ({ appHarness }) => {
+    const { readStorage } = appHarness;
+
+    const storage = await readStorage();
+    expect(storage.udp1492_local_knowledge_v1).toMatchObject({
+      version: 1,
+      peers: expect.arrayContaining([
+        expect.objectContaining({
+          peerId: 'manual:203.0.113.10:1492',
+          displayName: 'Alpha',
+          manualPeerKey: '203.0.113.10:1492',
+          managedUserId: '',
+          sources: ['manual'],
+          endpoints: expect.arrayContaining([
+            expect.objectContaining({
+              kind: 'direct',
+              ip: '203.0.113.10',
+              port: 1492,
+              source: 'manual'
+            })
+          ])
+        }),
+        expect.objectContaining({
+          peerId: 'manual:203.0.113.11:1492',
+          displayName: 'Bravo',
+          manualPeerKey: '203.0.113.11:1492',
+          managedUserId: '',
+          sources: ['manual'],
+          endpoints: expect.arrayContaining([
+            expect.objectContaining({
+              kind: 'direct',
+              ip: '203.0.113.11',
+              port: 1492,
+              source: 'manual'
+            })
+          ])
+        })
+      ])
+    });
+    expect(JSON.stringify(storage.udp1492_local_knowledge_v1)).not.toContain('abc123');
+    expect(JSON.stringify(storage.udp1492_local_knowledge_v1)).not.toContain('def456');
   });
 
   test('persists AppStateV2 migration and managed mode selection', async ({ appHarness }) => {
@@ -575,6 +852,213 @@ test.describe('peer fixture', () => {
     await expect(page.locator('#networkTable tbody')).not.toContainText('Peer One');
   });
 
+  test('ignores remapped public ports and only adapts managed peers on the chosen listen port', async ({ appHarness }) => {
+    const { page, getSentHostMessages } = appHarness;
+    const { baseUrl } = await installManagedApiRoutes(page, {
+      peersResponses: {
+        chn_alpha: {
+          channelId: 'chn_alpha',
+          peers: [
+            {
+              userId: 'usr_peer_01',
+              sessionId: 'ses_peer_01',
+              channelId: 'chn_alpha',
+              displayName: 'Peer One',
+              connectionState: 'idle',
+              endpoints: [
+                {
+                  endpointId: 'end_public_bad_port',
+                  kind: 'public',
+                  ip: '198.51.100.10',
+                  port: 62000,
+                  registrationState: 'ready',
+                  lastValidatedAt: '2026-04-16T19:25:00Z'
+                },
+                {
+                  endpointId: 'end_local_listen_port',
+                  kind: 'local',
+                  ip: '10.0.0.25',
+                  port: 1492,
+                  registrationState: 'ready',
+                  lastValidatedAt: '2026-04-16T19:25:00Z'
+                }
+              ]
+            }
+          ],
+          resolvedAt: '2026-04-16T19:25:05Z'
+        }
+      }
+    });
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+    await page.getByRole('button', { name: 'Join Selected' }).click();
+
+    await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+    await expect.poll(async () => getAudioRoutingSnapshot(page)).toEqual([
+      expect.objectContaining({
+        peerKey: '10.0.0.25:1492',
+        owningSlots: ['A'],
+        route: 'left',
+        routeLabel: 'Left ear'
+      })
+    ]);
+    await expect.poll(async () => {
+      const configureMessages = (await getSentHostMessages())
+        .filter((message) => message.type === 'configure')
+        .filter((message) => Array.isArray(message.peers) && message.peers.some((peer) => peer.name === 'Peer One'));
+      const configureMessage = configureMessages[configureMessages.length - 1] || null;
+      if (!configureMessage) return null;
+      return configureMessage.peers.find((peer) => peer.name === 'Peer One') || null;
+    }).toEqual(expect.objectContaining({
+      ip: '10.0.0.25',
+      port: 1492
+    }));
+  });
+
+  test('retains managed peer observations in local knowledge without persisting managed session ids', async ({ appHarness }) => {
+    const { page, readStorage } = appHarness;
+    const { baseUrl } = await installManagedApiRoutes(page);
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+    await page.getByRole('button', { name: 'Join Selected' }).click();
+
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+
+    await expect.poll(async () => {
+      const peer = (await readStorage()).udp1492_local_knowledge_v1?.peers?.find((entry) => entry.managedUserId === 'usr_peer_01');
+      if (!peer) return null;
+      return {
+        peerId: peer.peerId,
+        displayName: peer.displayName,
+        managedUserId: peer.managedUserId,
+        manualPeerKey: peer.manualPeerKey,
+        sources: peer.sources,
+        endpoint: peer.endpoints?.find((endpoint) => endpoint.ip === '198.51.100.10' && endpoint.port === 1492) || null,
+        firstSeenAt: peer.firstSeenAt,
+        lastSeenAt: peer.lastSeenAt
+      };
+    }).toEqual({
+      peerId: 'managed:usr_peer_01',
+      displayName: 'Peer One',
+      managedUserId: 'usr_peer_01',
+      manualPeerKey: '',
+      sources: ['managed'],
+      endpoint: expect.objectContaining({
+        kind: 'public',
+        ip: '198.51.100.10',
+        port: 1492,
+        source: 'managed',
+        channelId: 'chn_alpha',
+        slotId: 'A',
+        firstSeenAt: '2026-04-16T19:25:05Z',
+        lastSeenAt: '2026-04-16T19:25:05Z',
+        lastConnectedAt: ''
+      }),
+      firstSeenAt: '2026-04-16T19:25:05Z',
+      lastSeenAt: '2026-04-16T19:25:05Z'
+    });
+
+    const storage = await readStorage();
+    expect(JSON.stringify(storage.udp1492_local_knowledge_v1)).not.toContain('ses_peer_01');
+  });
+
+  test('shows retained knowledge in the admin surface and forgets retained-only peers locally', async ({ appHarness }) => {
+    const { page, readStorage } = appHarness;
+    const { baseUrl } = await installManagedApiRoutes(page);
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+    await page.getByRole('button', { name: 'Join Selected' }).click();
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+
+    const adminPage = await openAdminWindow(appHarness);
+    const retainedPeerItem = adminPage.locator('#adminKnowledgeList .managed-list-item').filter({ hasText: 'Peer One' });
+    await expect(retainedPeerItem).toContainText('managed');
+    await expect(retainedPeerItem).toContainText('198.51.100.10:1492');
+    await expect(retainedPeerItem.getByRole('button', { name: 'Forget Local Copy' })).toBeEnabled();
+
+    await retainedPeerItem.getByRole('button', { name: 'Forget Local Copy' }).click();
+    await expect(adminPage.locator('#adminKnowledgeList')).not.toContainText('Peer One');
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+
+    await expect.poll(async () => {
+      const storage = await readStorage();
+      return !!storage.udp1492_local_knowledge_v1?.peers?.some((peer) => peer.managedUserId === 'usr_peer_01');
+    }).toBe(false);
+  });
+
+  test('imports a retained managed peer into the direct peer list from the selector', async ({ appHarness }) => {
+    const { page, readStorage } = appHarness;
+    const { baseUrl } = await installManagedApiRoutes(page);
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+    await page.getByRole('button', { name: 'Join Selected' }).click();
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+
+    await page.locator('#operatingModeDirect').click();
+    await expect(page.locator('#managedModeShell')).toBeHidden();
+
+    const retainedOption = await page.locator('#peerList').evaluate((select) => {
+      const option = Array.from(select.options).find((entry) => {
+        const text = entry.textContent || '';
+        return text.includes('Retained: Peer One') && text.includes('198.51.100.10:1492');
+      });
+      return option ? { value: option.value, label: option.textContent || '' } : null;
+    });
+    expect(retainedOption).toBeTruthy();
+
+    await page.selectOption('#peerList', retainedOption.value);
+    await expect(page.locator('#peerModal')).toBeVisible();
+    await expect(page.locator('#peerModalName')).toHaveValue('Peer One');
+    await expect(page.locator('#peerModalIp')).toHaveValue('198.51.100.10');
+    await expect(page.locator('#peerModalPort')).toHaveValue('1492');
+    await expect(page.locator('#peerModalDelete')).toBeHidden();
+
+    await page.locator('#peerModalSave').click();
+    await expect(page.locator('#peerList')).toContainText('Peer One');
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+
+    await expect.poll(async () => {
+      const storage = await readStorage();
+      const matchingKnowledgePeers = (storage.udp1492_local_knowledge_v1?.peers || []).filter((peer) => {
+        return Array.isArray(peer.endpoints) && peer.endpoints.some((endpoint) => endpoint.ip === '198.51.100.10' && endpoint.port === 1492);
+      });
+      return {
+        peerPersisted: !!storage.udp1492_peers?.some((peer) => peer.name === 'Peer One' && peer.ip === '198.51.100.10' && peer.port === 1492),
+        knowledgePeerCount: matchingKnowledgePeers.length,
+        mergedSources: matchingKnowledgePeers[0]?.sources || [],
+        manualPeerKey: matchingKnowledgePeers[0]?.manualPeerKey || '',
+        managedUserId: matchingKnowledgePeers[0]?.managedUserId || ''
+      };
+    }).toEqual({
+      peerPersisted: true,
+      knowledgePeerCount: 1,
+      mergedSources: expect.arrayContaining(['managed', 'manual']),
+      manualPeerKey: '198.51.100.10:1492',
+      managedUserId: 'usr_peer_01'
+    });
+
+    const adminPage = await openAdminWindow(appHarness);
+    const retainedPeerItem = adminPage.locator('#adminKnowledgeList .managed-list-item').filter({ hasText: 'Peer One' });
+    await expect(retainedPeerItem).toContainText('Direct linked');
+    await expect(retainedPeerItem.getByRole('button', { name: 'Manual Link' })).toBeDisabled();
+
+    const storage = await readStorage();
+    expect(JSON.stringify(storage.udp1492_local_knowledge_v1)).not.toContain('ses_peer_01');
+  });
+
   test('renders the admin surface with channels, memberships, endpoints, and local stats', async ({ appHarness }) => {
     const { page } = appHarness;
     const { baseUrl } = await installManagedApiRoutes(page);
@@ -595,6 +1079,166 @@ test.describe('peer fixture', () => {
     await expect(adminPage.locator('#adminStatsGrid')).toContainText('Transport Peers');
     await expect(adminPage.locator('#adminRefreshAllBtn')).toBeEnabled();
     await expect(adminPage.locator('#adminRefreshPeersBtn')).toBeEnabled();
+
+    await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
+    await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
+  });
+
+  test('renders backend admin facts in read-only mode when the session lacks channel mutation permission', async ({ appHarness }) => {
+    const { page } = appHarness;
+    const { baseUrl } = await installManagedApiRoutes(page, {
+      adminSummaryResponse: {
+        viewer: {
+          sessionId: 'ses_01',
+          userId: 'usr_member_01',
+          displayName: 'Member Scot',
+          role: 'member'
+        },
+        permissions: {
+          canReadAdminSummary: true,
+          canManageChannels: false,
+          canManagePasscodes: false
+        },
+        directory: {
+          channelCount: 1,
+          protectedChannelCount: 0,
+          openChannelCount: 1,
+          activeSessionCount: 2,
+          activeOperatorSessionCount: 1,
+          activeMemberSessionCount: 1,
+          joinedSlotCount: 1,
+          activeChannelCount: 1,
+          activeMemberCount: 1,
+          onlineMemberCount: 1,
+          readyEndpointCount: 1,
+          sessionTtlMs: 7200000,
+          presenceTtlMs: 45000,
+          observedAt: '2026-04-16T19:25:10Z'
+        },
+        channels: [
+          {
+            channelId: 'chn_alpha',
+            name: 'Alpha',
+            description: 'Primary coordination channel',
+            note: 'Seeded development channel',
+            securityMode: 'open',
+            requiresPasscode: false,
+            concurrentAccessAllowed: true,
+            memberCount: 1,
+            onlineMemberCount: 1,
+            readyEndpointCount: 1,
+            lastPresenceAt: '2026-04-16T19:25:00Z'
+          }
+        ]
+      }
+    });
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+
+    const adminPage = await openAdminWindow(appHarness);
+    await expect(adminPage.locator('#adminBackendStatus')).toHaveText('member session');
+    await expect(adminPage.locator('#adminBackendFacts')).toContainText('Permissions | channels no | passcodes no');
+    await expect(adminPage.locator('#adminChannelEditorMeta')).toHaveText('Read-only');
+    await expect(adminPage.locator('#adminChannelEditorStatus')).toContainText('does not currently have permission to mutate channels');
+    await expect(adminPage.locator('#adminChannelEditorSelect')).toBeDisabled();
+    await expect(adminPage.locator('#adminChannelCreateBtn')).toBeDisabled();
+    await expect(adminPage.locator('#adminChannelSaveBtn')).toBeDisabled();
+    await expect(adminPage.locator('#adminChannelDeleteBtn')).toBeDisabled();
+  });
+
+  test('creates, updates, and deletes backend-managed channels from the admin surface', async ({ appHarness }) => {
+    const { page } = appHarness;
+    const adminCreateRequests = [];
+    const adminUpdateRequests = [];
+    const adminDeleteRequests = [];
+    const { baseUrl } = await installManagedApiRoutes(page, {
+      adminCreateRequests,
+      adminUpdateRequests,
+      adminDeleteRequests
+    });
+
+    await page.locator('#operatingModeManaged').click();
+    await page.locator('#managedDisplayNameInput').fill('Scot');
+    await page.locator('#managedBackendBaseUrlInput').fill(baseUrl);
+    await page.locator('#managedOpenSessionBtn').click();
+    await page.getByRole('button', { name: 'Join Selected' }).click();
+
+    const adminPage = await openAdminWindow(appHarness);
+    const editorSelect = adminPage.locator('#adminChannelEditorSelect');
+    const nameInput = adminPage.locator('#adminChannelNameInput');
+    const securitySelect = adminPage.locator('#adminChannelSecurityModeSelect');
+    const passcodeInput = adminPage.locator('#adminChannelPasscodeInput');
+    const descriptionInput = adminPage.locator('#adminChannelDescriptionInput');
+    const noteInput = adminPage.locator('#adminChannelNoteInput');
+    const concurrentAccessInput = adminPage.locator('#adminChannelConcurrentAccessInput');
+    const createButton = adminPage.locator('#adminChannelCreateBtn');
+    const saveButton = adminPage.locator('#adminChannelSaveBtn');
+    const deleteButton = adminPage.locator('#adminChannelDeleteBtn');
+
+    await editorSelect.selectOption('');
+    await nameInput.fill('Bravo Control');
+    await securitySelect.selectOption('passcode');
+    await expect(createButton).toBeDisabled();
+    await passcodeInput.fill('bravo-secret');
+    await descriptionInput.fill('Protected operations channel');
+    await noteInput.fill('Rotates after field exercises');
+    await concurrentAccessInput.uncheck();
+    await expect(createButton).toBeEnabled();
+    await createButton.click();
+
+    await expect(adminPage.locator('#adminChannelsList')).toContainText('Bravo Control');
+    await expect(page.locator('#managedChannelList')).toContainText('Bravo Control');
+    expect(adminCreateRequests).toHaveLength(1);
+    expect(adminCreateRequests[0].payload).toMatchObject({
+      sessionId: 'ses_01',
+      name: 'Bravo Control',
+      securityMode: 'passcode',
+      passcode: 'bravo-secret',
+      description: 'Protected operations channel',
+      note: 'Rotates after field exercises',
+      concurrentAccessAllowed: false
+    });
+
+    await editorSelect.selectOption('chn_bravo_control');
+    await expect(deleteButton).toBeEnabled();
+    await expect(saveButton).toBeEnabled();
+    await expect(concurrentAccessInput).not.toBeChecked();
+    await nameInput.fill('Bravo Secure');
+    await securitySelect.selectOption('open');
+    await expect(passcodeInput).toBeDisabled();
+    await descriptionInput.fill('Updated from the admin surface');
+    await noteInput.fill('Open for shared drills');
+    await concurrentAccessInput.check();
+    await saveButton.click();
+
+    await expect(adminPage.locator('#adminChannelsList')).toContainText('Bravo Secure');
+    await expect(adminPage.locator('#adminChannelsList')).not.toContainText('Bravo Control');
+    await expect(page.locator('#managedChannelList')).toContainText('Bravo Secure');
+    expect(adminUpdateRequests).toHaveLength(1);
+    expect(adminUpdateRequests[0].payload).toMatchObject({
+      sessionId: 'ses_01',
+      channelId: 'chn_bravo_control',
+      name: 'Bravo Secure',
+      securityMode: 'open',
+      passcode: null,
+      description: 'Updated from the admin surface',
+      note: 'Open for shared drills',
+      concurrentAccessAllowed: true
+    });
+
+    await deleteButton.click();
+
+    await expect(adminPage.locator('#adminChannelsList')).not.toContainText('Bravo Secure');
+    await expect(page.locator('#managedChannelList')).not.toContainText('Bravo Secure');
+    await expect(editorSelect).not.toContainText('Bravo Secure');
+    expect(adminDeleteRequests).toHaveLength(1);
+    expect(adminDeleteRequests[0].payload).toMatchObject({
+      sessionId: 'ses_01',
+      channelId: 'chn_bravo_control'
+    });
 
     await expect(page.locator('#managedActiveChannel')).toHaveText('Alpha');
     await expect(page.locator('#networkTable tbody')).toContainText('Peer One');
@@ -644,7 +1288,7 @@ test.describe('peer fixture', () => {
       }
     });
 
-    test('publishes mapped public NAT candidates to presence and exposes them in the admin surface', async ({ appHarness }) => {
+    test('publishes advisory public NAT addresses on the chosen listen port and exposes them in the admin surface', async ({ appHarness }) => {
       const { page } = appHarness;
       const presenceRequests = [];
       const { baseUrl } = await installManagedApiRoutes(page, { presenceRequests });
@@ -682,7 +1326,7 @@ test.describe('peer fixture', () => {
       expect(presenceRequests).toHaveLength(1);
       expect(presenceRequests[0].payload.endpoints).toEqual([
         { kind: 'local', ip: '10.0.0.25', port: 1492 },
-        { kind: 'public', ip: '198.51.100.77', port: 62000 }
+        { kind: 'public', ip: '198.51.100.77', port: 1492 }
       ]);
 
       const adminPage = await openAdminWindow(appHarness);

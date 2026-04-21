@@ -89,6 +89,17 @@ function normalizeChannel(channel) {
   };
 }
 
+function normalizeAdminSummaryChannel(channel) {
+  const normalizedChannel = normalizeChannel(channel);
+  if (!normalizedChannel) return null;
+  return {
+    ...normalizedChannel,
+    onlineMemberCount: numberOrNull(channel.onlineMemberCount) ?? 0,
+    readyEndpointCount: numberOrNull(channel.readyEndpointCount) ?? 0,
+    lastPresenceAt: sanitizeIsoString(channel.lastPresenceAt)
+  };
+}
+
 function normalizeEndpoint(endpoint) {
   if (!isPlainObject(endpoint)) return null;
   const ip = stringOrEmpty(endpoint.ip).trim();
@@ -151,6 +162,45 @@ function normalizeChannelListResponse(payload) {
   return {
     channels: Array.isArray(root.channels) ? root.channels.map(normalizeChannel).filter(Boolean) : [],
     syncedAt: sanitizeIsoString(root.syncedAt)
+  };
+}
+
+function normalizeAdminSummaryResponse(payload) {
+  const root = assertObject(payload, 'Managed backend returned an invalid admin summary response.');
+  const viewer = assertObject(root.viewer, 'Managed backend omitted admin viewer data.', root);
+  const permissions = isPlainObject(root.permissions) ? root.permissions : {};
+  const directory = isPlainObject(root.directory) ? root.directory : {};
+  return {
+    available: true,
+    errorMessage: '',
+    viewer: {
+      sessionId: stringOrEmpty(viewer.sessionId).trim(),
+      userId: stringOrEmpty(viewer.userId).trim(),
+      displayName: stringOrEmpty(viewer.displayName).trim(),
+      role: stringOrEmpty(viewer.role).trim() || 'member'
+    },
+    permissions: {
+      canReadAdminSummary: boolOr(permissions.canReadAdminSummary, false),
+      canManageChannels: boolOr(permissions.canManageChannels, false),
+      canManagePasscodes: boolOr(permissions.canManagePasscodes, false)
+    },
+    directory: {
+      channelCount: numberOrNull(directory.channelCount) ?? 0,
+      protectedChannelCount: numberOrNull(directory.protectedChannelCount) ?? 0,
+      openChannelCount: numberOrNull(directory.openChannelCount) ?? 0,
+      activeSessionCount: numberOrNull(directory.activeSessionCount) ?? 0,
+      activeOperatorSessionCount: numberOrNull(directory.activeOperatorSessionCount) ?? 0,
+      activeMemberSessionCount: numberOrNull(directory.activeMemberSessionCount) ?? 0,
+      joinedSlotCount: numberOrNull(directory.joinedSlotCount) ?? 0,
+      activeChannelCount: numberOrNull(directory.activeChannelCount) ?? 0,
+      activeMemberCount: numberOrNull(directory.activeMemberCount) ?? 0,
+      onlineMemberCount: numberOrNull(directory.onlineMemberCount) ?? 0,
+      readyEndpointCount: numberOrNull(directory.readyEndpointCount) ?? 0,
+      sessionTtlMs: numberOrNull(directory.sessionTtlMs) ?? 0,
+      presenceTtlMs: numberOrNull(directory.presenceTtlMs) ?? 0,
+      observedAt: sanitizeIsoString(directory.observedAt)
+    },
+    channels: Array.isArray(root.channels) ? root.channels.map(normalizeAdminSummaryChannel).filter(Boolean) : []
   };
 }
 
@@ -237,6 +287,28 @@ function normalizeLeaveResponse(payload, fallbackChannelId) {
       membershipState: stringOrEmpty(membership.membershipState).trim() || 'none',
       leftAt: sanitizeIsoString(membership.leftAt)
     }
+  };
+}
+
+function normalizeAdminChannelMutationResponse(payload) {
+  const root = assertObject(payload, 'Managed backend returned an invalid admin channel response.');
+  const channel = normalizeChannel(root.channel);
+  if (!channel) {
+    throw new ManagedApiError('Managed backend returned an invalid admin channel response.', {
+      code: 'managed_response_invalid',
+      details: root
+    });
+  }
+  return {
+    channel
+  };
+}
+
+function normalizeAdminDeleteChannelResponse(payload) {
+  const root = assertObject(payload, 'Managed backend returned an invalid channel delete response.');
+  return {
+    deleted: boolOr(root.deleted, false),
+    channelId: stringOrEmpty(root.channelId).trim()
   };
 }
 
@@ -389,6 +461,29 @@ export function createManagedApiClient({
       return requestJson('/api/channels', {
         query: { sessionId }
       }).then(normalizeChannelListResponse);
+    },
+    getAdminSummary(sessionId) {
+      return requestJson('/api/admin/summary', {
+        query: { sessionId }
+      }).then(normalizeAdminSummaryResponse);
+    },
+    createAdminChannel(payload) {
+      return requestJson('/api/admin/channels/create', {
+        method: 'POST',
+        body: payload
+      }).then(normalizeAdminChannelMutationResponse);
+    },
+    updateAdminChannel(payload) {
+      return requestJson('/api/admin/channels/update', {
+        method: 'POST',
+        body: payload
+      }).then(normalizeAdminChannelMutationResponse);
+    },
+    deleteAdminChannel(payload) {
+      return requestJson('/api/admin/channels/delete', {
+        method: 'POST',
+        body: payload
+      }).then(normalizeAdminDeleteChannelResponse);
     },
     joinChannel(channelId, payload) {
       return requestJson(`/api/channels/${encodeURIComponent(channelId)}/join`, {

@@ -1,4 +1,4 @@
-// admin.js v0.1.3
+// admin.js v0.1.4
 (() => {
   'use strict';
 
@@ -13,12 +13,33 @@
   const adminSessionMetaEl = $('#adminSessionMeta');
   const adminTransportStatusEl = $('#adminTransportStatus');
   const adminTransportMetaEl = $('#adminTransportMeta');
+  const adminBackendStatusEl = $('#adminBackendStatus');
+  const adminBackendMetaEl = $('#adminBackendMeta');
+  const adminBackendCopyEl = $('#adminBackendCopy');
+  const adminBackendFactsEl = $('#adminBackendFacts');
+  const adminChannelEditorMetaEl = $('#adminChannelEditorMeta');
+  const adminChannelEditorStatusEl = $('#adminChannelEditorStatus');
+  const adminChannelEditorErrorEl = $('#adminChannelEditorError');
+  const adminChannelEditorSelectEl = $('#adminChannelEditorSelect');
+  const adminChannelNameInputEl = $('#adminChannelNameInput');
+  const adminChannelSecurityModeSelectEl = $('#adminChannelSecurityModeSelect');
+  const adminChannelDescriptionInputEl = $('#adminChannelDescriptionInput');
+  const adminChannelNoteInputEl = $('#adminChannelNoteInput');
+  const adminChannelPasscodeInputEl = $('#adminChannelPasscodeInput');
+  const adminChannelConcurrentAccessInputEl = $('#adminChannelConcurrentAccessInput');
+  const adminChannelCreateBtn = $('#adminChannelCreateBtn');
+  const adminChannelSaveBtn = $('#adminChannelSaveBtn');
+  const adminChannelDeleteBtn = $('#adminChannelDeleteBtn');
+  const adminChannelResetBtn = $('#adminChannelResetBtn');
   const adminChannelsMetaEl = $('#adminChannelsMeta');
   const adminChannelsListEl = $('#adminChannelsList');
   const adminSlotsMetaEl = $('#adminSlotsMeta');
   const adminSlotsGridEl = $('#adminSlotsGrid');
   const adminEndpointsMetaEl = $('#adminEndpointsMeta');
   const adminEndpointTableBodyEl = $('#adminEndpointTable tbody');
+  const adminKnowledgeMetaEl = $('#adminKnowledgeMeta');
+  const adminKnowledgeCopyEl = $('#adminKnowledgeCopy');
+  const adminKnowledgeListEl = $('#adminKnowledgeList');
   const adminNatMetaEl = $('#adminNatMeta');
   const adminNatStatusEl = $('#adminNatStatus');
   const adminNatSummaryEl = $('#adminNatSummary');
@@ -32,6 +53,8 @@
   const adminRefreshPeersBtn = $('#adminRefreshPeersBtn');
 
   let snapshot = null;
+  let editorSelectedChannelId = '';
+  let editorDirty = false;
 
   function formatTimestamp(value) {
     if (!value) return '';
@@ -75,14 +98,68 @@
       }));
   }
 
+  function getEditorChannels(nextSnapshot) {
+    return Array.isArray(nextSnapshot?.managed?.channels) ? nextSnapshot.managed.channels : [];
+  }
+
+  function getSelectedEditorChannel(nextSnapshot = snapshot) {
+    return getEditorChannels(nextSnapshot).find((channel) => channel.channelId === editorSelectedChannelId) || null;
+  }
+
+  function setEditorDirty(nextDirty) {
+    editorDirty = !!nextDirty;
+  }
+
+  function syncPasscodeFieldState() {
+    const protectedMode = adminChannelSecurityModeSelectEl?.value === 'passcode';
+    if (adminChannelPasscodeInputEl) {
+      adminChannelPasscodeInputEl.disabled = !protectedMode;
+      adminChannelPasscodeInputEl.placeholder = protectedMode
+        ? (editorSelectedChannelId ? 'Leave blank to keep the current passcode' : 'Required for protected channels')
+        : 'Open channels do not use passcodes';
+      if (!protectedMode) adminChannelPasscodeInputEl.value = '';
+    }
+  }
+
+  function applyEditorChannel(channel) {
+    const nextChannel = channel || null;
+    if (adminChannelEditorSelectEl) adminChannelEditorSelectEl.value = nextChannel?.channelId || '';
+    if (adminChannelNameInputEl) adminChannelNameInputEl.value = nextChannel?.name || '';
+    if (adminChannelSecurityModeSelectEl) adminChannelSecurityModeSelectEl.value = nextChannel?.securityMode === 'passcode' ? 'passcode' : 'open';
+    if (adminChannelDescriptionInputEl) adminChannelDescriptionInputEl.value = nextChannel?.description || '';
+    if (adminChannelNoteInputEl) adminChannelNoteInputEl.value = nextChannel?.note || '';
+    if (adminChannelPasscodeInputEl) adminChannelPasscodeInputEl.value = '';
+    if (adminChannelConcurrentAccessInputEl) adminChannelConcurrentAccessInputEl.checked = nextChannel?.concurrentAccessAllowed !== false;
+    syncPasscodeFieldState();
+    setEditorDirty(false);
+  }
+
   function setButtonBusyState(nextSnapshot) {
     const loadingAction = String(nextSnapshot?.adminSurface?.loadingAction || 'idle');
     const sessionOpen = !!nextSnapshot?.managed?.session?.sessionId;
     const joinedSlotCount = Number(nextSnapshot?.managed?.joinedSlotCount || 0);
     const busy = loadingAction !== 'idle';
+    const backendAdmin = nextSnapshot?.managed?.backendAdmin || {};
+    const canManageChannels = !!backendAdmin?.permissions?.canManageChannels;
+    const selectedChannel = getSelectedEditorChannel(nextSnapshot);
+    const protectedMode = adminChannelSecurityModeSelectEl?.value === 'passcode';
+    const nameValue = String(adminChannelNameInputEl?.value || '').trim();
+    const passcodeValue = String(adminChannelPasscodeInputEl?.value || '').trim();
     if (adminRefreshAllBtn) adminRefreshAllBtn.disabled = busy || !sessionOpen;
     if (adminRefreshChannelsBtn) adminRefreshChannelsBtn.disabled = busy || !sessionOpen;
     if (adminRefreshPeersBtn) adminRefreshPeersBtn.disabled = busy || joinedSlotCount === 0;
+    if (adminChannelEditorSelectEl) adminChannelEditorSelectEl.disabled = busy || !canManageChannels;
+    if (adminChannelNameInputEl) adminChannelNameInputEl.disabled = busy || !canManageChannels;
+    if (adminChannelSecurityModeSelectEl) adminChannelSecurityModeSelectEl.disabled = busy || !canManageChannels;
+    if (adminChannelDescriptionInputEl) adminChannelDescriptionInputEl.disabled = busy || !canManageChannels;
+    if (adminChannelNoteInputEl) adminChannelNoteInputEl.disabled = busy || !canManageChannels;
+    if (adminChannelConcurrentAccessInputEl) adminChannelConcurrentAccessInputEl.disabled = busy || !canManageChannels;
+    syncPasscodeFieldState();
+    if (adminChannelPasscodeInputEl) adminChannelPasscodeInputEl.disabled = adminChannelPasscodeInputEl.disabled || busy || !canManageChannels;
+    if (adminChannelCreateBtn) adminChannelCreateBtn.disabled = busy || !canManageChannels || !!selectedChannel || !nameValue || (protectedMode && !passcodeValue);
+    if (adminChannelSaveBtn) adminChannelSaveBtn.disabled = busy || !canManageChannels || !selectedChannel || !nameValue;
+    if (adminChannelDeleteBtn) adminChannelDeleteBtn.disabled = busy || !canManageChannels || !selectedChannel;
+    if (adminChannelResetBtn) adminChannelResetBtn.disabled = busy;
   }
 
   function renderEmptyState(message = 'Waiting for the main control window to publish an inspection snapshot.') {
@@ -93,6 +170,24 @@
     if (adminSessionMetaEl) adminSessionMetaEl.textContent = 'Managed session data has not been opened yet.';
     if (adminTransportStatusEl) adminTransportStatusEl.textContent = '0 active transport peers';
     if (adminTransportMetaEl) adminTransportMetaEl.textContent = 'Transport and peer-health summary will appear here.';
+    if (adminBackendStatusEl) adminBackendStatusEl.textContent = 'No backend summary';
+    if (adminBackendMetaEl) adminBackendMetaEl.textContent = 'Unavailable';
+    if (adminBackendCopyEl) adminBackendCopyEl.textContent = 'Refresh channels or all data to request backend-authored admin facts.';
+    if (adminBackendFactsEl) {
+      adminBackendFactsEl.innerHTML = '';
+      const item = document.createElement('li');
+      item.className = 'managed-list-item';
+      item.textContent = 'Backend-authored admin facts are not cached yet.';
+      adminBackendFactsEl.appendChild(item);
+    }
+    if (adminChannelEditorMetaEl) adminChannelEditorMetaEl.textContent = 'Read-only';
+    if (adminChannelEditorStatusEl) adminChannelEditorStatusEl.textContent = 'Open a managed operator session and refresh channels to enable bounded directory mutations.';
+    if (adminChannelEditorErrorEl) {
+      adminChannelEditorErrorEl.hidden = true;
+      adminChannelEditorErrorEl.textContent = '';
+    }
+    editorSelectedChannelId = '';
+    applyEditorChannel(null);
     if (adminChannelsMetaEl) adminChannelsMetaEl.textContent = 'No channels cached';
     if (adminChannelsListEl) {
       adminChannelsListEl.innerHTML = '';
@@ -117,6 +212,15 @@
       const row = document.createElement('tr');
       row.innerHTML = '<td colspan="8">No resolved endpoints have been published yet.</td>';
       adminEndpointTableBodyEl.appendChild(row);
+    }
+    if (adminKnowledgeMetaEl) adminKnowledgeMetaEl.textContent = 'No retained peers';
+    if (adminKnowledgeCopyEl) adminKnowledgeCopyEl.textContent = 'Retained peer knowledge is local-first and stores reusable non-secret facts only.';
+    if (adminKnowledgeListEl) {
+      adminKnowledgeListEl.innerHTML = '';
+      const item = document.createElement('li');
+      item.className = 'managed-list-item';
+      item.textContent = 'No retained peer knowledge has been learned yet.';
+      adminKnowledgeListEl.appendChild(item);
     }
     if (adminNatMetaEl) adminNatMetaEl.textContent = 'No candidate data';
     if (adminNatStatusEl) adminNatStatusEl.textContent = 'Idle';
@@ -152,6 +256,103 @@
       adminErrorTextEl.textContent = '';
     }
     setButtonBusyState(null);
+  }
+
+  function renderChannelEditor(nextSnapshot) {
+    const backendAdmin = nextSnapshot?.managed?.backendAdmin || {};
+    const permissions = backendAdmin?.permissions || {};
+    const channels = getEditorChannels(nextSnapshot);
+    const selectedChannel = getSelectedEditorChannel(nextSnapshot);
+    const canManageChannels = !!permissions.canManageChannels;
+    if (!selectedChannel && editorSelectedChannelId) {
+      editorSelectedChannelId = '';
+      applyEditorChannel(null);
+    }
+    if (!editorDirty && selectedChannel) {
+      applyEditorChannel(selectedChannel);
+    }
+    if (!editorDirty && !editorSelectedChannelId && !adminChannelNameInputEl?.value && !adminChannelDescriptionInputEl?.value && !adminChannelNoteInputEl?.value) {
+      applyEditorChannel(null);
+    }
+    if (adminChannelEditorSelectEl) {
+      const nextValue = editorSelectedChannelId;
+      adminChannelEditorSelectEl.innerHTML = '';
+      const createOption = document.createElement('option');
+      createOption.value = '';
+      createOption.textContent = 'Create New Channel';
+      adminChannelEditorSelectEl.appendChild(createOption);
+      for (const channel of channels) {
+        const option = document.createElement('option');
+        option.value = channel.channelId;
+        option.textContent = channel.name || channel.channelId;
+        adminChannelEditorSelectEl.appendChild(option);
+      }
+      adminChannelEditorSelectEl.value = channels.some((channel) => channel.channelId === nextValue) ? nextValue : '';
+    }
+    if (adminChannelEditorMetaEl) {
+      adminChannelEditorMetaEl.textContent = canManageChannels
+        ? `${channels.length} channel(s) editable`
+        : 'Read-only';
+    }
+    if (adminChannelEditorStatusEl) {
+      if (!canManageChannels) {
+        adminChannelEditorStatusEl.textContent = 'This session can read backend admin facts, but it does not currently have permission to mutate channels.';
+      } else if (selectedChannel) {
+        adminChannelEditorStatusEl.textContent = `${selectedChannel.name || selectedChannel.channelId} selected. Leave passcode blank to keep the current protected secret.`;
+      } else {
+        adminChannelEditorStatusEl.textContent = 'Create a new channel here. Protected channels require a passcode on creation.';
+      }
+    }
+    if (adminChannelEditorErrorEl) {
+      const showMutationError = String(nextSnapshot?.adminSurface?.lastAction || '').toLowerCase().includes('channel')
+        && !!String(nextSnapshot?.adminSurface?.errorMessage || '').trim();
+      adminChannelEditorErrorEl.hidden = !showMutationError;
+      adminChannelEditorErrorEl.textContent = showMutationError ? String(nextSnapshot?.adminSurface?.errorMessage || '') : '';
+    }
+  }
+
+  function renderBackendAdmin(nextSnapshot) {
+    const backendAdmin = nextSnapshot?.managed?.backendAdmin || {};
+    const viewer = backendAdmin?.viewer || {};
+    const directory = backendAdmin?.directory || {};
+    const permissions = backendAdmin?.permissions || {};
+    const roleLabel = String(viewer.role || '').trim() || 'member';
+    const canRead = !!permissions.canReadAdminSummary;
+    const observedAt = formatTimestamp(directory.observedAt);
+
+    if (adminBackendStatusEl) {
+      adminBackendStatusEl.textContent = canRead
+        ? `${roleLabel} session`
+        : 'Summary unavailable';
+    }
+    if (adminBackendMetaEl) {
+      adminBackendMetaEl.textContent = canRead
+        ? `${Number(directory.activeSessionCount) || 0} session(s) | ${Number(directory.activeChannelCount) || 0} active channel(s)`
+        : 'Unavailable';
+    }
+    if (adminBackendCopyEl) {
+      adminBackendCopyEl.textContent = canRead
+        ? `${viewer.displayName || viewer.userId || viewer.sessionId || 'Operator'} can read backend-authored admin facts${observedAt ? ` | observed ${observedAt}` : ''}`
+        : String(backendAdmin?.errorMessage || 'This session does not currently have permission to read backend admin facts.');
+    }
+    if (!adminBackendFactsEl) return;
+    adminBackendFactsEl.innerHTML = '';
+    const facts = canRead
+      ? [
+          `${Number(directory.channelCount) || 0} channel(s) | ${Number(directory.protectedChannelCount) || 0} protected | ${Number(directory.openChannelCount) || 0} open`,
+          `${Number(directory.activeMemberCount) || 0} joined member(s) | ${Number(directory.onlineMemberCount) || 0} online | ${Number(directory.readyEndpointCount) || 0} ready endpoint(s)`,
+          `${Number(directory.joinedSlotCount) || 0} joined slot(s) | ${Number(directory.activeOperatorSessionCount) || 0} operator session(s) | ${Number(directory.activeMemberSessionCount) || 0} member session(s)`,
+          `Permissions | channels ${permissions.canManageChannels ? 'yes' : 'no'} | passcodes ${permissions.canManagePasscodes ? 'yes' : 'no'}`
+        ]
+      : [
+          String(backendAdmin?.errorMessage || 'Backend admin summary has not been granted to this session.')
+        ];
+    for (const fact of facts) {
+      const item = document.createElement('li');
+      item.className = 'managed-list-item';
+      item.textContent = fact;
+      adminBackendFactsEl.appendChild(item);
+    }
   }
 
   function renderChannels(nextSnapshot) {
@@ -259,6 +460,99 @@
         <td>${formatTimestamp(entry.lastValidatedAt) || '--'}</td>
       `;
       adminEndpointTableBodyEl.appendChild(row);
+    }
+  }
+
+  function renderRetainedKnowledge(nextSnapshot) {
+    const retainedKnowledge = nextSnapshot?.retainedKnowledge || {};
+    const peers = Array.isArray(retainedKnowledge.peers) ? retainedKnowledge.peers : [];
+    const busy = String(nextSnapshot?.adminSurface?.loadingAction || 'idle') !== 'idle';
+    if (adminKnowledgeMetaEl) {
+      adminKnowledgeMetaEl.textContent = peers.length
+        ? `${Number(retainedKnowledge.peerCount) || peers.length} peer(s) | ${Number(retainedKnowledge.endpointCount) || 0} endpoint(s)`
+        : 'No retained peers';
+    }
+    if (adminKnowledgeCopyEl) {
+      adminKnowledgeCopyEl.textContent = peers.length
+        ? `${Number(retainedKnowledge.managedCount) || 0} managed-linked | ${Number(retainedKnowledge.manualCount) || 0} manual-linked | ${Number(retainedKnowledge.retainedOnlyCount) || 0} retained-only deletable`
+        : 'Retained peer knowledge is local-first and stores reusable non-secret facts only.';
+    }
+    if (!adminKnowledgeListEl) return;
+    adminKnowledgeListEl.innerHTML = '';
+    if (!peers.length) {
+      const item = document.createElement('li');
+      item.className = 'managed-list-item';
+      item.textContent = 'No retained peer knowledge has been learned yet.';
+      adminKnowledgeListEl.appendChild(item);
+      return;
+    }
+    for (const peer of peers) {
+      const item = document.createElement('li');
+      item.className = 'managed-list-item';
+      const header = document.createElement('div');
+      header.className = 'managed-list-item-header';
+      const summary = document.createElement('div');
+      const titleRow = document.createElement('div');
+      titleRow.className = 'managed-list-title';
+      const title = document.createElement('strong');
+      title.textContent = peer.displayName || peer.peerId || 'Unknown retained peer';
+      titleRow.appendChild(title);
+      for (const source of Array.isArray(peer.sources) ? peer.sources : []) {
+        const badge = document.createElement('span');
+        badge.className = 'managed-badge';
+        badge.textContent = source;
+        titleRow.appendChild(badge);
+      }
+      if (peer.manualPeerKey) {
+        const linkedBadge = document.createElement('span');
+        linkedBadge.className = 'managed-badge';
+        linkedBadge.textContent = 'Direct linked';
+        titleRow.appendChild(linkedBadge);
+      }
+      const detail = document.createElement('span');
+      const detailParts = [];
+      if (peer.managedUserId) detailParts.push(`Managed ${peer.managedUserId}`);
+      if (peer.manualPeerKey) detailParts.push(`Manual ${peer.manualPeerKey}`);
+      detailParts.push(`${Number(peer.endpointCount) || 0} endpoint(s)`);
+      detail.textContent = detailParts.join(' | ');
+      summary.append(titleRow, detail);
+      const forgetButton = document.createElement('button');
+      forgetButton.type = 'button';
+      forgetButton.className = 'secondary';
+      forgetButton.dataset.peerId = peer.peerId || '';
+      forgetButton.dataset.action = 'forget-retained-peer';
+      forgetButton.textContent = peer.canForget ? 'Forget Local Copy' : 'Manual Link';
+      forgetButton.disabled = busy || !peer.canForget;
+      header.append(summary, forgetButton);
+      item.appendChild(header);
+
+      for (const endpoint of Array.isArray(peer.endpoints) ? peer.endpoints : []) {
+        const endpointMeta = document.createElement('div');
+        endpointMeta.className = 'managed-list-meta';
+        const endpointBadge = document.createElement('span');
+        endpointBadge.className = 'managed-badge';
+        endpointBadge.textContent = endpoint.source || endpoint.kind || 'endpoint';
+        const endpointCopy = document.createElement('span');
+        const endpointParts = [`${endpoint.ip}:${endpoint.port}`];
+        if (endpoint.kind) endpointParts.push(endpoint.kind);
+        if (endpoint.channelId) endpointParts.push(endpoint.channelId);
+        if (endpoint.slotId) endpointParts.push(`Group ${endpoint.slotId}`);
+        endpointCopy.textContent = endpointParts.join(' | ');
+        endpointMeta.append(endpointBadge, endpointCopy);
+        item.appendChild(endpointMeta);
+      }
+
+      const note = document.createElement('p');
+      note.className = 'managed-list-note';
+      const noteParts = [];
+      if (peer.firstSeenAt) noteParts.push(`First seen ${formatTimestamp(peer.firstSeenAt)}`);
+      if (peer.lastSeenAt) noteParts.push(`Last seen ${formatTimestamp(peer.lastSeenAt)}`);
+      if (peer.lastConnectedAt) noteParts.push(`Last connected ${formatTimestamp(peer.lastConnectedAt)}`);
+      note.textContent = noteParts.length
+        ? noteParts.join(' | ')
+        : 'No retained timestamps recorded yet.';
+      item.appendChild(note);
+      adminKnowledgeListEl.appendChild(item);
     }
   }
 
@@ -433,7 +727,7 @@
       const loadingAction = String(snapshot?.adminSurface?.loadingAction || 'idle');
       adminRefreshStatusEl.textContent = loadingAction === 'idle'
         ? 'Read-only snapshot ready'
-        : `Refreshing ${loadingAction}`;
+        : (snapshot?.adminSurface?.activityLabel || `Refreshing ${loadingAction}`);
     }
     if (adminRefreshMetaEl) {
       const completedAt = formatTimestamp(snapshot?.adminSurface?.lastCompletedAt);
@@ -464,9 +758,12 @@
     if (adminTransportMetaEl) {
       adminTransportMetaEl.textContent = snapshot?.stats?.hostStatusSummary || 'Host bridge and transport status are not available yet.';
     }
+    renderBackendAdmin(snapshot);
+    renderChannelEditor(snapshot);
     renderChannels(snapshot);
     renderSlots(snapshot);
     renderEndpoints(snapshot);
+    renderRetainedKnowledge(snapshot);
     renderNat(snapshot);
     renderStats(snapshot);
     setButtonBusyState(snapshot);
@@ -487,9 +784,100 @@
     }
   }
 
+  function buildChannelMutationPayload() {
+    return {
+      channelId: editorSelectedChannelId || null,
+      name: String(adminChannelNameInputEl?.value || '').trim(),
+      description: String(adminChannelDescriptionInputEl?.value || '').trim(),
+      note: String(adminChannelNoteInputEl?.value || '').trim(),
+      securityMode: adminChannelSecurityModeSelectEl?.value === 'passcode' ? 'passcode' : 'open',
+      concurrentAccessAllowed: !!adminChannelConcurrentAccessInputEl?.checked,
+      passcode: String(adminChannelPasscodeInputEl?.value || '').trim() || null
+    };
+  }
+
+  async function requestChannelMutation(action) {
+    try {
+      await platform.requestAdminAction({
+        action,
+        payload: buildChannelMutationPayload(),
+        source: 'admin-window'
+      });
+    } catch (error) {
+      render({
+        ...snapshot,
+        adminSurface: {
+          ...(snapshot?.adminSurface || {}),
+          errorMessage: error?.message || 'Failed to request admin action.',
+          loadingAction: 'idle',
+          activityLabel: '',
+          lastAction: 'Channel action failed'
+        }
+      });
+    }
+  }
+
+  async function requestRetainedKnowledgeMutation(peerId) {
+    try {
+      await platform.requestAdminAction({
+        action: 'forget-retained-peer',
+        payload: { peerId },
+        source: 'admin-window'
+      });
+    } catch (error) {
+      render({
+        ...snapshot,
+        adminSurface: {
+          ...(snapshot?.adminSurface || {}),
+          errorMessage: error?.message || 'Failed to forget the retained peer locally.',
+          loadingAction: 'idle',
+          activityLabel: '',
+          lastAction: 'Retained peer action failed'
+        }
+      });
+    }
+  }
+
   adminRefreshAllBtn?.addEventListener('click', () => { requestRefresh('all').catch((error) => console.error('admin refresh all error', error)); });
   adminRefreshChannelsBtn?.addEventListener('click', () => { requestRefresh('channels').catch((error) => console.error('admin refresh channels error', error)); });
   adminRefreshPeersBtn?.addEventListener('click', () => { requestRefresh('peers').catch((error) => console.error('admin refresh peers error', error)); });
+  adminChannelEditorSelectEl?.addEventListener('change', () => {
+    editorSelectedChannelId = adminChannelEditorSelectEl.value || '';
+    applyEditorChannel(getSelectedEditorChannel(snapshot));
+    render(snapshot);
+  });
+  for (const field of [
+    adminChannelNameInputEl,
+    adminChannelSecurityModeSelectEl,
+    adminChannelDescriptionInputEl,
+    adminChannelNoteInputEl,
+    adminChannelPasscodeInputEl,
+    adminChannelConcurrentAccessInputEl
+  ]) {
+    field?.addEventListener('input', () => {
+      setEditorDirty(true);
+      syncPasscodeFieldState();
+      setButtonBusyState(snapshot);
+    });
+    field?.addEventListener('change', () => {
+      setEditorDirty(true);
+      syncPasscodeFieldState();
+      setButtonBusyState(snapshot);
+    });
+  }
+  adminChannelCreateBtn?.addEventListener('click', () => { requestChannelMutation('create-channel').catch((error) => console.error('admin create channel error', error)); });
+  adminChannelSaveBtn?.addEventListener('click', () => { requestChannelMutation('update-channel').catch((error) => console.error('admin update channel error', error)); });
+  adminChannelDeleteBtn?.addEventListener('click', () => { requestChannelMutation('delete-channel').catch((error) => console.error('admin delete channel error', error)); });
+  adminChannelResetBtn?.addEventListener('click', () => {
+    applyEditorChannel(getSelectedEditorChannel(snapshot));
+    render(snapshot);
+  });
+  adminKnowledgeListEl?.addEventListener('click', (event) => {
+    const button = event.target instanceof Element ? event.target.closest('button[data-action="forget-retained-peer"]') : null;
+    const peerId = button?.getAttribute('data-peer-id') || '';
+    if (!peerId || button?.hasAttribute('disabled')) return;
+    requestRetainedKnowledgeMutation(peerId).catch((error) => console.error('admin forget retained peer error', error));
+  });
 
   platform.onAdminState((nextSnapshot) => {
     render(nextSnapshot);

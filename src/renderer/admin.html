@@ -41,6 +41,17 @@
         <h2 id="adminTransportStatus">0 active transport peers</h2>
         <p id="adminTransportMeta" class="managed-card-copy">Transport and peer-health summary will appear here.</p>
       </article>
+      <article class="admin-card">
+        <div class="managed-card-header">
+          <div>
+            <p class="managed-card-label">Backend Admin</p>
+            <h2 id="adminBackendStatus">No backend summary</h2>
+          </div>
+          <span id="adminBackendMeta" class="managed-inline-status">Unavailable</span>
+        </div>
+        <p id="adminBackendCopy" class="managed-card-copy">Refresh channels or all data to request backend-authored admin facts.</p>
+        <ul id="adminBackendFacts" class="managed-list"></ul>
+      </article>
     </section>
 
     <section class="admin-grid">
@@ -70,6 +81,59 @@
     <section class="admin-card">
       <div class="managed-card-header">
         <div>
+          <p class="managed-card-label">Directory Controls</p>
+          <h2>Channel Editor</h2>
+        </div>
+        <span id="adminChannelEditorMeta" class="managed-inline-status">Read-only</span>
+      </div>
+      <p id="adminChannelEditorStatus" class="managed-card-copy">Open a managed operator session and refresh channels to enable bounded directory mutations.</p>
+      <div class="admin-form-grid">
+        <label class="admin-field admin-form-full">
+          <span>Channel</span>
+          <select id="adminChannelEditorSelect">
+            <option value="">Create New Channel</option>
+          </select>
+        </label>
+        <label class="admin-field">
+          <span>Name</span>
+          <input id="adminChannelNameInput" type="text" maxlength="80" placeholder="Operations" />
+        </label>
+        <label class="admin-field">
+          <span>Security</span>
+          <select id="adminChannelSecurityModeSelect">
+            <option value="open">Open</option>
+            <option value="passcode">Protected</option>
+          </select>
+        </label>
+        <label class="admin-field admin-form-full">
+          <span>Description</span>
+          <textarea id="adminChannelDescriptionInput" rows="3" maxlength="280" placeholder="Operator-managed channel description"></textarea>
+        </label>
+        <label class="admin-field admin-form-full">
+          <span>Note</span>
+          <input id="adminChannelNoteInput" type="text" maxlength="280" placeholder="Optional operator note" />
+        </label>
+        <label class="admin-field">
+          <span>Passcode</span>
+          <input id="adminChannelPasscodeInput" type="password" maxlength="128" placeholder="Required for protected channels" />
+        </label>
+        <label class="admin-checkbox-field">
+          <input id="adminChannelConcurrentAccessInput" type="checkbox" checked />
+          <span>Allow concurrent access</span>
+        </label>
+      </div>
+      <div class="admin-form-actions">
+        <button id="adminChannelCreateBtn" class="primary" type="button">Create Channel</button>
+        <button id="adminChannelSaveBtn" class="secondary" type="button">Save Changes</button>
+        <button id="adminChannelDeleteBtn" class="secondary" type="button">Delete Channel</button>
+        <button id="adminChannelResetBtn" class="secondary" type="button">Reset Form</button>
+      </div>
+      <p id="adminChannelEditorError" class="managed-error" hidden></p>
+    </section>
+
+    <section class="admin-card">
+      <div class="managed-card-header">
+        <div>
           <p class="managed-card-label">Endpoint State</p>
           <h2>Resolved Endpoints</h2>
         </div>
@@ -92,6 +156,18 @@
           <tbody></tbody>
         </table>
       </div>
+    </section>
+
+    <section class="admin-card">
+      <div class="managed-card-header">
+        <div>
+          <p class="managed-card-label">Retained Knowledge</p>
+          <h2>Local Peer History</h2>
+        </div>
+        <span id="adminKnowledgeMeta" class="managed-inline-status">No retained peers</span>
+      </div>
+      <p id="adminKnowledgeCopy" class="managed-card-copy">Retained peer knowledge is local-first and stores reusable non-secret facts only.</p>
+      <ul id="adminKnowledgeList" class="managed-list"></ul>
     </section>
 
     <section class="admin-card">
