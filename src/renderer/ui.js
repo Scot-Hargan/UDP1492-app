@@ -36,10 +36,10 @@ import { createAudioEngine } from './audio-engine.js';
 import { renderManagedShellView, renderPeerModalOtherFields } from './dom-views.js';
 import { gatherNatCandidatesWithWebRtc as gatherNatCandidatesViaWebRtc } from './nat-discovery.js';
 
-// ui.js v0.4.26
+// ui.js v0.4.27
 (() => {
   'use strict';
-  const VERSION = '0.4.26';
+  const VERSION = '0.4.27';
   const platform = window.udp1492;
   const testPlatform = window.udp1492Test || null;
 

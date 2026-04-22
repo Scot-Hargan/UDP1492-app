@@ -3,12 +3,12 @@
 // udp_audio1492_host.js (v0.4.4) - Steve adding multiple peers, better encryption, native vs extension and statistics
 // udp_audio1492_host.js (v0.4.5) - bugs created from 0.4.0 to 0.4.4 appear to be worked out, still need to handle config updates
 // udp_audio1492_host.js (v0.4.6) - audio again
-// udp_audio1492_host.js (v0.4.10.1) - added handshake/reconnect diagnostic logging
+// udp_audio1492_host.js (v0.4.10.2) - fixed key epoch comparison ordering
 const dgram = require('dgram');
 const crypto = require('crypto');
 const zlib = require('zlib');
 
-const HOST_VERSION = '0.4.10.1';
+const HOST_VERSION = '0.4.10.2';
 const GCM_IV_LENGTH = 12;
 const GCM_TAG_LENGTH = 16;
 const IPC_MODE = typeof process.send === 'function';
