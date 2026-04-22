@@ -25,6 +25,7 @@
 | Live managed session facts | Renderer memory | session ID, live memberships, presence freshness, resolved peers, NAT probe state |
 | Host process availability | Electron main | renderer must tolerate `host-not-running` and `app-quitting` during teardown |
 | Transport state | Native host | connected/validated peer state, ping history, jitter/loss stats |
+| Managed transport endpoint port | Desktop-selected UDP listen port | browser/WebRTC NAT discovery may contribute advisory public IPs, but it does not override the chosen transport port |
 | Live managed membership TTLs | Cloudflare Durable Objects | channel presence and membership freshness are backend-authored |
 | Channel catalog today | `DirectoryDOManagedV2` durable rows plus admin mutation APIs | Seeded defaults still bootstrap the first catalog, but Phase 11 now allows backend-owned create/update/delete flows |
 
@@ -429,6 +430,12 @@ Important error codes:
 - `managed_channel_not_found`
 
 ### `POST /api/channels/{channelId}/presence`
+
+Endpoint authority note:
+
+- the desktop-selected UDP listen port is authoritative for transport publication
+- browser/WebRTC NAT discovery is advisory-only
+- if a public IP is published from advisory NAT discovery, it should still use the chosen transport port rather than a browser-observed remapped port
 
 Request:
 

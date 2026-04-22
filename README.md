@@ -6,7 +6,7 @@ Source repository: <https://github.com/Scot-Hargan/UDP1492-app>
 
 Windows downloads: <https://github.com/Scot-Hargan/UDP1492-app/releases>
 
-See [DEVELOPMENT_NOTES.md](/C:/NodeProjects/1492-app/DEVELOPMENT_NOTES.md) before making further feature changes or release builds.
+Start with [AI_RULES.md](/C:/NodeProjects/1492-app/AI_RULES.md), [CURRENT_TASK.md](/C:/NodeProjects/1492-app/CURRENT_TASK.md), [docs/architecture.md](/C:/NodeProjects/1492-app/docs/architecture.md), and [NEXT_CHAT_HANDOFF.md](/C:/NodeProjects/1492-app/NEXT_CHAT_HANDOFF.md).
 
 ## Current Shape
 
